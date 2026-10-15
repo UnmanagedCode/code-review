@@ -1,0 +1,5 @@
+node_modules/
+frontend/dist/
+package-lock.json
+.mutation/
+harness/playwright/out/

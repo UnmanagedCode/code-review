@@ -1,0 +1,6 @@
+{
+  "name": "code-review",
+  "description": "Threaded code-review discussions between a human and agents, anchored to diff lines.",
+  "version": "0.1.0",
+  "author": { "name": "UnmanagedCode" }
+}

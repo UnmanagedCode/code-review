@@ -2,6 +2,7 @@ import express from 'express';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { apiRouter } from './src/routes.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const dist = path.join(here, 'frontend', 'dist');
@@ -11,8 +12,8 @@ export const CSP = "default-src 'self'; script-src 'self'; style-src 'self' 'uns
 export function createApp({ distDir = dist } = {}) {
   const app = express();
   app.get('/health', (_req, res) => res.json({ ok: true }));
-  app.use(express.json());
-  // Reserved for the plugin's API routes: until they exist an /api path is a 404, never the UI.
+  app.use('/api', apiRouter());
+  // Anything the API does not route is a 404, never the UI.
   app.use('/api', (_req, res) => res.status(404).json({ error: 'not found' }));
 
   if (fs.existsSync(path.join(distDir, 'index.html'))) {

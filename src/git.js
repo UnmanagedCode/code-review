@@ -15,6 +15,10 @@ export const DIFF_FLAGS = ['diff', '--no-color', '--no-ext-diff', '--no-textconv
 // working-tree diffs therefore run against a private index copy (see withPrivateIndex).
 const ENV = { ...process.env, LC_ALL: 'C', GIT_OPTIONAL_LOCKS: '0' };
 
+// fsmonitor off on every call: with core.fsmonitor=true even `git status` starts a detached daemon that writes into .git.
+// (A clean/smudge filter named by the reviewed repo's own .gitattributes still runs on working-tree paths.)
+const BASE_ARGS = ['-c', 'core.fsmonitor=false'];
+
 const REF_RE = /^[A-Za-z0-9._\/@{}^~-]+$/;
 
 /** Throws BAD_REF unless `x` is a plain ref/sha that cannot be read as an option. */
@@ -26,7 +30,7 @@ export function checkRef(x) {
 /** Runs git in `repo`. Resolves {code, stdout}; exit codes outside `ok` throw an Error carrying stderr. */
 export function run(repo, args, { input, ok = [0], maxBuffer = MAX_DIFF_BYTES, env } = {}) {
   return new Promise((resolve, reject) => {
-    const child = execFile('git', ['-C', repo, ...args], { env: env ? { ...ENV, ...env } : ENV, maxBuffer, encoding: 'utf8' }, (err, stdout, stderr) => {
+    const child = execFile('git', [...BASE_ARGS, '-C', repo, ...args], { env: env ? { ...ENV, ...env } : ENV, maxBuffer, encoding: 'utf8' }, (err, stdout, stderr) => {
       if (!err) return resolve({ code: 0, stdout });
       if (err.code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER') return reject(new Refusal('DIFF_TOO_LARGE', 'output exceeds the size limit'));
       if (typeof err.code === 'number' && ok.includes(err.code)) return resolve({ code: err.code, stdout });
@@ -112,6 +116,10 @@ export const diffBetween = (repo, from, to, opts) => run(repo, [...DIFF_FLAGS, f
 
 /** Tracked changes (staged + unstaged) against `from`. */
 export const diffWorktree = (repo, from, opts) => run(repo, [...DIFF_FLAGS, from], opts).then((r) => r.stdout);
+
+/** Stages the working-tree content of `paths` into the index `opts.env` points at (never the real one). */
+export const addToIndex = (repo, paths, opts) =>
+  run(repo, ['update-index', '--add', '-z', '--stdin'], { ...opts, input: paths.join('\0') + '\0' });
 
 /** Untracked, non-ignored paths (relative); directories (nested repos) are skipped. */
 export async function untracked(repo, opts) {

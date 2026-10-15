@@ -8,3 +8,5 @@
 - **The empty tree** (root commits, unborn HEAD) comes from `hash-object -t tree --stdin`, so it is correct for the repo's hash format.
 - **Refs are untrusted input:** `checkRef` rejects anything outside `REF_RE` or starting with `-`; resolution uses `--end-of-options`.
 - **Worktrees share the object store**, so range/commit reviews of a deleted worktree stay readable via the main checkout; only a garbage-collected sha gives `SNAPSHOT_GONE`.
+- **fsmonitor:** every git call passes `-c core.fsmonitor=false`; with `core.fsmonitor=true` a plain `git status` spawns a detached daemon and writes `.git/fsmonitor--daemon*`. `tests/snapshot.test.js` compares the `.git` tree before and after. Not neutralised: a clean/smudge filter named by the reviewed repo's `.gitattributes` (git-lfs) still runs on working-tree paths, since a correct diff needs it.
+- **`git rm --cached` paths** are in HEAD, absent from the index and present on disk: `diff HEAD` says deleted and `ls-files --others` says untracked. `readUncommitted` (`src/snapshot.js`) stages those paths into the private index and re-diffs, so the path appears once.

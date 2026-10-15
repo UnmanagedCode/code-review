@@ -40,8 +40,11 @@ Services return a plain object or a refusal `{ok:false, code, reason}`. Low-leve
 
 ## Git
 
-- Every call: `git -C <repo>` with `LC_ALL=C` and `GIT_OPTIONAL_LOCKS=0`; diff flags are pinned (`DIFF_FLAGS` in `git.js`) so user config cannot change the parsed shape.
+- Every call: `git -c core.fsmonitor=false -C <repo>` with `LC_ALL=C` and `GIT_OPTIONAL_LOCKS=0`; diff flags are pinned (`DIFF_FLAGS` in `git.js`) so user config cannot change the parsed shape.
 - `git diff <commit>` rewrites `.git/index` even with `GIT_OPTIONAL_LOCKS=0`. Uncommitted diffs therefore run against a private copy of the index (`withPrivateIndex`: path from `rev-parse --git-path index`, unique temp copy per call, deleted in `finally`; a missing index is not copied). The plugin never writes a project tree.
+- `core.fsmonitor=false` is passed on every call: with `core.fsmonitor=true` even `git status` starts a detached `fsmonitor--daemon` that creates `.git/fsmonitor--daemon*`.
+- **Known limitation:** a clean/smudge filter driver named by the reviewed repo's own `.gitattributes` (e.g. git-lfs) still runs on working-tree paths, because a correct diff needs it.
+- Uncommitted snapshots hold one entry per path. A path HEAD has but the index lacks (`git rm --cached`) is staged into the private index first, so it shows as working tree vs HEAD (nothing if unchanged) instead of deleted plus added.
 - Refs (`base`, `sha`) must match `REF_RE` and not start with `-` (`BAD_REF`), then resolve via `rev-parse --verify --end-of-options` (`REF_UNKNOWN`).
 - Targets resolve to two shas per round: range → `merge-base <base> HEAD` and HEAD; commit → first parent (or the empty tree) and the commit; uncommitted → HEAD (or the empty tree on an unborn branch) for both, new side read live. The empty tree comes from `hash-object -t tree --stdin`.
 - Untracked files: `ls-files --others --exclude-standard -z`, each diffed with `diff --no-index` (exit 1 = success). Caps `MAX_UNTRACKED_FILES` and `MAX_FILE_BYTES` list the excess as `tooLarge`; `MAX_DIFF_BYTES` is the buffer limit (`DIFF_TOO_LARGE`).

@@ -45,10 +45,18 @@ const uncommittedDiff = (repo, headSha, limits) =>
   git.withPrivateIndex(repo, ({ env }) => readUncommitted(repo, headSha, limits, { env, maxBuffer: limits.maxDiffBytes }));
 
 async function readUncommitted(repo, headSha, limits, opts) {
-  const files = parseDiff(await git.diffWorktree(repo, headSha, opts));
+  let files = parseDiff(await git.diffWorktree(repo, headSha, opts));
+  let rels = await git.untracked(repo, opts);
+  // A path HEAD has but the index lacks (`git rm --cached`) shows up deleted above and untracked below.
+  // Staging it into the private index makes `diff HEAD` report the working tree against HEAD, once.
+  const restaged = files.filter((f) => f.status === 'deleted' && rels.includes(f.path)).map((f) => f.path);
+  if (restaged.length) {
+    await git.addToIndex(repo, restaged, opts);
+    files = parseDiff(await git.diffWorktree(repo, headSha, opts));
+    rels = rels.filter((p) => !restaged.includes(p));
+  }
   let text = '';
   const extra = [];
-  const rels = await git.untracked(repo, opts);
   for (const [i, rel] of rels.entries()) {
     let size = Infinity;
     try { size = fs.lstatSync(path.join(repo, rel)).size; } catch { /* vanished mid-read: treat as too large to show */ }

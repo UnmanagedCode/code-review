@@ -247,3 +247,65 @@ test('commitLog lists newest first and flags merge commits', async () => {
   assert.ok(log.slice(1).every((c) => !c.merge));
   assert.match(log[0].sha, /^[0-9a-f]{40}$/);
 });
+
+// Names, sizes and mtimes of everything under .git, to prove git wrote nothing there.
+function gitDirSig(dir) {
+  const out = [];
+  const walk = (d) => {
+    for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+      const p = path.join(d, e.name);
+      if (e.isDirectory()) { walk(p); continue; }
+      const s = fs.statSync(p);
+      out.push(`${path.relative(dir, p)} ${s.size} ${s.mtimeMs}`);
+    }
+  };
+  walk(path.join(dir, '.git'));
+  return out.sort();
+}
+
+test('in a repo with core.fsmonitor=true, isDirty and range and uncommitted snapshots leave .git untouched (no daemon files)', async () => {
+  const r = repo();
+  r.commit({ 'a.txt': 'a\n' });
+  r.branch('feat');
+  r.commit({ 'b.txt': 'b\n' });
+  r.write('u.txt', 'u\n');
+  r.git('config', 'core.fsmonitor', 'true');
+  const before = gitDirSig(r.dir);
+  try {
+    await isDirty(r.dir);
+    await snapOf(r, 'range', { base: 'main' });
+    await snapOf(r, 'uncommitted', {});
+    assert.deepEqual(gitDirSig(r.dir), before);
+  } finally {
+    try { r.git('-c', 'core.fsmonitor=false', 'fsmonitor--daemon', 'stop'); } catch { /* none was started */ }
+  }
+});
+
+test('uncommitted: a file removed from the index but unchanged on disk has no entry', async () => {
+  const r = repo();
+  r.commit({ 'a.txt': 'a\n', 'keep.txt': 'k\n' });
+  r.git('rm', '--cached', '-q', 'a.txt');
+  const { snap } = await snapOf(r, 'uncommitted', {});
+  assert.deepEqual(paths(snap), []);
+});
+
+test('uncommitted: a file removed from the index and edited on disk has one "modified" entry against HEAD', async () => {
+  const r = repo();
+  r.commit({ 'a.txt': 'one\ntwo\n' });
+  r.git('rm', '--cached', '-q', 'a.txt');
+  r.write('a.txt', 'one\nTWO\n');
+  const { snap } = await snapOf(r, 'uncommitted', {});
+  assert.equal(snap.files.length, 1);
+  assert.equal(snap.files[0].status, 'modified');
+  assert.deepEqual(snap.files[0].hunks[0].lines.filter((l) => l.t !== 'ctx').map((l) => l.text), ['two', 'TWO']);
+});
+
+test('uncommitted: a path appears once even when other files are deleted, added and untracked at the same time', async () => {
+  const r = repo();
+  r.commit({ 'a.txt': 'a\n', 'gone.txt': 'g\n', 'b.txt': 'b\n' });
+  r.git('rm', '--cached', '-q', 'a.txt');
+  r.remove('gone.txt');
+  r.write('new.txt', 'n\n');
+  const { snap } = await snapOf(r, 'uncommitted', {});
+  assert.deepEqual(paths(snap), ['gone.txt', 'new.txt']);
+});

@@ -36,4 +36,4 @@ node "$CC_PROJECTS_ROOT/.plugins/code-mutant/mutate.mjs" candidates
 
 ## Verified
 
-`baseline` (no `--no-canary`) printed: baseline `PASSED 6/0/0 (p/f/s)`, canary `KILLED [counted grade, baseline scope] via tests/server.test.js`, exit 0.
+`baseline` (no `--no-canary`) reports the baseline `PASSED` and the canary `KILLED [counted grade, baseline scope]`, exit 0.

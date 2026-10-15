@@ -73,6 +73,7 @@ Then Settings → Plugins → Rescan, and enable.
 
 ## Known limitations
 
+- `caller` in the MCP envelope is unauthenticated loopback input: any local process can pose as any agent (see [protocol](docs/protocol.md#mcp)). The REST surface already acts as the human.
 - Local projects only; remote (`system`) projects are refused.
 - The commit-filter view of a range review is read-only.
 - Uncommitted edits are not pushed: the UI re-fetches on focus or an interval.

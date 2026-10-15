@@ -7,5 +7,6 @@
 - **Duplicate windows** are ranked by context matches, then nearness to the old start, then earliest line.
 - **A range can span hunks.** `hunkFor` assigns the hunk containing `endLine` (threads render under their last line), else the last hunk overlapped, else null (pure context).
 - **Anchor `file` is always the new path** of the file in the snapshot; the old side is read through `oldPath`. Refresh maps renamed files with a rename map between the previous and new head.
+- **`anchor.round` and `drifted` follow the latest re-anchor:** `followThreads` sets the round to the new one (its `lines`/`linesHash` are re-read from that snapshot) and an exact match clears `drifted`.
 - **Dropped uncommitted threads** are remembered in `droppedThreads` so a late reply says `THREAD_DROPPED`, not `THREAD_UNKNOWN`.
 - **Outdated threads** are never re-anchored again but accept replies; the human cannot change their status.

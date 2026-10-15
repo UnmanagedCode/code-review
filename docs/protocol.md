@@ -5,6 +5,9 @@ REST under `/api` (JSON), an SSE stream, and the cc MCP endpoint. Behaviour behi
 ## Conventions
 
 - Success: `{ok: true, …}`. Refusal: `{ok: false, code, reason}` with the HTTP status from the table below. An unexpected exception is `500 {ok:false, code:'INTERNAL', reason}`. Malformed JSON is `400 INVALID_ARGUMENT`. An unrouted `/api/*` path is `404 {error}`.
+- **Mutating requests (any method but GET/HEAD/OPTIONS, `POST /mcp` included) must send `Content-Type: application/json`, even with no body**, else `415 UNSUPPORTED_MEDIA_TYPE`. A cross-site HTML form cannot send that type, so it cannot trigger `refresh` or `submissions`.
+- **Limits:** a message or thread body is at most `MAX_BODY_CHARS` (20 000, `src/threads.js`) characters, else `413 BODY_TOO_LARGE`. The SSE feed has no client cap (the store's change emitter has no listener limit; listeners are removed on disconnect).
+- `worktree: ""` means the main checkout, like an omitted or `null` one, in `POST /reviews` and MCP `open_review`.
 - Source of truth for codes and statuses: `HTTP_STATUS` in `src/refusals.js`.
 - Env: `CODE_REVIEW_STORE` (store dir) else `$PROJECTS_ROOT/.code-review`; `CONDUCTOR_URL` (cc base URL, injected by cc); `CODE_REVIEW_CC_TIMEOUT_MS` (cc call timeout, default 3000); `PORT` (default 7400).
 
@@ -16,7 +19,8 @@ REST under `/api` (JSON), an SSE stream, and the cc MCP endpoint. Behaviour behi
 | 404 | `PROJECT_UNKNOWN` `CHECKOUT_UNKNOWN` `REF_UNKNOWN` `REVIEW_UNKNOWN` `THREAD_UNKNOWN` `HUNK_UNKNOWN` `FILE_NOT_IN_DIFF` `SUBMISSION_UNKNOWN` `COMMIT_NOT_IN_RANGE` `RECIPIENT_UNKNOWN` |
 | 409 | `PROJECT_NOT_LOCAL` `CHECKOUT_GONE` `NO_COMMON_ANCESTOR` `UNBORN_HEAD` `IMMUTABLE_TARGET` `NO_VERDICTS` `REVIEW_CLOSED` `BINARY_FILE` `NO_RECIPIENT` `NOTHING_TO_SUBMIT` `SUBMISSION_NOT_PENDING` `THREAD_DROPPED` |
 | 410 | `SNAPSHOT_GONE` (a pinned sha was garbage-collected) |
-| 413 | `DIFF_TOO_LARGE` |
+| 413 | `DIFF_TOO_LARGE` `BODY_TOO_LARGE` |
+| 415 | `UNSUPPORTED_MEDIA_TYPE` |
 | 502 | `CONDUCTOR_UNAVAILABLE` |
 | 503 | `STORE_UNCONFIGURED` (the server still serves `/health` and the UI) |
 
@@ -28,6 +32,8 @@ REST under `/api` (JSON), an SSE stream, and the cc MCP endpoint. Behaviour behi
 - **FileState:** `path, oldPath, status (added|deleted|modified|renamed), binary, tooLarge, additions, deletions, hunks (count), verdicts:{pending,accepted,rejected}|null, threads:{open,resolved,outdated}, unread`.
 - **Hunk:** text `{id, kind:'text', header, oldStart, oldLines, newStart, newLines, lines:[{t:'ctx'|'add'|'del', old, new, text, noEol?}], verdict}`; file-level `{id, kind:'file', lines:[], verdict}`. `verdict` is `null` for uncommitted reviews and in the commit filter view.
 - **Thread:** `id, kind, severity, status (open|resolved|outdated), disposition, resolveProposed, anchor:{file, side, startLine, endLine, hunkId, round, linesHash, drifted}, openedBy, unread, messages:[{id, author, body, at, round, proposeResolve, citations:[{raw,path,startLine,endLine}]}]`.
+- **`anchor.round`:** the round whose snapshot the anchor's `lines` and `linesHash` come from: the round the thread was created in, advanced to the new round whenever a refresh re-anchors it. A message's own `round` never changes.
+- **`anchor.drifted`:** true only if the latest re-anchoring found the thread by surrounding context; finding the exact lines again clears it.
 - **Author:** `{kind:'human'}` or `{kind:'session', sessionId, role: author|reviewer|conductor}`.
 - **Session:** `sessionId, project, worktree, title, status, live, conductor, conducted, attached`.
 
@@ -47,7 +53,7 @@ REST under `/api` (JSON), an SSE stream, and the cc MCP endpoint. Behaviour behi
 | `GET /reviews/:id/diff` | `?file` optional | `{review, files:[FileState + {hunks:[Hunk], threads:[Thread]}]}`; threads are the non-outdated ones on that file | `FILE_NOT_IN_DIFF` `SNAPSHOT_GONE` `CHECKOUT_GONE` `DIFF_TOO_LARGE` |
 | `GET /reviews/:id/diff?commit=<sha>` | range reviews; sha or ≥7-char prefix | `{readOnly:true, commit:{sha,subject}, files}` (hunk verdicts `null`, no threads) | `COMMIT_NOT_IN_RANGE`, `INVALID_ARGUMENT` for other kinds |
 | `GET /reviews/:id/commits` | | `{commits}` of the current round (range: `baseSha..headSha`; commit: that one; uncommitted: none) | |
-| `GET /reviews/:id/file` | `?path&side=old|new&start&end` | `{path, side, total, lines:[{n,text}]}` | `LINE_OUT_OF_RANGE` `FILE_NOT_IN_DIFF` (path absent on that side) |
+| `GET /reviews/:id/file` | `?path&side=old|new&start&end` | `{path, side, total, lines:[{n,text}]}` | `LINE_OUT_OF_RANGE` `FILE_NOT_IN_DIFF` (path absent on that side) `BINARY_FILE` |
 | `PUT /reviews/:id/hunks/:hunkId/verdict` | `{verdict: pending|accepted|rejected}` (`pending` clears) | `{hunkId, verdict, review}` | `NO_VERDICTS` `HUNK_UNKNOWN` `REVIEW_CLOSED` `INVALID_ARGUMENT` |
 | `POST /reviews/:id/threads` | `{anchor:{file,side?,startLine,endLine?}|{hunkId}, kind, severity?, body}` | `{thread}` (human-authored) | `LINE_OUT_OF_RANGE` `FILE_NOT_IN_DIFF` `BINARY_FILE` `HUNK_UNKNOWN` `SEVERITY_REQUIRED` `INVALID_ARGUMENT` `REVIEW_CLOSED` |
 | `POST /reviews/:id/threads/:tid/messages` | `{body}` | `{thread}` | `THREAD_UNKNOWN` `THREAD_DROPPED` `REVIEW_CLOSED` |
@@ -76,6 +82,7 @@ REST under `/api` (JSON), an SSE stream, and the cc MCP endpoint. Behaviour behi
 - Envelope `{tool, arguments, caller:{sessionId, project}}`: missing `tool` → 400; unknown tool → `200 {error}`; a refusal → `200 {result:{ok:false, code, reason}}`; an exception → `200 {error}`.
 - Writes (`open_review`, `annotate`, `reply`, `refresh_review`) refuse `CALLER_UNKNOWN` without `caller.sessionId`.
 - No tool sets a verdict.
+- **Trust:** `caller` comes from cc over unauthenticated loopback, so any local process can forge an agent identity, including a reviewer that resolves its own question and clears `mergeBlockers`. This is no wider than the REST surface, which already acts as the human. There is no token; one would need a cc change.
 
 | Tool | Required | Result |
 |---|---|---|

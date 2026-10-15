@@ -30,6 +30,7 @@ A **review** is a persisted discussion about one checkout (a project's main chec
 - **Anchors:** a line range on the old or new side, or a whole hunk. Lines outside any hunk (context, expanded context) are allowed.
 - **Resolve.** The human resolves or reopens any thread; a finding is resolved only with a disposition (`fixed` or `dismissed`). An agent's `reply` with `resolve: true` closes a non-finding thread it opened itself; otherwise the message is marked as proposing resolution. Replying never changes status.
 - **Outdated.** After a refresh, a thread whose lines cannot be found becomes `outdated` (still repliable, no longer re-anchored).
+- **Limits.** A message body is capped (`BODY_TOO_LARGE`). Prompts carry file paths with control characters removed.
 - **Citations.** `path#L10-L20` in a message body (relative to the checkout root) is parsed; agents see the cited lines inlined at the message's round.
 - **Unread.** A thread's unread count is the agent messages the human has not read; a review opened by an agent starts unseen. The human replying or marking read clears it.
 - **Roles** are derived per review and frozen on each message: a caller from project `.conduct` is `conductor`; the recipient of a range/commit review is `author`; every other agent is `reviewer`. On an uncommitted review the human is the author, so every agent is a reviewer.

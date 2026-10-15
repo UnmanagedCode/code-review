@@ -32,6 +32,7 @@ Services return a plain object or a refusal `{ok:false, code, reason}`. Low-leve
 ## Store
 
 - Location: `<root>/reviews/<id>.json`, id `r-<10 hex>`; ids are validated before touching the filesystem. The root is outside every project tree, so it survives plugin updates.
+- The `changes` emitter has no listener cap (one listener per open SSE client). Message bodies are capped at `MAX_BODY_CHARS`.
 - Writes are atomic (tmp file in the same dir, then `rename`); every write bumps `rev` and emits `change`. `mutate(id, fn)` runs under `withLock(id)` and writes only if `fn` changed the review; creation runs under `withLock('create')`.
 - `schema: 1` is written for a future migration to self-check; there is no migration yet.
 - Review fields: `id, project, worktree, branch, kind, target, baseLabel, title, status, createdAt, createdBy, recipient, seenByHuman, rev, seq, humanSeq, nextThread, nextSubmission, rounds, verdicts, threads, droppedThreads, submissions`.
@@ -57,8 +58,8 @@ Services return a plain object or a refusal `{ok:false, code, reason}`. Low-leve
 - Hunk id: `sha256(path \0 changedLines \0 occurrence)`, first 12 hex; `changedLines` is the `+`/`-` lines with prefixes, `occurrence` the index among identical blocks in the file. Line numbers and context are excluded.
 - File-level hunk id: hash of path, status, oldPath, blob ids and modes.
 - `linesHash`: sha256 (first 16 hex) of the lines with trailing `[ \t\r]` stripped, indentation kept.
-- Anchor: selected `lines`, `ctxBefore`/`ctxAfter` (hash and count of up to `CONTEXT_LINES` neighbours), `hunkId` from `hunkFor` (the hunk containing `endLine`, else the last one overlapped, else null), `drifted`.
-- `locate(anchor, lines, mode)`: windows whose `linesHash` matches, ranked by context matches, then distance to the old start, then earliest. Mode `reanchor` additionally accepts a unique `ctxBefore` followed by a unique `ctxAfter` with a gap of 1 to `2·len + 10` lines (`drifted`); mode `volatile` never does.
+- Anchor: `round` (the snapshot its `lines`/`linesHash` were read from; `followThreads` sets it to the new round on every re-anchor), selected `lines`, `ctxBefore`/`ctxAfter` (hash and count of up to `CONTEXT_LINES` neighbours), `hunkId` from `hunkFor` (the hunk containing `endLine`, else the last one overlapped, else null), `drifted`.
+- `locate(anchor, lines, mode)`: windows whose `linesHash` matches, ranked by context matches, then distance to the old start, then earliest. An exact match always reports `drifted: false`. Mode `reanchor` additionally accepts a unique `ctxBefore` followed by a unique `ctxAfter` with a gap of 1 to `2·len + 10` lines (`drifted`); mode `volatile` never does.
 
 ## Refresh and the uncommitted sweep
 
@@ -69,6 +70,7 @@ Services return a plain object or a refusal `{ok:false, code, reason}`. Low-leve
 
 `npm test` = typecheck, `node --test tests/*.test.js`, vitest. Backend tests use no network, sleeps or real cc:
 
+- Mutating routes require a JSON content type (`routes.js` checks the header itself: `req.is` answers null for a body-less request).
 - `tests/_git.js`: temp repos (`makeRepo`, `bindRepo` for worktrees) with pinned identity, dates and no signing.
 - `tests/_fakeCc.js`: HTTP fake of the three cc routes on port 0, set via `CONDUCTOR_URL`; modes `ok|error|hang` (hang tests set `CODE_REVIEW_CC_TIMEOUT_MS` low).
 - `tests/_store.js`: per-test `CODE_REVIEW_STORE` temp dir.

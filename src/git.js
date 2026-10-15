@@ -139,3 +139,9 @@ export async function commitLog(repo, { range, limit = 50 } = {}) {
     return { sha, short, author, date, subject, merge: parents.split(' ').filter(Boolean).length > 1 };
   });
 }
+
+/** Current branch name, or 'HEAD' when detached. Works on an unborn branch. */
+export async function currentBranch(repo) {
+  const r = await run(repo, ['symbolic-ref', '-q', '--short', 'HEAD'], { ok: [0, 1] });
+  return r.code === 0 ? r.stdout.trim() : 'HEAD';
+}

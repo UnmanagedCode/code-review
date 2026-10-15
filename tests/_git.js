@@ -13,14 +13,11 @@ export function git(dir, ...args) {
   }).trim();
 }
 
-/** A fresh temp repo on branch `main`. `cleanup()` removes it. */
-export function makeRepo() {
-  const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'cr-repo-')));
-  git(dir, 'init', '-q', '-b', 'main');
+/** Helper object around an existing checkout directory (a repo or a linked worktree). */
+export function bindRepo(dir, cleanup = () => fs.rmSync(dir, { recursive: true, force: true })) {
   const repo = {
     dir,
     git: (...a) => git(dir, ...a),
-    gitIn: git,
     write(rel, content) {
       const p = path.join(dir, rel);
       fs.mkdirSync(path.dirname(p), { recursive: true });
@@ -42,9 +39,16 @@ export function makeRepo() {
       git(dir, 'worktree', 'add', '-q', '-b', branch, wtDir, from);
       return wtDir;
     },
-    cleanup: () => fs.rmSync(dir, { recursive: true, force: true }),
+    cleanup,
   };
   return repo;
+}
+
+/** A fresh temp repo on branch `main`. `cleanup()` removes it. */
+export function makeRepo() {
+  const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'cr-repo-')));
+  git(dir, 'init', '-q', '-b', 'main');
+  return bindRepo(dir);
 }
 
 export const lines = (n, prefix = 'l') => Array.from({ length: n }, (_, i) => `${prefix}${i + 1}`).join('\n') + '\n';

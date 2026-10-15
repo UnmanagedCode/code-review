@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import * as cc from './cc.js';
+import * as git from './git.js';
 import { Refusal } from './refusals.js';
 
 const CONDUCTOR_PROJECT = '.conduct';
@@ -53,4 +54,25 @@ export async function sessions({ project, worktree }) {
 export async function sessionCheckout(sessionId) {
   const i = (await cc.instances()).find((x) => x.sessionId === sessionId);
   return i ? { project: i.project, worktree: i.worktree?.worktreeName ?? null } : null;
+}
+
+/** Picker data for one checkout: its git state, base shortcuts and the project's worktrees. */
+export async function checkoutInfo({ project, worktree }) {
+  const co = await resolveCheckout({ project, worktree });
+  const live = co.exists;
+  return {
+    checkout: {
+      project, worktree: co.worktree, path: co.path, branch: co.branch ?? (live ? await git.currentBranch(co.path) : null),
+      headSha: live ? await git.headOf(co.path) : null, dirty: live ? await git.isDirty(co.path) : false, exists: live,
+    },
+    forkPoints: await forkPoints(co),
+    worktrees: (await cc.worktrees(project)).map((w) => ({ worktreeName: w.worktreeName, branch: w.branch })),
+  };
+}
+
+/** The newest commits of a checkout, for choosing an arbitrary base. */
+export async function checkoutCommits({ project, worktree, limit = 50 }) {
+  const co = await resolveCheckout({ project, worktree });
+  if (!co.exists) throw new Refusal('CHECKOUT_GONE', `${co.path} does not exist`);
+  return git.commitLog(co.path, { limit: Math.min(Math.max(Number(limit) || 50, 1), 500) });
 }

@@ -48,7 +48,13 @@ export async function withPrivateIndex(repo, fn) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cr-index-'));
   const copy = path.join(dir, 'index');
   try {
-    if (fs.existsSync(real)) fs.copyFileSync(real, copy);
+    if (fs.existsSync(real)) {
+      fs.copyFileSync(real, copy);
+      // git treats an entry as racily clean (re-hashes it) only if it is not older than the index file, so the copy
+      // must not look newer than the original; one ms back errs towards re-hashing.
+      const stat = fs.statSync(real);
+      fs.utimesSync(copy, stat.atime, new Date(Math.floor(stat.mtimeMs) - 1));
+    }
     return await fn({ env: { GIT_INDEX_FILE: copy } });
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });

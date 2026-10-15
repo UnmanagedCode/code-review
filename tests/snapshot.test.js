@@ -5,7 +5,7 @@ import path from 'node:path';
 import { makeRepo, git, lines } from './_git.js';
 import { resolveTarget, buildSnapshot } from '../src/snapshot.js';
 import { attempt } from '../src/refusals.js';
-import { isDirty, commitLog } from '../src/git.js';
+import { isDirty, commitLog, withPrivateIndex } from '../src/git.js';
 
 const repos = [];
 afterEach(() => { while (repos.length) repos.pop().cleanup(); });
@@ -123,6 +123,16 @@ test('an uncommitted snapshot leaves a linked worktree\'s index (under the commo
   } finally {
     fs.rmSync(wt, { recursive: true, force: true });
   }
+});
+
+test('the private index copy is never newer than the original, so git\'s racy-timestamp re-hashing still applies', async () => {
+  const r = repo();
+  r.commit({ 'a.txt': 'a\n' });
+  const real = path.join(r.dir, '.git', 'index');
+  const old = new Date(Date.now() - 60000);
+  fs.utimesSync(real, old, old);
+  const copyMtime = await withPrivateIndex(r.dir, ({ env }) => fs.statSync(env.GIT_INDEX_FILE).mtimeMs);
+  assert.ok(copyMtime <= fs.statSync(real).mtimeMs);
 });
 
 test('an uncommitted snapshot of a repo with no index file leaves none behind and sees staged-nothing', async () => {

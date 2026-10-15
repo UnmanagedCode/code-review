@@ -20,7 +20,7 @@ export CC_PROJECTS_ROOT=/path/to/projects-root
 
 ## Scope
 
-- Judges **`server.js` only**. The UI tests run under vitest (`npm run test:ui`), a different runner, and are not covered; a harness takes one runner.
+- Judges **the backend: `server.js` and `src/`**. The UI tests run under vitest (`npm run test:ui`), a different runner, and are not covered; a harness takes one runner.
 - Needs a clean worktree; commit before running.
 
 ## Commands
@@ -36,4 +36,4 @@ node "$CC_PROJECTS_ROOT/.plugins/code-mutant/mutate.mjs" candidates
 
 ## Verified
 
-`baseline` (no `--no-canary`) on the initial skeleton printed: baseline `PASSED 6/0/0 (p/f/s)`, canary `KILLED [counted grade, baseline scope] via tests/server.test.js`, exit 0.
+`baseline` (no `--no-canary`) printed: baseline `PASSED 6/0/0 (p/f/s)`, canary `KILLED [counted grade, baseline scope] via tests/server.test.js`, exit 0.

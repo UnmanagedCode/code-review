@@ -1,0 +1,102 @@
+# Protocol
+
+REST under `/api` (JSON), an SSE stream, and the cc MCP endpoint. Behaviour behind each is in [features.md](features.md). UI code calls these as relative `api/…` URLs.
+
+## Conventions
+
+- Success: `{ok: true, …}`. Refusal: `{ok: false, code, reason}` with the HTTP status from the table below. An unexpected exception is `500 {ok:false, code:'INTERNAL', reason}`. Malformed JSON is `400 INVALID_ARGUMENT`. An unrouted `/api/*` path is `404 {error}`.
+- Source of truth for codes and statuses: `HTTP_STATUS` in `src/refusals.js`.
+- Env: `CODE_REVIEW_STORE` (store dir) else `$PROJECTS_ROOT/.code-review`; `CONDUCTOR_URL` (cc base URL, injected by cc); `CODE_REVIEW_CC_TIMEOUT_MS` (cc call timeout, default 3000); `PORT` (default 7400).
+
+## Refusal codes
+
+| Status | Codes |
+|---|---|
+| 400 | `INVALID_ARGUMENT` `BAD_REF` `BASE_REQUIRED` `LINE_OUT_OF_RANGE` `SEVERITY_REQUIRED` `CALLER_UNKNOWN` |
+| 404 | `PROJECT_UNKNOWN` `CHECKOUT_UNKNOWN` `REF_UNKNOWN` `REVIEW_UNKNOWN` `THREAD_UNKNOWN` `HUNK_UNKNOWN` `FILE_NOT_IN_DIFF` `SUBMISSION_UNKNOWN` `COMMIT_NOT_IN_RANGE` `RECIPIENT_UNKNOWN` |
+| 409 | `PROJECT_NOT_LOCAL` `CHECKOUT_GONE` `NO_COMMON_ANCESTOR` `UNBORN_HEAD` `IMMUTABLE_TARGET` `NO_VERDICTS` `REVIEW_CLOSED` `BINARY_FILE` `NO_RECIPIENT` `NOTHING_TO_SUBMIT` `SUBMISSION_NOT_PENDING` `THREAD_DROPPED` |
+| 410 | `SNAPSHOT_GONE` (a pinned sha was garbage-collected) |
+| 413 | `DIFF_TOO_LARGE` |
+| 502 | `CONDUCTOR_UNAVAILABLE` |
+| 503 | `STORE_UNCONFIGURED` (the server still serves `/health` and the UI) |
+
+## Shapes
+
+- **ReviewSummary:** `id, project, worktree, branch, kind, target, label, title, status, recipient, recipientRole, round, headSha, baseSha, headMoved, dirty, checkoutGone, counts:{files, hunks, threads:{open,resolved,outdated}}, mergeBlockers, unread, seenByHuman, rev, createdAt, createdBy, lastSubmission:{id,status,code,round}|null`.
+  - `counts.hunks` is `{pending,accepted,rejected}`, or `{total}` for uncommitted reviews.
+  - `snapshotError` (`CHECKOUT_GONE|SNAPSHOT_GONE|DIFF_TOO_LARGE`) is present when the diff is unreadable; `counts.files` and `counts.hunks` are then `null`.
+- **FileState:** `path, oldPath, status (added|deleted|modified|renamed), binary, tooLarge, additions, deletions, hunks (count), verdicts:{pending,accepted,rejected}|null, threads:{open,resolved,outdated}, unread`.
+- **Hunk:** text `{id, kind:'text', header, oldStart, oldLines, newStart, newLines, lines:[{t:'ctx'|'add'|'del', old, new, text, noEol?}], verdict}`; file-level `{id, kind:'file', lines:[], verdict}`. `verdict` is `null` for uncommitted reviews and in the commit filter view.
+- **Thread:** `id, kind, severity, status (open|resolved|outdated), disposition, resolveProposed, anchor:{file, side, startLine, endLine, hunkId, round, linesHash, drifted}, openedBy, unread, messages:[{id, author, body, at, round, proposeResolve, citations:[{raw,path,startLine,endLine}]}]`.
+- **Author:** `{kind:'human'}` or `{kind:'session', sessionId, role: author|reviewer|conductor}`.
+- **Session:** `sessionId, project, worktree, title, status, live, conductor, conducted, attached`.
+
+## Endpoints
+
+| Method + path | Request | Success body | Refusals |
+|---|---|---|---|
+| `GET /projects` | | `{projects:[{name}]}` (local only) | `CONDUCTOR_UNAVAILABLE` |
+| `GET /checkout` | `?project&worktree` (omit `worktree` for main) | `{checkout:{project, worktree, path, branch, headSha, dirty, exists}, forkPoints:[{ref,label,forkSha}], worktrees:[{worktreeName,branch}]}` | `INVALID_ARGUMENT`, `PROJECT_*`, `CHECKOUT_UNKNOWN` |
+| `GET /checkout/commits` | `?project&worktree&limit` (default 50, max 500) | `{commits:[{sha, short, author, date, subject, merge}]}` | as above, `CHECKOUT_GONE` |
+| `GET /sessions` | `?project&worktree` | `{sessions:[Session]}` (all cc sessions; `attached` is relative to the checkout) | `INVALID_ARGUMENT`, `CONDUCTOR_UNAVAILABLE` |
+| `GET /reviews` | `?project&worktree&status`; no `worktree` = every checkout, empty `worktree=` = main | `{reviews:[ReviewSummary]}` newest first | |
+| `POST /reviews` | `{project, worktree|null, kind?, base?, sha?, recipient?, title?}` | `{review, reused}` | `INVALID_ARGUMENT` `BAD_REF` `REF_UNKNOWN` `BASE_REQUIRED` `NO_COMMON_ANCESTOR` `UNBORN_HEAD` `PROJECT_*` `CHECKOUT_*` `RECIPIENT_UNKNOWN` |
+| `GET /reviews/:id` | | `{review, files:[FileState], rounds, submissions, outdatedThreads:[Thread]}` | `REVIEW_UNKNOWN` |
+| `PATCH /reviews/:id` | `{recipient? (null clears), title?, status?: open|closed}` | `{review}` | `RECIPIENT_UNKNOWN` |
+| `DELETE /reviews/:id` | | `{ok}` | `REVIEW_UNKNOWN` |
+| `GET /reviews/:id/diff` | `?file` optional | `{review, files:[FileState + {hunks:[Hunk], threads:[Thread]}]}`; threads are the non-outdated ones on that file | `FILE_NOT_IN_DIFF` `SNAPSHOT_GONE` `CHECKOUT_GONE` `DIFF_TOO_LARGE` |
+| `GET /reviews/:id/diff?commit=<sha>` | range reviews; sha or ≥7-char prefix | `{readOnly:true, commit:{sha,subject}, files}` (hunk verdicts `null`, no threads) | `COMMIT_NOT_IN_RANGE`, `INVALID_ARGUMENT` for other kinds |
+| `GET /reviews/:id/commits` | | `{commits}` of the current round (range: `baseSha..headSha`; commit: that one; uncommitted: none) | |
+| `GET /reviews/:id/file` | `?path&side=old|new&start&end` | `{path, side, total, lines:[{n,text}]}` | `LINE_OUT_OF_RANGE` `FILE_NOT_IN_DIFF` (path absent on that side) |
+| `PUT /reviews/:id/hunks/:hunkId/verdict` | `{verdict: pending|accepted|rejected}` (`pending` clears) | `{hunkId, verdict, review}` | `NO_VERDICTS` `HUNK_UNKNOWN` `REVIEW_CLOSED` `INVALID_ARGUMENT` |
+| `POST /reviews/:id/threads` | `{anchor:{file,side?,startLine,endLine?}|{hunkId}, kind, severity?, body}` | `{thread}` (human-authored) | `LINE_OUT_OF_RANGE` `FILE_NOT_IN_DIFF` `BINARY_FILE` `HUNK_UNKNOWN` `SEVERITY_REQUIRED` `INVALID_ARGUMENT` `REVIEW_CLOSED` |
+| `POST /reviews/:id/threads/:tid/messages` | `{body}` | `{thread}` | `THREAD_UNKNOWN` `THREAD_DROPPED` `REVIEW_CLOSED` |
+| `PATCH /reviews/:id/threads/:tid` | `{status: resolved|open, disposition?: fixed|dismissed}` | `{thread}` | `INVALID_ARGUMENT` (finding without disposition, outdated thread) `THREAD_*` |
+| `POST /reviews/:id/refresh` | | `{unchanged, round, hunks:{kept,reset,new}, threads:{moved,drifted,outdated,dropped}}`; `unchanged:true` carries only `round` | `IMMUTABLE_TARGET` `CHECKOUT_GONE` `REVIEW_CLOSED` `REF_UNKNOWN` `NO_COMMON_ANCESTOR` |
+| `POST /reviews/:id/submissions` | | `{submission:{id, round, recipient, text, status}}` | `NO_RECIPIENT` `NOTHING_TO_SUBMIT` `REVIEW_CLOSED` |
+| `POST /reviews/:id/submissions/:sid/result` | `{ok, code?}` | `{submission}` | `SUBMISSION_UNKNOWN` `SUBMISSION_NOT_PENDING` `INVALID_ARGUMENT` |
+| `POST /reviews/:id/read` | `{threadId?}` (none = whole review) | `{review}` | `THREAD_UNKNOWN` |
+| `GET /events` | | SSE | |
+| `POST /mcp` | cc envelope | see [MCP](#mcp) | |
+
+### SSE
+
+`event: review` with data `{id, rev}` after every stored write, or `{id, deleted:true}` after a delete. A `: heartbeat` comment every 25 s. Uncommitted working-tree edits emit nothing: the UI re-fetches an uncommitted diff on focus or an interval.
+
+### Submission delivery
+
+1. `POST …/submissions` stores the prompt `pending` and returns its text.
+2. The UI sends `text` to `recipient` through the cc bridge, then posts `{ok:true}` or `{ok:false, code}`.
+3. `code` is the bridge's, stored verbatim: `INVALID_ARGUMENT`, `SESSION_UNKNOWN`, `SESSION_NOT_LIVE`, `SESSION_NOT_READY`, `SEND_FAILED`, `LOOKUP_FAILED`, `HOST_ERROR`. Any other value is refused `INVALID_ARGUMENT`.
+4. Only `pending` or `failed` submissions accept a result (`SUBMISSION_NOT_PENDING` otherwise), so a failed one can be re-sent and re-reported. Without a bridge the UI shows the text and posts `{ok:true}` for "mark as sent".
+
+## MCP
+
+- Endpoint `/api/mcp`; tools are namespaced `code-review__<tool>` by cc. Schemas are flat (`type`, `enum`, `minLength`, `minimum`, `default`, `description`); the definitions are in `conductor.plugin.json`.
+- Envelope `{tool, arguments, caller:{sessionId, project}}`: missing `tool` → 400; unknown tool → `200 {error}`; a refusal → `200 {result:{ok:false, code, reason}}`; an exception → `200 {error}`.
+- Writes (`open_review`, `annotate`, `reply`, `refresh_review`) refuse `CALLER_UNKNOWN` without `caller.sessionId`.
+- No tool sets a verdict.
+
+| Tool | Required | Result |
+|---|---|---|
+| `open_review` | | `{result:{ok, review:ReviewSummary, reused}}`. Checkout: `project`+`worktree`; without `project`, `worktree` must be absent and the checkout is `sessionCheckout(recipient ?? caller)`. The creator is the caller; `seenByHuman:false`. |
+| `get_review` | `review` | `{text: per-file table, meta: ReviewSummary}` |
+| `list_threads` | `review` | `{text, meta:{review, count, counts}}`; `status` default `open`; cited code inlined as `path#L… @<short sha | working tree>`, ≤ 80 lines then `… (truncated)`, unresolvable ones `(unresolved: …)` |
+| `get_hunk` | `review` + `hunk` or `file` | `{text: hunk with old/new line gutters, meta:{file, hunks:[{id, verdict, threadIds}]}}`; `file`+`line` picks the hunk covering that new-side line |
+| `annotate` | `review kind body` | `{result:{ok, thread}}`; needs `file`+`startLine` or `hunk`; `severity` required for a finding |
+| `reply` | `review thread body` | `{result:{ok, thread}}` |
+| `refresh_review` | `review` | `{result:{ok, round, unchanged, hunks, threads}}` |
+
+## cc routes consumed
+
+All through `CONDUCTOR_URL`, 3 s timeout; any failure is `CONDUCTOR_UNAVAILABLE`.
+
+| Route | Fields used |
+|---|---|
+| `GET /api/projects` | `name`, `path`, `system` (absent or `local` = local) |
+| `GET /api/projects/:name/worktrees` | `worktreeName`, `worktreePath`, `branch`, `baseBranch`, `baseSha`, `baseWorktree?` (absent = forked from the main checkout) |
+| `GET /api/instances` | `sessionId`, `project`, `status`, `title`, `conducted`, `worktree.worktreeName` |
+
+- A session is live unless `status` is `exited` or `crashed`. The conductor is the session whose `project` is `.conduct`.
+- The `sessionIds` lists on the other cc routes are not liveness-filtered and are not used.
+- cc stores no session role, so author/reviewer/conductor is derived per review.

@@ -224,3 +224,28 @@ export const fileLines = (id, { path, side = 'new', start, end } = {}) => attemp
   if (from < 1 || to > all.length || from > to) throw new Refusal('LINE_OUT_OF_RANGE', `${path} has ${all.length} lines`);
   return { ok: true, path, side, total: all.length, lines: all.slice(from - 1, to).map((text, i) => ({ n: from + i, text })) };
 }));
+
+/** Hunks by id, or by file (+ a new-side line), with their verdict and the threads anchored to them. */
+export const getHunks = (id, { hunk, file, line } = {}) => attempt(() => viewReview(id, async (review, env) => {
+  if (!hunk && !file) throw invalid('give hunk, or file (optionally with line)');
+  const files = (await env.snapshot()).files;
+  let picked;
+  if (hunk) {
+    const f = files.find((x) => x.hunks.some((h) => h.id === hunk));
+    if (!f) throw new Refusal('HUNK_UNKNOWN', `no such hunk: ${hunk}`);
+    picked = { f, hunks: f.hunks.filter((h) => h.id === hunk) };
+  } else {
+    const f = files.find((x) => x.path === file);
+    if (!f) throw new Refusal('FILE_NOT_IN_DIFF', `${file} is not in the diff`);
+    const hit = line === undefined ? f.hunks : f.hunks.filter((h) => h.kind === 'text' && h.newLines > 0 && line >= h.newStart && line < h.newStart + h.newLines);
+    if (!hit.length) throw new Refusal('HUNK_UNKNOWN', `no hunk of ${file} covers new-side line ${line}`);
+    picked = { f, hunks: hit };
+  }
+  return {
+    ok: true, file: picked.f.path,
+    hunks: picked.hunks.map((h) => ({
+      hunk: h, verdict: hunkView(review, h).verdict,
+      threadIds: review.threads.filter((t) => t.status !== 'outdated' && t.anchor.hunkId === h.id).map((t) => t.id),
+    })),
+  };
+}));

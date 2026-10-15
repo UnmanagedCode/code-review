@@ -11,5 +11,263 @@
     "path": "/",
     "navLabel": "Code Review"
   },
-  "claudePlugin": "."
+  "claudePlugin": ".",
+  "conventions": [
+    {
+      "slug": "review-in-code-review",
+      "name": "Review in code-review (opt-in)",
+      "description": "Only when the user asks for a task to be reviewed in code-review: open a review on the worker's checkout, have reviewer lenses post findings into it, hold the merge on its blockers.",
+      "scope": "conductor",
+      "file": "conventions/conductor-review.md"
+    }
+  ],
+  "mcp": {
+    "endpoint": "/api/mcp",
+    "tools": [
+      {
+        "name": "open_review",
+        "description": "Open, or reuse, a review of one checkout. range = base...HEAD (base defaults to the checkout's fork point), commit = one commit (sha defaults to HEAD), uncommitted = working tree vs HEAD. Range and commit read committed history only. Checkout: `project`+`worktree` (omit `worktree` for the main checkout), else `recipient`'s, else yours. Recipient defaults to you.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "range",
+                "commit",
+                "uncommitted"
+              ],
+              "default": "range",
+              "description": "What to review."
+            },
+            "project": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Project name."
+            },
+            "worktree": {
+              "type": "string",
+              "description": "Worktree name; omit for the main checkout."
+            },
+            "base": {
+              "type": "string",
+              "description": "Range base: a branch or sha."
+            },
+            "sha": {
+              "type": "string",
+              "description": "Commit to review."
+            },
+            "recipient": {
+              "type": "string",
+              "description": "Session id that receives the human's submitted rounds."
+            },
+            "title": {
+              "type": "string",
+              "description": "Review title."
+            }
+          }
+        }
+      },
+      {
+        "name": "get_review",
+        "description": "Rollup: target, round, per-file hunk verdicts and thread counts, mergeBlockers.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "review": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Review id (r-\u2026)."
+            }
+          },
+          "required": [
+            "review"
+          ]
+        }
+      },
+      {
+        "name": "list_threads",
+        "description": "Threads with their anchored lines and messages; cited code is inlined.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "review": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Review id (r-\u2026)."
+            },
+            "status": {
+              "type": "string",
+              "enum": [
+                "open",
+                "resolved",
+                "outdated",
+                "all"
+              ],
+              "default": "open",
+              "description": "Which threads."
+            },
+            "file": {
+              "type": "string",
+              "description": "Only threads on this file."
+            }
+          },
+          "required": [
+            "review"
+          ]
+        }
+      },
+      {
+        "name": "get_hunk",
+        "description": "Diff text with line numbers and verdict: one hunk by `hunk` id or by `file`+new-side `line`, or every hunk of `file`.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "review": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Review id (r-\u2026)."
+            },
+            "hunk": {
+              "type": "string",
+              "description": "Hunk id (h:\u2026 without the prefix)."
+            },
+            "file": {
+              "type": "string",
+              "description": "File path."
+            },
+            "line": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "New-side line inside the hunk."
+            }
+          },
+          "required": [
+            "review"
+          ]
+        }
+      },
+      {
+        "name": "annotate",
+        "description": "Start a thread on lines (`file`+`startLine`[+`endLine`]) or on a whole `hunk`. A finding needs `severity`. Cite code as path#L10-L20.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "review": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Review id (r-\u2026)."
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "comment",
+                "question",
+                "suggestion",
+                "finding"
+              ],
+              "description": "Thread kind."
+            },
+            "body": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Message text."
+            },
+            "severity": {
+              "type": "string",
+              "enum": [
+                "blocker",
+                "major",
+                "minor",
+                "nit"
+              ],
+              "description": "Required for a finding."
+            },
+            "file": {
+              "type": "string",
+              "description": "File path, relative to the checkout root."
+            },
+            "side": {
+              "type": "string",
+              "enum": [
+                "old",
+                "new"
+              ],
+              "default": "new",
+              "description": "Which side of the diff the lines are on."
+            },
+            "startLine": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "First line."
+            },
+            "endLine": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "Last line; defaults to startLine."
+            },
+            "hunk": {
+              "type": "string",
+              "description": "Hunk id, instead of file and lines."
+            }
+          },
+          "required": [
+            "review",
+            "kind",
+            "body"
+          ]
+        }
+      },
+      {
+        "name": "reply",
+        "description": "Reply on a thread. resolve:true closes a thread you opened; otherwise (and always for a finding) it proposes resolution to the human.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "review": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Review id (r-\u2026)."
+            },
+            "thread": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Thread id (t\u2026)."
+            },
+            "body": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Message text."
+            },
+            "resolve": {
+              "type": "boolean",
+              "description": "Close or propose closing the thread."
+            }
+          },
+          "required": [
+            "review",
+            "thread",
+            "body"
+          ]
+        }
+      },
+      {
+        "name": "refresh_review",
+        "description": "Re-snapshot after committing fixes. Unchanged hunks keep their verdicts and changed ones reset to pending. Threads follow their lines or go outdated. Not for commit reviews.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "review": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Review id (r-\u2026)."
+            }
+          },
+          "required": [
+            "review"
+          ]
+        }
+      }
+    ]
+  }
 }

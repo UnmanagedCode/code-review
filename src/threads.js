@@ -1,7 +1,8 @@
 import { makeAnchor } from './anchor.js';
 import { attempt, Refusal } from './refusals.js';
-import { authorFor, assertOpen, currentRound, inReview } from './context.js';
-import { threadView } from './rollup.js';
+import { authorFor, assertOpen, currentRound, inReview, viewReview } from './context.js';
+import { threadView, tally } from './rollup.js';
+import { citationsForMessage } from './citations.js';
 import { bump, summaryById } from './reviews.js';
 
 const KINDS = ['comment', 'question', 'suggestion', 'finding'];
@@ -138,3 +139,21 @@ export const markRead = (id, { threadId } = {}) => attempt(async () => {
   });
   return res.ok ? summaryById(id) : res;
 });
+
+/** Threads (default: open ones) with their anchored text and every message's cited code resolved. */
+export const listThreads = (id, { status = 'open', file } = {}) => attempt(() => viewReview(id, async (review, env) => {
+  if (!['open', 'resolved', 'outdated', 'all'].includes(status)) throw invalid('status must be open, resolved, outdated or all');
+  const picked = review.threads.filter((t) => (status === 'all' || t.status === status) && (!file || t.anchor.file === file));
+  const out = [];
+  for (const t of picked) {
+    const view = threadView(t);
+    out.push({
+      ...view, anchorLines: t.anchor.lines,
+      messages: await Promise.all(t.messages.map(async (m, i) => {
+        const round = review.rounds.find((r) => r.n === m.round);
+        return { ...view.messages[i], ref: review.kind === 'uncommitted' ? 'working tree' : round.headSha.slice(0, 7), excerpts: await citationsForMessage(env, m) };
+      })),
+    });
+  }
+  return { ok: true, review: id, threads: out, counts: tally(review.threads) };
+}));

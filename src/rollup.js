@@ -6,7 +6,7 @@ export const verdictOf = (review, hunkId) => review.verdicts[hunkId]?.verdict ??
 /** Non-human messages the human has not read yet. */
 export const unreadOf = (t) => t.messages.filter((m) => m.author.kind !== 'human' && m.seq > t.humanReadSeq).length;
 
-const tally = (threads) => ({
+export const tally = (threads) => ({
   open: threads.filter((t) => t.status === 'open').length,
   resolved: threads.filter((t) => t.status === 'resolved').length,
   outdated: threads.filter((t) => t.status === 'outdated').length,

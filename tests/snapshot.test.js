@@ -2,7 +2,7 @@ import { test, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { makeRepo, lines } from './_git.js';
+import { makeRepo, git, lines } from './_git.js';
 import { resolveTarget, buildSnapshot } from '../src/snapshot.js';
 import { attempt } from '../src/refusals.js';
 import { isDirty, commitLog } from '../src/git.js';
@@ -96,7 +96,7 @@ test('uncommitted works on an unborn HEAD', async () => {
 
 // Stat-dirty the file so that a plain `git diff HEAD` would rewrite the index.
 async function assertIndexUntouched(r, checkout) {
-  const real = path.resolve(checkout, r.gitIn(checkout, 'rev-parse', '--git-path', 'index'));
+  const real = path.resolve(checkout, git(checkout, 'rev-parse', '--git-path', 'index'));
   const future = new Date(Date.now() + 5000);
   fs.utimesSync(path.join(checkout, 'a.txt'), future, future);
   const before = fs.readFileSync(real);

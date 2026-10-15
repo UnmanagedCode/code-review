@@ -55,6 +55,7 @@ async function buildAnchor(review, snap, spec) {
 
 function message(review, actor, body, extra = {}) {
   const seq = bump(review);
+  if (actor.kind === 'human') review.humanSeq = seq;
   return {
     id: `m${seq}`, seq, author: authorFor(review, actor), body, at: now(),
     round: currentRound(review).n, proposeResolve: false, ...extra,
@@ -110,6 +111,7 @@ export const setThreadStatus = (id, tid, { status, disposition } = {}) => attemp
     throw invalid(`resolving a finding needs a disposition: ${DISPOSITIONS.join(', ')}`);
   }
   const seq = bump(review);
+  review.humanSeq = seq;
   thread.status = status;
   thread.statusSeq = seq;
   thread.resolveProposed = false;

@@ -77,7 +77,7 @@ export const openReview = (args, actor) => attempt(() => withLock('create', asyn
   const review = {
     schema: 1, id: store.newId(), project: args.project, worktree, branch, kind, target,
     baseLabel: kind === 'range' ? target.base : null, title: '', status: 'open', createdAt: now(), createdBy: null,
-    recipient, seenByHuman: actor.kind === 'human', rev: 0, seq: 0, nextThread: 1, nextSubmission: 1,
+    recipient, seenByHuman: actor.kind === 'human', rev: 0, seq: 0, humanSeq: 0, nextThread: 1, nextSubmission: 1,
     rounds: [{ n: 1, ...shas, fingerprint: snap.fingerprint, createdAt: now(), submittedAt: null }],
     verdicts: {}, threads: [], droppedThreads: [], submissions: [],
   };
@@ -132,6 +132,7 @@ export const setVerdict = (id, hunkId, verdict) => attempt(async () => {
     const known = (await env.snapshot()).files.some((f) => f.hunks.some((h) => h.id === hunkId));
     if (!known) throw new Refusal('HUNK_UNKNOWN', `no such hunk in round ${currentRound(review).n}: ${hunkId}`);
     const seq = bump(review);
+    review.humanSeq = seq;
     if (verdict === 'pending') delete review.verdicts[hunkId];
     else review.verdicts[hunkId] = { verdict, seq, at: now() };
     return { ok: true };

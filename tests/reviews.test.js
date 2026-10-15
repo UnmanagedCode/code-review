@@ -205,3 +205,74 @@ test('file lines: a window of one side; out-of-range and absent files are refuse
   assert.equal(codeOf(await reviews.fileLines(review.id, { path: 'a.js', side: 'new', start: 5, end: 99 })), 'LINE_OUT_OF_RANGE');
   assert.equal(codeOf(await reviews.fileLines(review.id, { path: 'zzz.js', side: 'new' })), 'FILE_NOT_IN_DIFF');
 });
+
+test('worktree "" is the main checkout, like an omitted one', async () => {
+  const { review } = ok(await reviews.openReview({ project: 'app', worktree: '', kind: 'uncommitted' }, HUMAN));
+  assert.equal(review.worktree, null);
+  assert.equal(ok(await reviews.openReview({ project: 'app', kind: 'uncommitted' }, HUMAN)).reused, true);
+});
+
+test('refresh re-rounds a re-anchored thread: its anchor round becomes the new round', async () => {
+  const { wt, review } = await twoHunkReview();
+  const t = ok(await threads.annotate(review.id, HUMAN, { anchor: { file: 'a.js', side: 'new', startLine: 18, endLine: 18 }, kind: 'comment', body: 'x' })).thread;
+  assert.equal(t.anchor.round, 1);
+  wt.commit({ 'a.js': ['ins1', ...editLines({ 2: 'top-edit', 18: 'bottom-edit' }).split('\n')].join('\n') });
+  ok(await reviews.refreshReview(review.id));
+  const after = ok(await reviews.diff(review.id, {})).files[0].threads.find((x) => x.id === t.id);
+  assert.equal(after.anchor.round, 2);
+});
+
+test('drift is not sticky: it is counted each time it happens and cleared once the exact lines are found again', async () => {
+  const { wt, review } = await twoHunkReview();
+  const t = ok(await threads.annotate(review.id, HUMAN, { anchor: { file: 'a.js', side: 'new', startLine: 2, endLine: 2 }, kind: 'comment', body: 'x' })).thread;
+  const anchorOf = async () => ok(await reviews.diff(review.id, {})).files[0].threads.find((x) => x.id === t.id).anchor;
+  wt.commit({ 'a.js': editLines({ 2: 'drift-1', 18: 'bottom-edit' }) });
+  assert.equal(ok(await reviews.refreshReview(review.id)).threads.drifted, 1);
+  assert.equal((await anchorOf()).drifted, true);
+  wt.commit({ 'a.js': editLines({ 2: 'drift-2', 18: 'bottom-edit' }) });
+  assert.equal(ok(await reviews.refreshReview(review.id)).threads.drifted, 1, 'a second drift is counted too');
+  wt.commit({ 'b.js': 'unrelated\n' });
+  const calm = ok(await reviews.refreshReview(review.id));
+  assert.deepEqual([calm.threads.drifted, calm.threads.moved, calm.threads.outdated], [0, 0, 0]);
+  assert.equal((await anchorOf()).drifted, false);
+});
+
+test('a reverted edit does not resurrect the verdict its hunk had before the edit', async () => {
+  const { wt, review, hunks } = await twoHunkReview();
+  wt.commit({ 'a.js': editLines({ 2: 'changed', 18: 'bottom-edit' }) });
+  assert.equal(ok(await reviews.refreshReview(review.id)).hunks.reset, 1);
+  wt.commit({ 'a.js': editLines({ 2: 'top-edit', 18: 'bottom-edit' }) });
+  ok(await reviews.refreshReview(review.id));
+  const verdicts = Object.fromEntries(ok(await reviews.diff(review.id, {})).files[0].hunks.map((h) => [h.id, h.verdict]));
+  assert.equal(verdicts[hunks[0].id], 'pending');
+  assert.equal(verdicts[hunks[1].id], 'accepted');
+});
+
+test('refresh is not unchanged when HEAD is the same but the merge-base moved', async () => {
+  const wt = w.addWorktree();
+  const c1 = wt.commit({ 'f.js': '1\n' });
+  wt.commit({ 'g.js': '2\n' });
+  const { review } = await open().then(ok);
+  w.repo.git('update-ref', 'refs/heads/main', c1);
+  const res = ok(await reviews.refreshReview(review.id));
+  assert.deepEqual([res.unchanged, res.round], [false, 2]);
+  assert.equal(ok(await reviews.getReview(review.id)).review.baseSha, c1);
+});
+
+test('a binary file cannot be read as lines', async () => {
+  w.addWorktree().commit({ 'img.bin': Buffer.from([0, 1, 2, 0, 255, 10, 65]) });
+  const { review } = await open().then(ok);
+  assert.equal(codeOf(await reviews.fileLines(review.id, { path: 'img.bin', side: 'new' })), 'BINARY_FILE');
+});
+
+test('the commit filter is refused on commit and uncommitted reviews; uncommitted hunks carry no verdict', async () => {
+  const wt = w.addWorktree();
+  const sha = wt.commit({ 'f.js': 'x\n' });
+  const commit = ok(await open({ kind: 'commit' })).review;
+  assert.equal(codeOf(await reviews.diff(commit.id, { commit: sha })), 'INVALID_ARGUMENT');
+  wt.write('f.js', 'y\n');
+  const unc = ok(await open({ kind: 'uncommitted' })).review;
+  assert.equal(codeOf(await reviews.diff(unc.id, { commit: sha })), 'INVALID_ARGUMENT');
+  const hunks = ok(await reviews.diff(unc.id, {})).files.flatMap((f) => f.hunks);
+  assert.ok(hunks.length > 0 && hunks.every((h) => h.verdict === null));
+});

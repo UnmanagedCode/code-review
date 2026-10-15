@@ -118,3 +118,19 @@ test('a new file with content is "added" with old=null line numbers', () => {
   assert.equal(f.oldPath, null);
   assert.deepEqual(f.hunks[0].lines.map((l) => [l.old, l.new]), [[null, 1], [null, 2]]);
 });
+
+const fileHunkId = (text) => parseDiff(text)[0].hunks[0].id;
+const binary = (oldB, newB, extra = '') => `diff --git a/i.png b/i.png\n${extra}index ${oldB}..${newB} 100644\nBinary files a/i.png and b/i.png differ\n`;
+
+test('a binary file edited at a fixed path gets a new file-level hunk id', () => {
+  assert.notEqual(fileHunkId(binary(A, B)), fileHunkId(binary(A, 'c'.repeat(40))));
+  assert.notEqual(fileHunkId(binary(A, B)), fileHunkId(binary('c'.repeat(40), B)));
+  assert.equal(fileHunkId(binary(A, B)), fileHunkId(binary(A, B)));
+});
+
+test('a status or mode change at a fixed path changes the file-level hunk id', () => {
+  const plain = fileHunkId(binary(A, B));
+  assert.notEqual(plain, fileHunkId(`diff --git a/i.png b/i.png\nnew file mode 100644\nindex ${A}..${B}\nBinary files /dev/null and b/i.png differ\n`));
+  assert.notEqual(fileHunkId(`diff --git a/s.sh b/s.sh\nold mode 100644\nnew mode 100755\n`), fileHunkId(`diff --git a/s.sh b/s.sh\nold mode 100644\nnew mode 100700\n`));
+  assert.notEqual(fileHunkId(`diff --git a/o.js b/n.js\nrename from o.js\nrename to n.js\n`), fileHunkId(`diff --git a/p.js b/n.js\nrename from p.js\nrename to n.js\n`));
+});

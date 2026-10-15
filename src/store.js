@@ -8,6 +8,7 @@ import { refuse, isRefusal } from './refusals.js';
 
 /** Emits 'change' with {id, rev} after a write or {id, deleted:true} after a remove. */
 export const changes = new EventEmitter();
+changes.setMaxListeners(0); // one listener per open SSE client, removed on disconnect
 
 const ID_RE = /^r-[0-9a-f]{10}$/;
 const dirOf = () => path.join(storeRoot(), 'reviews');

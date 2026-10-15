@@ -4,9 +4,10 @@ import { locate, makeAnchor } from './anchor.js';
  * Moves each non-outdated thread to where its lines now sit in `snap`.
  * mode 'reanchor' (refresh): unlocatable threads become outdated.
  * mode 'volatile' (uncommitted sweep): unlocatable threads are deleted and remembered in droppedThreads.
- * `renames` maps new path -> old path between the previous and the new head.
+ * `renames` maps new path -> old path between the previous and the new head. `round` is the round the anchors now belong to:
+ * their `lines` and `linesHash` are re-read from that round's snapshot.
  */
-export async function followThreads(review, snap, mode, { renames = {} } = {}) {
+export async function followThreads(review, snap, mode, { renames = {}, round }) {
   const report = { moved: 0, drifted: 0, outdated: 0, dropped: 0 };
   const toNew = new Map(Object.entries(renames).map(([n, o]) => [o, n]));
   const cache = new Map();
@@ -27,9 +28,9 @@ export async function followThreads(review, snap, mode, { renames = {} } = {}) {
       if (mode === 'volatile') { gone.add(t.id); report.dropped++; } else { t.status = 'outdated'; report.outdated++; }
       continue;
     }
-    const next = makeAnchor({ file, side: a.side, startLine: loc.startLine, endLine: loc.endLine, round: a.round, fileLines, hunks: f.hunks });
+    const next = makeAnchor({ file, side: a.side, startLine: loc.startLine, endLine: loc.endLine, round, fileLines, hunks: f.hunks });
     next.drifted = loc.drifted;
-    if (loc.drifted && !a.drifted) report.drifted++;
+    if (loc.drifted) report.drifted++;
     else if (next.startLine !== a.startLine || next.file !== a.file) report.moved++;
     t.anchor = next;
   }

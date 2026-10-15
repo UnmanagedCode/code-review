@@ -11,8 +11,11 @@ const DISPOSITIONS = ['fixed', 'dismissed'];
 const now = () => new Date().toISOString();
 const invalid = (reason) => new Refusal('INVALID_ARGUMENT', reason);
 
+export const MAX_BODY_CHARS = 20000;
+
 function needBody(body) {
   if (typeof body !== 'string' || !body.trim()) throw invalid('body is required');
+  if (body.length > MAX_BODY_CHARS) throw new Refusal('BODY_TOO_LARGE', `a message body is limited to ${MAX_BODY_CHARS} characters`);
   return body;
 }
 

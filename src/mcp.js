@@ -20,7 +20,7 @@ const handlers = {
       if (!co) throw new Refusal('CHECKOUT_UNKNOWN', `code-conductor does not know session ${a.recipient ?? actor.sessionId}`);
       ({ project, worktree } = co);
     }
-    return reviews.openReview({ project, worktree: worktree ?? null, kind: a.kind, base: a.base, sha: a.sha, recipient: a.recipient, title: a.title }, actor);
+    return reviews.openReview({ project, worktree: worktree || null, kind: a.kind, base: a.base, sha: a.sha, recipient: a.recipient, title: a.title }, actor);
   }),
 
   get_review: async (a) => {

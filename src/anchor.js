@@ -69,7 +69,7 @@ export function locate(anchor, newLines, mode) {
   if (hits.length) {
     hits.sort((a, b) => b.score - a.score || a.dist - b.dist || a.i - b.i);
     const i = hits[0].i;
-    return { startLine: i + 1, endLine: i + len, drifted: anchor.drifted };
+    return { startLine: i + 1, endLine: i + len, drifted: false };
   }
   if (mode !== 'reanchor') return null;
   const { ctxBefore, ctxAfter } = anchor;

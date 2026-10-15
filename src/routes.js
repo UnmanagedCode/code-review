@@ -38,6 +38,13 @@ const withCheckout = (fn) => async (req) => {
 /** Express router for the REST API, SSE stream and MCP endpoint; mounted at /api. */
 export function apiRouter() {
   const r = express.Router();
+  // A cross-site HTML form can only send simple content types, so requiring JSON keeps it from triggering mutations.
+  // (`req.is` answers null for a body-less request, so the header is checked directly.)
+  r.use((req, res, next) => {
+    const jsonType = /^application\/json\s*(;|$)/i.test(req.headers['content-type'] ?? '');
+    if (['GET', 'HEAD', 'OPTIONS'].includes(req.method) || jsonType) return next();
+    return res.status(415).json(refuse('UNSUPPORTED_MEDIA_TYPE', 'mutating requests must send Content-Type: application/json'));
+  });
   r.use(express.json());
 
   r.get('/projects', route(async () => ({

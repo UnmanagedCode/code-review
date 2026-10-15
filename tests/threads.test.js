@@ -4,6 +4,7 @@ import { world, HUMAN, agent, editLines } from './_world.js';
 import { lines } from './_git.js';
 import * as reviews from '../src/reviews.js';
 import * as threads from '../src/threads.js';
+import { MAX_BODY_CHARS } from '../src/threads.js';
 
 let w;
 beforeEach(async () => { w = await world(); });
@@ -217,4 +218,22 @@ test('open question threads count as merge blockers until resolved', async () =>
   assert.equal(ok(await reviews.getReview(review.id)).review.mergeBlockers, 1);
   ok(await threads.setThreadStatus(review.id, q.id, { status: 'resolved' }));
   assert.equal(ok(await reviews.getReview(review.id)).review.mergeBlockers, 0);
+});
+
+test('mergeBlockers counts open questions only, not other open threads', async () => {
+  const { review } = await rangeReview();
+  ok(await say(review.id, at('a.js', 2), { kind: 'comment' }));
+  ok(await say(review.id, at('a.js', 3), { kind: 'suggestion' }));
+  ok(await say(review.id, at('a.js', 4), { kind: 'finding', severity: 'blocker' }));
+  assert.equal(ok(await reviews.getReview(review.id)).review.mergeBlockers, 0);
+  ok(await say(review.id, at('a.js', 5), { kind: 'question' }));
+  assert.equal(ok(await reviews.getReview(review.id)).review.mergeBlockers, 1);
+});
+
+test('a message body over the cap is refused BODY_TOO_LARGE, when opening a thread and when replying', async () => {
+  const { review } = await rangeReview();
+  const huge = 'x'.repeat(MAX_BODY_CHARS + 1);
+  assert.equal(codeOf(await say(review.id, at('a.js', 2), { body: huge })), 'BODY_TOO_LARGE');
+  const t = ok(await say(review.id, at('a.js', 2), { body: 'x'.repeat(MAX_BODY_CHARS) })).thread;
+  assert.equal(codeOf(await threads.reply(review.id, HUMAN, t.id, { body: huge })), 'BODY_TOO_LARGE');
 });

@@ -165,3 +165,23 @@ test('with the store unconfigured the API answers 503 STORE_UNCONFIGURED while /
     if (saved.p !== undefined) process.env.PROJECTS_ROOT = saved.p;
   }
 });
+
+test('mutating routes refuse a non-JSON content type with 415 and change nothing; JSON with a charset is fine', async () => {
+  const id = (await openReview()).review.id;
+  const raw = (method, url, headers = {}) => fetch(base + url, { method, headers });
+  const attempts = [
+    ['POST', `/reviews/${id}/refresh`], ['POST', `/reviews/${id}/submissions`], ['POST', `/reviews/${id}/read`],
+    ['PATCH', `/reviews/${id}`], ['DELETE', `/reviews/${id}`], ['PUT', `/reviews/${id}/hunks/h/verdict`], ['POST', '/mcp'],
+  ];
+  for (const [method, url] of attempts) {
+    for (const headers of [{}, { 'content-type': 'text/plain' }, { 'content-type': 'application/x-www-form-urlencoded' }]) {
+      const res = await raw(method, url, headers);
+      assert.equal(res.status, 415, `${method} ${url} ${JSON.stringify(headers)}`);
+      assert.equal((await res.json()).code, 'UNSUPPORTED_MEDIA_TYPE');
+    }
+  }
+  assert.equal((await req('GET', `/reviews/${id}`)).body.review.status, 'open', 'the delete did not happen');
+  const ok = await raw('POST', `/reviews/${id}/refresh`, { 'content-type': 'application/json; charset=utf-8' });
+  assert.equal(ok.status, 200);
+  assert.equal((await fetch(`${base}/reviews`)).status, 200, 'GET needs no content type');
+});

@@ -55,7 +55,7 @@ async function resolveRecipient(explicit, actor, checkout) {
 export const openReview = (args, actor) => attempt(() => withLock('create', async () => {
   const kind = args.kind ?? 'range';
   if (!KINDS.includes(kind)) throw invalid(`kind must be one of ${KINDS.join(', ')}`);
-  const worktree = args.worktree ?? null;
+  const worktree = args.worktree || null;
   const co = await resolveCheckout({ project: args.project, worktree });
   if (!co.exists) throw new Refusal('CHECKOUT_GONE', `${co.path} does not exist`);
   const target = {};
@@ -172,7 +172,7 @@ export const refreshReview = (id) => attempt(async () => inReview(id, async (rev
   }
   let renames = {};
   try { renames = await git.renames(co.path, cur.headSha, shas.headSha); } catch { /* previous head gone: threads fall back to same-path lookup */ }
-  const threads = await followThreads(review, next, 'reanchor', { renames });
+  const threads = await followThreads(review, next, 'reanchor', { renames, round: cur.n + 1 });
   push(next);
   return { ok: true, unchanged: false, round: cur.n + 1, hunks, threads };
 }));
@@ -218,6 +218,7 @@ export const fileLines = (id, { path, side = 'new', start, end } = {}) => attemp
   if (!['old', 'new'].includes(side)) throw invalid('side must be old or new');
   const all = await (await env.snapshot()).lines(side, path);
   if (!all) throw new Refusal('FILE_NOT_IN_DIFF', `${path} does not exist on the ${side} side`);
+  if (all.some((l) => l.includes('\0'))) throw new Refusal('BINARY_FILE', `${path} is binary`);
   const from = start === undefined ? 1 : Number(start);
   const to = end === undefined ? all.length : Number(end);
   if (!Number.isInteger(from) || !Number.isInteger(to)) throw invalid('start and end must be integers');

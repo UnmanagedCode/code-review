@@ -104,3 +104,30 @@ test('hunkFor: spans are per side; a zero count is an empty span', () => {
   assert.equal(hunkFor({ side: 'old', startLine: 6, endLine: 6 }, hunks), 'del');
   assert.equal(hunkFor({ side: 'new', startLine: 5, endLine: 5 }, hunks), null);
 });
+
+test('hunkFor: a range overlapping two hunks with its end in no hunk belongs to the last one overlapped', () => {
+  const hunks = [text(1, 3, 1, 3, 'h1'), text(20, 3, 20, 3, 'h2'), text(40, 3, 40, 3, 'h3')];
+  assert.equal(hunkFor({ side: 'new', startLine: 2, endLine: 30 }, hunks), 'h2');
+});
+
+test('locate: an exact match clears drifted even if the anchor was drifted before', () => {
+  const lines = file(20);
+  const a = { ...anchorOn(lines, 10, 11), drifted: true };
+  assert.deepEqual(locate(a, lines, 'reanchor'), { startLine: 10, endLine: 11, drifted: false });
+});
+
+test('locate: a unique before-context with a duplicated after-context is not enough', () => {
+  const base = ['b1', 'b2', 'b3', 'SEL', 'a1', 'a2', 'a3'];
+  const a = anchorOn(base, 4, 4);
+  const dupAfter = ['b1', 'b2', 'b3', 'EDIT', 'a1', 'a2', 'a3', 'z', 'a1', 'a2', 'a3'];
+  assert.equal(locate(a, dupAfter, 'reanchor'), null);
+  const dupBefore = ['b1', 'b2', 'b3', 'z', 'b1', 'b2', 'b3', 'EDIT', 'a1', 'a2', 'a3'];
+  assert.equal(locate(a, dupBefore, 'reanchor'), null);
+});
+
+test('locate: before and after blocks that touch (empty gap) or overlap are not a drift', () => {
+  const a = anchorOn(['b1', 'b2', 'b3', 'SEL', 'a1', 'a2', 'a3'], 4, 4);
+  assert.equal(locate(a, ['b1', 'b2', 'b3', 'a1', 'a2', 'a3'], 'reanchor'), null, 'selection deleted: empty gap');
+  const o = anchorOn(['x', 'y', 'z', 'SEL', 'y', 'z', 'w'], 4, 4);
+  assert.equal(locate(o, ['x', 'y', 'z', 'w'], 'reanchor'), null, 'overlapping blocks');
+});

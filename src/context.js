@@ -70,7 +70,7 @@ const UNREADABLE = ['CHECKOUT_GONE', 'SNAPSHOT_GONE'];
 // An uncommitted review's threads follow the live working tree; an unreadable tree leaves them untouched.
 async function sweep(review, env) {
   try {
-    return await followThreads(review, await env.snapshot(), 'volatile');
+    return await followThreads(review, await env.snapshot(), 'volatile', { round: currentRound(review).n });
   } catch (e) {
     if (e instanceof Refusal && UNREADABLE.includes(e.code)) return null;
     throw e;

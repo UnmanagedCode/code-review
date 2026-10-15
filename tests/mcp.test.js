@@ -155,3 +155,16 @@ test('refresh_review reports the new round', async () => {
   assert.deepEqual([out.ok, out.unchanged, out.round], [true, false, 2]);
   void HUMAN;
 });
+
+test('the tool set is exactly the expected list, and mcp.js never references setVerdict', () => {
+  const expected = ['annotate', 'get_hunk', 'get_review', 'list_threads', 'open_review', 'refresh_review', 'reply'];
+  assert.deepEqual([..._toolNames()].sort(), expected);
+  assert.deepEqual(manifest.mcp.tools.map((t) => t.name).sort(), expected);
+  assert.doesNotMatch(fs.readFileSync(new URL('../src/mcp.js', import.meta.url), 'utf8'), /setVerdict/);
+});
+
+test('open_review treats worktree "" as the main checkout', async () => {
+  const out = await result('open_review', { project: 'app', worktree: '', kind: 'uncommitted' });
+  assert.equal(out.ok, true);
+  assert.equal(out.review.worktree, null);
+});

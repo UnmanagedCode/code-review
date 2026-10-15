@@ -110,3 +110,19 @@ test('an unset root refuses STORE_UNCONFIGURED', async () => {
     if (saved.p !== undefined) process.env.PROJECTS_ROOT = saved.p;
   }
 });
+
+test('CODE_REVIEW_STORE takes precedence over $PROJECTS_ROOT', () => {
+  const saved = { s: process.env.CODE_REVIEW_STORE, p: process.env.PROJECTS_ROOT };
+  process.env.CODE_REVIEW_STORE = '/explicit/store';
+  process.env.PROJECTS_ROOT = '/some/projects';
+  try {
+    assert.equal(storeRoot(), '/explicit/store');
+  } finally {
+    if (saved.s === undefined) delete process.env.CODE_REVIEW_STORE; else process.env.CODE_REVIEW_STORE = saved.s;
+    if (saved.p === undefined) delete process.env.PROJECTS_ROOT; else process.env.PROJECTS_ROOT = saved.p;
+  }
+});
+
+test('the change emitter has no listener cap, since every open SSE client is a listener', () => {
+  assert.equal(store.changes.getMaxListeners(), 0);
+});

@@ -39,5 +39,18 @@ export function useReviewActions() {
         toast.error(errorText(e));
       }
     },
+    /** Optimistic like setVerdict; `hunkIds` are the file's pending hunks, so a refusal reverts them to pending. */
+    async acceptFile(file: string, hunkIds: string[]) {
+      hunkIds.forEach((h) => fileDiff.patchVerdict(h, 'accepted'));
+      try {
+        applyReview((await ep.acceptFile(id, file, hunkIds)).review);
+        reload();
+      } catch (e) {
+        hunkIds.forEach((h) => fileDiff.patchVerdict(h, 'pending'));
+        toast.error(errorText(e));
+        const code = (e as { code?: string }).code;
+        if (code && STALE_DIFF.has(code)) reload();
+      }
+    },
   };
 }

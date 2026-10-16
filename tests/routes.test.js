@@ -97,6 +97,17 @@ test('verdicts, threads, messages, status, read, refresh, submissions each retur
   assert.equal(done.status, 'delivered');
 });
 
+test('accept-file returns {file, accepted, review}; an unknown file is 404 FILE_NOT_IN_DIFF', async () => {
+  const id = (await openReview()).review.id;
+  const ids = (await req('GET', `/reviews/${id}/diff`)).body.files[0].hunks.map((h) => h.id);
+  const res = await req('POST', `/reviews/${id}/accept-file`, { file: 'a.js', hunkIds: ids });
+  assert.equal(res.status, 200);
+  assert.deepEqual(Object.keys(res.body).sort(), ['accepted', 'file', 'ok', 'review']);
+  assert.deepEqual([res.body.file, res.body.accepted, res.body.review.counts.hunks.accepted], ['a.js', ids, 2]);
+  const gone = await req('POST', `/reviews/${id}/accept-file`, { file: 'zzz.js', hunkIds: ids });
+  assert.deepEqual([gone.status, gone.body.code], [404, 'FILE_NOT_IN_DIFF']);
+});
+
 test('refusals map to their HTTP status', async () => {
   const id = (await openReview()).review.id;
   const cases = [
@@ -176,7 +187,7 @@ test('mutating routes refuse a non-JSON content type with 415 and change nothing
   const raw = (method, url, headers = {}) => fetch(base + url, { method, headers });
   const attempts = [
     ['POST', `/reviews/${id}/refresh`], ['POST', `/reviews/${id}/submissions`], ['POST', `/reviews/${id}/read`],
-    ['PATCH', `/reviews/${id}`], ['DELETE', `/reviews/${id}`], ['PUT', `/reviews/${id}/hunks/h/verdict`], ['POST', '/mcp'],
+    ['PATCH', `/reviews/${id}`], ['DELETE', `/reviews/${id}`], ['PUT', `/reviews/${id}/hunks/h/verdict`], ['POST', `/reviews/${id}/accept-file`], ['POST', '/mcp'],
   ];
   for (const [method, url] of attempts) {
     for (const headers of [{}, { 'content-type': 'text/plain' }, { 'content-type': 'application/x-www-form-urlencoded' }]) {

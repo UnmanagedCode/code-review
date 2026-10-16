@@ -68,6 +68,7 @@ export function apiRouter() {
   r.get('/reviews/:id/file', route((req) => reviews.fileLines(req.params.id, req.query)));
 
   r.put('/reviews/:id/hunks/:hunkId/verdict', route((req) => reviews.setVerdict(req.params.id, req.params.hunkId, req.body?.verdict)));
+  r.post('/reviews/:id/accept-file', route((req) => reviews.acceptFile(req.params.id, req.body?.file, req.body?.hunkIds)));
   r.post('/reviews/:id/threads', route((req) => threads.annotate(req.params.id, HUMAN, req.body ?? {})));
   r.post('/reviews/:id/threads/:tid/messages', route((req) => threads.reply(req.params.id, HUMAN, req.params.tid, req.body ?? {})));
   r.patch('/reviews/:id/threads/:tid', route((req) => threads.setThreadStatus(req.params.id, req.params.tid, req.body ?? {})));

@@ -4,6 +4,7 @@ import { world, HUMAN, agent, editLines } from './_world.js';
 import { makeRepo, lines } from './_git.js';
 import * as reviews from '../src/reviews.js';
 import * as threads from '../src/threads.js';
+import * as store from '../src/store.js';
 
 let w;
 beforeEach(async () => { w = await world(); });
@@ -96,6 +97,127 @@ async function twoHunkReview() {
   for (const h of hunks) ok(await reviews.setVerdict(review.id, h.id, 'accepted'));
   return { wt, review, hunks };
 }
+
+/** A range review of a.js with a hunk per edited line, all pending. */
+async function pendingHunks(edits = { 2: 'top-edit', 18: 'bottom-edit' }) {
+  const wt = w.addWorktree();
+  wt.commit({ 'a.js': editLines(edits) });
+  const { review } = ok(await open());
+  const hunks = ok(await reviews.diff(review.id, {})).files[0].hunks;
+  assert.equal(hunks.length, Object.keys(edits).length);
+  return { wt, review, ids: hunks.map((h) => h.id) };
+}
+const revOf = async (id) => ok(await reviews.getReview(id)).review.rev;
+
+test('accept-file accepts the listed pending hunks of one file in a single write', async () => {
+  const { review, ids } = await pendingHunks();
+  const rev = await revOf(review.id);
+  const res = ok(await reviews.acceptFile(review.id, 'a.js', ids));
+  assert.deepEqual(res.accepted, ids);
+  assert.equal(res.file, 'a.js');
+  assert.deepEqual(res.review.counts.hunks, { pending: 0, accepted: 2, rejected: 0 });
+  assert.equal(res.review.rev, rev + 1);
+  assert.equal(await revOf(review.id), rev + 1);
+  assert.deepEqual(ok(await reviews.diff(review.id, {})).files[0].hunks.map((h) => h.verdict), ['accepted', 'accepted']);
+});
+
+test('accept-file records each hunk like a per-hunk accept: own seq, humanSeq, {verdict, seq, at}', async () => {
+  const { review, ids } = await pendingHunks({ 2: 'x', 10: 'y', 18: 'z' });
+  ok(await reviews.setVerdict(review.id, ids[0], 'accepted'));
+  const single = store.read(review.id).verdicts[ids[0]];
+  ok(await reviews.setVerdict(review.id, ids[0], 'pending'));
+  const before = store.read(review.id).seq;
+  ok(await reviews.acceptFile(review.id, 'a.js', ids));
+  const after = store.read(review.id);
+  const seqs = ids.map((h) => after.verdicts[h].seq);
+  assert.deepEqual(seqs, [before + 1, before + 2, before + 3]);
+  for (const h of ids) {
+    assert.deepEqual(Object.keys(after.verdicts[h]).sort(), Object.keys(single).sort());
+    assert.equal(after.verdicts[h].verdict, 'accepted');
+    assert.ok(!Number.isNaN(Date.parse(after.verdicts[h].at)));
+  }
+  assert.equal(after.seq, before + 3);
+  assert.equal(after.humanSeq, after.seq);
+});
+
+test('accept-file keeps a rejected hunk rejected and an accepted hunk\'s seq unchanged', async () => {
+  const { review, ids } = await pendingHunks({ 2: 'x', 10: 'y', 18: 'z' });
+  ok(await reviews.setVerdict(review.id, ids[0], 'rejected'));
+  ok(await reviews.setVerdict(review.id, ids[1], 'accepted'));
+  const earlier = store.read(review.id).verdicts;
+  const res = ok(await reviews.acceptFile(review.id, 'a.js', ids));
+  assert.deepEqual(res.accepted, [ids[2]]);
+  assert.equal(res.review.mergeBlockers, 1);
+  assert.deepEqual(res.review.counts.hunks, { pending: 0, accepted: 2, rejected: 1 });
+  const now = store.read(review.id).verdicts;
+  assert.deepEqual(now[ids[0]], earlier[ids[0]]);
+  assert.deepEqual(now[ids[1]], earlier[ids[1]]);
+});
+
+test('accept-file leaves a hunk it was not given pending', async () => {
+  const { review, ids } = await pendingHunks();
+  const res = ok(await reviews.acceptFile(review.id, 'a.js', [ids[0], ids[0]]));
+  assert.deepEqual(res.accepted, [ids[0]], 'a repeated id is accepted once');
+  assert.deepEqual(ok(await reviews.diff(review.id, {})).files[0].hunks.map((h) => h.verdict), ['accepted', 'pending']);
+});
+
+test('accept-file with an id outside the file or round refuses HUNK_UNKNOWN and writes nothing', async () => {
+  const wt = w.addWorktree();
+  wt.commit({ 'a.js': editLines({ 2: 'top-edit', 18: 'bottom-edit' }), 'b.js': 'changed\n' });
+  const { review } = ok(await open());
+  const files = ok(await reviews.diff(review.id, {})).files;
+  const [a0] = files.find((f) => f.path === 'a.js').hunks.map((h) => h.id);
+  const [b0] = files.find((f) => f.path === 'b.js').hunks.map((h) => h.id);
+  const rev = await revOf(review.id);
+  assert.equal(codeOf(await reviews.acceptFile(review.id, 'a.js', [a0, 'nope'])), 'HUNK_UNKNOWN');
+  assert.equal(codeOf(await reviews.acceptFile(review.id, 'a.js', [a0, b0])), 'HUNK_UNKNOWN');
+  assert.equal(await revOf(review.id), rev);
+  assert.deepEqual(store.read(review.id).verdicts, {});
+});
+
+test('accept-file with nothing pending writes nothing', async () => {
+  const { review, ids } = await pendingHunks();
+  ok(await reviews.setVerdict(review.id, ids[0], 'accepted'));
+  ok(await reviews.setVerdict(review.id, ids[1], 'rejected'));
+  const before = store.read(review.id);
+  const res = ok(await reviews.acceptFile(review.id, 'a.js', ids));
+  assert.deepEqual(res.accepted, []);
+  assert.deepEqual(store.read(review.id), before);
+});
+
+test('accept-file refusals: uncommitted, closed, unknown file, bad arguments', async () => {
+  const { wt, review, ids } = await pendingHunks();
+  for (const [file, hunkIds] of [[undefined, ids], ['', ids], ['a.js', undefined], ['a.js', []], ['a.js', [1]], ['a.js', 'x']]) {
+    assert.equal(codeOf(await reviews.acceptFile(review.id, file, hunkIds)), 'INVALID_ARGUMENT', JSON.stringify([file, hunkIds]));
+  }
+  assert.equal(codeOf(await reviews.acceptFile(review.id, 'zzz.js', ids)), 'FILE_NOT_IN_DIFF');
+  ok(await reviews.patchReview(review.id, { status: 'closed' }));
+  assert.equal(codeOf(await reviews.acceptFile(review.id, 'a.js', ids)), 'REVIEW_CLOSED');
+  ok(await reviews.patchReview(review.id, { status: 'open' }));
+  assert.deepEqual(ok(await reviews.acceptFile(review.id, 'a.js', ids)).accepted, ids);
+  wt.write('u.txt', 'u\n');
+  const unc = ok(await open({ kind: 'uncommitted' })).review;
+  const uid = ok(await reviews.diff(unc.id, {})).files[0].hunks[0].id;
+  assert.equal(codeOf(await reviews.acceptFile(unc.id, 'u.txt', [uid])), 'NO_VERDICTS');
+});
+
+test('accept-file after a rename: the old path is FILE_NOT_IN_DIFF; the new path\'s file-level hunk accepts', async () => {
+  const wt = w.addWorktree();
+  wt.commit({ 'b.js': lines(10, 'b').replace('b1\n', 'b1-edit\n') });
+  const { review } = ok(await open());
+  const old = ok(await reviews.diff(review.id, {})).files[0];
+  assert.equal(old.path, 'b.js');
+  wt.commit({ 'b.js': lines(10, 'b') });
+  wt.git('mv', 'b.js', 'c.js');
+  wt.commit({});
+  ok(await reviews.refreshReview(review.id));
+  assert.equal(codeOf(await reviews.acceptFile(review.id, 'b.js', old.hunks.map((h) => h.id))), 'FILE_NOT_IN_DIFF');
+  const [renamed] = ok(await reviews.diff(review.id, {})).files;
+  assert.deepEqual([renamed.path, renamed.oldPath, renamed.hunks.length, renamed.hunks[0].kind], ['c.js', 'b.js', 1, 'file']);
+  const res = ok(await reviews.acceptFile(review.id, 'c.js', [renamed.hunks[0].id]));
+  assert.deepEqual(res.accepted, [renamed.hunks[0].id]);
+  assert.equal(res.review.counts.hunks.accepted, 1);
+});
 
 test('refresh: an untouched hunk keeps its verdict, a changed hunk resets, and the thread follows its lines; new round pins the new HEAD', async () => {
   const { wt, review, hunks } = await twoHunkReview();

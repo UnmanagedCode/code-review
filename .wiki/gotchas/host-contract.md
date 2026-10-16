@@ -6,6 +6,6 @@
 - **No theme toggle of our own.** The bridge owns `<html class="dark">` when embedded; `frontend/src/lib/theme.ts` only observes it.
 - **`cc-theme-fallback.css` is a one-time snapshot** inside `@layer base`; never refresh it to track cc. cc's served sheet is unlayered and wins.
 - **Never navigate by assigning `location.hash`:** it adds a joint history entry the bridge cannot demote.
-- **Mutating API calls need `Content-Type: application/json`, even body-less ones** (`refresh`, `submissions`, `DELETE`): otherwise 415. The check reads the header because `req.is` is null without a body. `frontend/src/lib/api.ts` does not set it yet; the UI must pass it in `init.headers`.
+- **Mutating API calls need `Content-Type: application/json`, even body-less ones** (`refresh`, `submissions`, `DELETE`): otherwise 415. The check reads the header because `req.is` is null without a body. `api()` in `frontend/src/lib/api.ts` defaults it on every non-GET call unless the caller sets one.
 - **Storage keys** are prefixed `code-review:`; never touch `code-conductor:*`.
 - **Content is text, never markup.** A guard test in `frontend/src/App.test.tsx` bans raw-HTML APIs in UI sources; links go through `safeHref`.

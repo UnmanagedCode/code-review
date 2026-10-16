@@ -44,13 +44,17 @@ export function run(repo, args, { input, ok = [0], maxBuffer = MAX_DIFF_BYTES, e
 const out = async (repo, args, opts) => (await run(repo, args, opts)).stdout.trim();
 
 /**
- * Calls `fn({env})` with GIT_INDEX_FILE pointing at a unique temp copy of the checkout's index, deleted afterwards,
- * so index-refreshing commands never write the project tree. A missing index is not copied: git starts empty.
+ * Calls `fn({env})` with GIT_INDEX_FILE pointing at a unique temp copy of the checkout's index and GIT_OBJECT_DIRECTORY
+ * at an empty temp dir (the real objects stay readable as an alternate), both deleted afterwards, so index-refreshing
+ * and staging commands never write the project tree. A missing index is not copied: git starts empty.
  */
 export async function withPrivateIndex(repo, fn) {
   const real = path.resolve(repo, await out(repo, ['rev-parse', '--git-path', 'index']));
+  const realObjects = path.resolve(repo, await out(repo, ['rev-parse', '--git-path', 'objects']));
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cr-index-'));
   const copy = path.join(dir, 'index');
+  const objects = path.join(dir, 'objects');
+  fs.mkdirSync(objects);
   try {
     if (fs.existsSync(real)) {
       fs.copyFileSync(real, copy);
@@ -59,7 +63,8 @@ export async function withPrivateIndex(repo, fn) {
       const stat = fs.statSync(real);
       fs.utimesSync(copy, stat.atime, new Date(Math.floor(stat.mtimeMs) - 1));
     }
-    return await fn({ env: { GIT_INDEX_FILE: copy } });
+    // Objects written while staging (`update-index --add`) land in the private dir; the real store is read through alternates.
+    return await fn({ env: { GIT_INDEX_FILE: copy, GIT_OBJECT_DIRECTORY: objects, GIT_ALTERNATE_OBJECT_DIRECTORIES: realObjects } });
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }

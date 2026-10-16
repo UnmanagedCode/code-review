@@ -294,7 +294,9 @@ test('uncommitted: a file removed from the index and edited on disk has one "mod
   r.commit({ 'a.txt': 'one\ntwo\n' });
   r.git('rm', '--cached', '-q', 'a.txt');
   r.write('a.txt', 'one\nTWO\n');
+  const before = gitDirSig(r.dir);
   const { snap } = await snapOf(r, 'uncommitted', {});
+  assert.deepEqual(gitDirSig(r.dir), before, 'neither the index nor the object store of the real .git was written');
   assert.equal(snap.files.length, 1);
   assert.equal(snap.files[0].status, 'modified');
   assert.deepEqual(snap.files[0].hunks[0].lines.filter((l) => l.t !== 'ctx').map((l) => l.text), ['two', 'TWO']);
@@ -308,4 +310,42 @@ test('uncommitted: a path appears once even when other files are deleted, added 
   r.write('new.txt', 'n\n');
   const { snap } = await snapOf(r, 'uncommitted', {});
   assert.deepEqual(paths(snap), ['gone.txt', 'new.txt']);
+});
+
+test('restaging an untracked-then-edited path writes no object into the real object store, and the diff shows the working-tree content', async () => {
+  const r = repo();
+  r.commit({ 'a.txt': 'one\n' });
+  r.git('rm', '--cached', '-q', 'a.txt');
+  r.write('a.txt', 'unique-working-tree-content\n');
+  const before = gitDirSig(r.dir);
+  const { snap } = await snapOf(r, 'uncommitted', {});
+  assert.deepEqual(gitDirSig(r.dir), before);
+  assert.ok(snap.files[0].hunks[0].lines.some((l) => l.text === 'unique-working-tree-content'));
+});
+
+test('uncommitted: a restaged path over the size cap is tooLarge with a file-level hunk, not a full diff', async () => {
+  const r = repo();
+  r.commit({ 'a.txt': 'x'.repeat(50) + '\n' });
+  r.git('rm', '--cached', '-q', 'a.txt');
+  r.write('a.txt', 'y'.repeat(60) + '\n');
+  const shas = await resolveTarget(r.dir, 'uncommitted', {});
+  const snap = await buildSnapshot({ kind: 'uncommitted', repo: r.dir, checkout: r.dir, ...shas, limits: { maxFileBytes: 10 } });
+  assert.equal(snap.files.length, 1);
+  assert.equal(snap.files[0].tooLarge, true);
+  assert.equal(snap.files[0].status, 'modified');
+  assert.equal(snap.files[0].hunks[0].kind, 'file');
+});
+
+test('uncommitted: a restaged path git cannot read degrades to a tooLarge entry instead of failing the snapshot', { skip: process.getuid?.() === 0 }, async () => {
+  const r = repo();
+  r.commit({ 'a.txt': 'one\n', 'b.txt': 'b\n' });
+  r.git('rm', '--cached', '-q', 'a.txt');
+  fs.chmodSync(path.join(r.dir, 'a.txt'), 0o000);
+  try {
+    const { snap } = await snapOf(r, 'uncommitted', {});
+    assert.deepEqual(paths(snap), ['a.txt']);
+    assert.equal(snap.files[0].tooLarge, true);
+  } finally {
+    fs.chmodSync(path.join(r.dir, 'a.txt'), 0o644);
+  }
 });

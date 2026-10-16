@@ -35,8 +35,8 @@ export async function resolveTarget(repo, kind, target = {}) {
   return { headSha: head, baseSha };
 }
 
-const tooLargeFile = (rel) => {
-  const f = { path: rel, oldPath: null, status: 'added', binary: false, tooLarge: true, additions: 0, deletions: 0, hunks: [] };
+const tooLargeFile = (rel, status = 'added') => {
+  const f = { path: rel, oldPath: null, status, binary: false, tooLarge: true, additions: 0, deletions: 0, hunks: [] };
   f.hunks.push(fileLevelHunk(f));
   return f;
 };
@@ -49,11 +49,22 @@ async function readUncommitted(repo, headSha, limits, opts) {
   let rels = await git.untracked(repo, opts);
   // A path HEAD has but the index lacks (`git rm --cached`) shows up deleted above and untracked below.
   // Staging it into the private index makes `diff HEAD` report the working tree against HEAD, once.
-  const restaged = files.filter((f) => f.status === 'deleted' && rels.includes(f.path)).map((f) => f.path);
-  if (restaged.length) {
-    await git.addToIndex(repo, restaged, opts);
-    files = parseDiff(await git.diffWorktree(repo, headSha, opts));
-    rels = rels.filter((p) => !restaged.includes(p));
+  const restage = files.filter((f) => f.status === 'deleted' && rels.includes(f.path)).map((f) => f.path);
+  const staged = [];
+  const oversize = [];
+  for (const rel of restage) {
+    rels = rels.filter((p) => p !== rel);
+    let size;
+    try { size = fs.lstatSync(path.join(repo, rel)).size; } catch { continue; } // vanished: it stays deleted
+    if (size > limits.maxFileBytes) { oversize.push(rel); continue; }
+    try { await git.addToIndex(repo, [rel], opts); staged.push(rel); } catch (e) {
+      if (e instanceof Refusal) throw e;
+      oversize.push(rel); // unreadable: listed, not diffed
+    }
+  }
+  if (staged.length || oversize.length) {
+    if (staged.length) files = parseDiff(await git.diffWorktree(repo, headSha, opts));
+    files = files.filter((f) => !oversize.includes(f.path));
   }
   let text = '';
   const extra = [];
@@ -63,7 +74,7 @@ async function readUncommitted(repo, headSha, limits, opts) {
     if (i >= limits.maxUntracked || size > limits.maxFileBytes) extra.push(tooLargeFile(rel));
     else text += await git.diffUntracked(repo, rel, opts);
   }
-  files.push(...parseDiff(text), ...extra);
+  files.push(...parseDiff(text), ...extra, ...oversize.map((rel) => tooLargeFile(rel, 'modified')));
   return files;
 }
 

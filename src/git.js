@@ -43,6 +43,12 @@ export function run(repo, args, { input, ok = [0], maxBuffer = MAX_DIFF_BYTES, e
 
 const out = async (repo, args, opts) => (await run(repo, args, opts)).stdout.trim();
 
+// C-quoted so a path with a newline, quote, backslash or leading '#' stays one entry (git unquotes entries starting with ").
+const cQuote = (p) => `"${[...Buffer.from(p)].map((b) => {
+  if (b === 0x22 || b === 0x5c) return `\\${String.fromCharCode(b)}`;
+  return b < 0x20 || b >= 0x7f ? `\\${b.toString(8).padStart(3, '0')}` : String.fromCharCode(b);
+}).join('')}"`;
+
 /**
  * Calls `fn({env})` with GIT_INDEX_FILE pointing at a unique temp copy of the checkout's index and GIT_OBJECT_DIRECTORY
  * at a temp dir whose `info/alternates` names the real objects dir, both deleted afterwards, so index-refreshing
@@ -57,7 +63,7 @@ export async function withPrivateIndex(repo, fn) {
   fs.mkdirSync(path.join(objects, 'info'), { recursive: true });
   try {
     // A file, not GIT_ALTERNATE_OBJECT_DIRECTORIES: that variable is colon-separated and would split a path containing ':'.
-    fs.writeFileSync(path.join(objects, 'info', 'alternates'), `${realObjects}\n`);
+    fs.writeFileSync(path.join(objects, 'info', 'alternates'), `${cQuote(realObjects)}\n`);
     if (fs.existsSync(real)) {
       fs.copyFileSync(real, copy);
       // git treats an entry as racily clean (re-hashes it) only if it is not older than the index file, so the copy

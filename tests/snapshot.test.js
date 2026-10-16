@@ -391,10 +391,22 @@ test('a restage batch of several paths is one git process, not one per path', as
   try {
     const { snap } = await snapOf(r, 'uncommitted', {});
     assert.equal(snap.files.length, 4);
+    const calls = fs.readFileSync(log, 'utf8').split('\n').filter((l) => l.includes('update-index'));
+    assert.equal(calls.length, 1);
   } finally {
     process.env.PATH = savedPath;
+    fs.rmSync(shimDir, { recursive: true, force: true });
   }
-  const calls = fs.readFileSync(log, 'utf8').split('\n').filter((l) => l.includes('update-index'));
-  fs.rmSync(shimDir, { recursive: true, force: true });
-  assert.equal(calls.length, 1);
+});
+
+test('an uncommitted snapshot works in a checkout whose path contains a newline, a quote, a backslash, a leading # or non-ASCII', async () => {
+  for (const dirName of ['new\nline', 'q"u\\o', '#hash', 'café']) {
+    const r = makeRepo({ dirName });
+    repos.push(r);
+    r.commit({ 'a.txt': 'one\n' });
+    r.write('a.txt', 'two\n');
+    const { snap } = await snapOf(r, 'uncommitted', {});
+    assert.deepEqual(paths(snap), ['a.txt'], JSON.stringify(dirName));
+    assert.ok(snap.files[0].hunks[0].lines.some((l) => l.t === 'del' && l.text === 'one'), 'HEAD objects resolved through the alternates entry');
+  }
 });

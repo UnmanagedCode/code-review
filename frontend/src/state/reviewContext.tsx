@@ -1,6 +1,6 @@
 import { createContext, useContext, type ReactNode } from 'react';
 import type { ReviewDetail } from '@/lib/endpoints';
-import type { ReviewSummary } from '@/lib/types';
+import type { ReviewSummary, Session } from '@/lib/types';
 import type { FileDiffState } from './fileDiff';
 
 export interface ReviewCtx extends Omit<ReviewDetail, 'review'> {
@@ -11,6 +11,7 @@ export interface ReviewCtx extends Omit<ReviewDetail, 'review'> {
   /** True when writes are off: closed review or commit-filter view. */
   readOnly: boolean;
   fileDiff: FileDiffState;
+  sessions: Session[];
   reload: () => void;
   applyReview: (r: ReviewSummary) => void;
 }

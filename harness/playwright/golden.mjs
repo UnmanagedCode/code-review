@@ -67,7 +67,7 @@ try {
     await page.goto(q({ review: range, file: 'c.js' }));
     const tree = page.getByRole('link', { name: /c\.js/ }).first();
     await tree.getByText('0 accepted, 0 rejected, 1 pending').waitFor();
-    await page.getByRole('button', { name: 'Accept' }).first().click();
+    await page.getByRole('group', { name: 'Hunk verdict' }).first().getByRole('button', { name: 'Accept', exact: true }).click();
     await tree.getByText('1 accepted, 0 rejected, 0 pending').waitFor();
     await shot('2-accepted');
 
@@ -84,8 +84,8 @@ try {
     await page.getByRole('button', { name: 'Accept file' }).click();
     await page.getByText('1/2 accepted · 1 rejected').waitFor();
     await aTree.getByText('1 accepted, 1 rejected, 0 pending').waitFor();
-    assert.equal(await bars.nth(0).getByRole('button', { name: 'Accept' }).getAttribute('aria-pressed'), 'true');
-    assert.equal(await bars.nth(1).getByRole('button', { name: 'Reject' }).getAttribute('aria-pressed'), 'true');
+    assert.equal(await bars.nth(0).getByRole('button', { name: 'Accept', exact: true }).getAttribute('aria-pressed'), 'true');
+    assert.equal(await bars.nth(1).getByRole('button', { name: 'Reject', exact: true }).getAttribute('aria-pressed'), 'true');
     assert.equal(await page.getByRole('button', { name: 'Accept file' }).isDisabled(), true);
     await shot('2b-accepted-file');
 

@@ -24,23 +24,19 @@ test('Accept file posts the file path and only the pending hunk ids, flipping th
   expect(value.reload).toHaveBeenCalled();
 });
 
-test('a refused accept reverts every flipped hunk to pending and toasts', async () => {
+// Every refusal reloads, stale or not: the revert may have clobbered a per-hunk verdict set while the request was in flight.
+test.each([
+  ['REVIEW_CLOSED', 409, 'The review is closed; reopen it to change it'],
+  ['HUNK_UNKNOWN', 404, 'The diff changed under you; reloaded'],
+])('a refused accept (%s) reverts every flipped hunk to pending, toasts and reloads', async (code, status, text) => {
   const error = vi.spyOn(toast, 'error').mockImplementation(() => '');
-  stubFetch({ [URL_]: refusal('REVIEW_CLOSED') });
+  stubFetch({ [URL_]: refusal(code, status) });
   const { value } = renderInReview(<FileVerdict file={file('pending', 'pending')} />);
   await userEvent.setup().click(button());
-  await waitFor(() => expect(error).toHaveBeenCalledWith('The review is closed; reopen it to change it'));
+  await waitFor(() => expect(error).toHaveBeenCalledWith(text));
   expect(vi.mocked(value.fileDiff.patchVerdict).mock.calls).toEqual([['h1', 'accepted'], ['h2', 'accepted'], ['h1', 'pending'], ['h2', 'pending']]);
-  expect(value.reload).not.toHaveBeenCalled();
-});
-
-test('a stale refusal (HUNK_UNKNOWN) also reloads', async () => {
-  const error = vi.spyOn(toast, 'error').mockImplementation(() => '');
-  stubFetch({ [URL_]: refusal('HUNK_UNKNOWN', 404) });
-  const { value } = renderInReview(<FileVerdict file={file('pending')} />);
-  await userEvent.setup().click(button());
-  await waitFor(() => expect(value.reload).toHaveBeenCalled());
-  expect(error).toHaveBeenCalledWith('The diff changed under you; reloaded');
+  expect(value.reload).toHaveBeenCalledTimes(1);
+  expect(value.applyReview).not.toHaveBeenCalled();
 });
 
 test('shows a/n accepted and r rejected; disabled when only rejected hunks remain', () => {

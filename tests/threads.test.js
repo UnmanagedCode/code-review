@@ -237,3 +237,13 @@ test('a message body over the cap is refused BODY_TOO_LARGE, when opening a thre
   const t = ok(await say(review.id, at('a.js', 2), { body: 'x'.repeat(MAX_BODY_CHARS) })).thread;
   assert.equal(codeOf(await threads.reply(review.id, HUMAN, t.id, { body: huge })), 'BODY_TOO_LARGE');
 });
+
+test('annotate refuses a tooLarge file with BINARY_FILE, for a line anchor and for a hunk anchor', async () => {
+  const wt = w.addWorktree();
+  wt.write('big.txt', 'x\n'.repeat(600000));
+  const review = await open({ kind: 'uncommitted' });
+  const big = ok(await reviews.diff(review.id, {})).files.find((f) => f.path === 'big.txt');
+  assert.equal(big.tooLarge, true);
+  assert.equal(codeOf(await say(review.id, at('big.txt', 1))), 'BINARY_FILE');
+  assert.equal(codeOf(await threads.annotate(review.id, HUMAN, { anchor: { hunkId: big.hunks[0].id }, kind: 'comment', body: 'x' })), 'BINARY_FILE');
+});

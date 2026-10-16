@@ -4,6 +4,7 @@ import { authorFor, assertOpen, currentRound, inReview, viewReview } from './con
 import { threadView, tally } from './rollup.js';
 import { citationsForMessage } from './citations.js';
 import { bump, summaryById } from './reviews.js';
+import { isBinaryFile } from './snapshot.js';
 
 const KINDS = ['comment', 'question', 'suggestion', 'finding'];
 const SEVERITIES = ['blocker', 'major', 'minor', 'nit'];
@@ -28,6 +29,9 @@ function findThread(review, tid) {
 
 const isOpener = (thread, actor) => actor.kind === 'agent' && thread.openedBy.sessionId === actor.sessionId;
 
+// Annotated files are always in the diff, so the binary decision never needs their content.
+const noContent = async () => null;
+
 // {file, side, startLine, endLine} or {hunkId} -> a complete anchor against the current snapshot.
 async function buildAnchor(review, snap, spec) {
   if (!spec || typeof spec !== 'object') throw invalid('anchor is required');
@@ -39,7 +43,7 @@ async function buildAnchor(review, snap, spec) {
     file = snap.files.find((f) => f.hunks.some((h) => h.id === spec.hunkId));
     if (!file) throw new Refusal('HUNK_UNKNOWN', `no such hunk: ${spec.hunkId}`);
     const hunk = file.hunks.find((h) => h.id === spec.hunkId);
-    if (file.binary || file.tooLarge) throw new Refusal('BINARY_FILE', `${file.path} has no lines to anchor to`);
+    if (await isBinaryFile(snap, file.path, noContent)) throw new Refusal('BINARY_FILE', `${file.path} has no lines to anchor to`);
     if (hunk.kind !== 'text') throw invalid(`${file.path} has no changed lines to anchor to`);
     side = hunk.newLines > 0 ? 'new' : 'old';
     startLine = side === 'new' ? hunk.newStart : hunk.oldStart;
@@ -48,7 +52,7 @@ async function buildAnchor(review, snap, spec) {
     if (!['old', 'new'].includes(side)) throw invalid('side must be old or new');
     file = snap.files.find((f) => f.path === spec.file);
     if (!file) throw new Refusal('FILE_NOT_IN_DIFF', `${spec.file} is not in the diff`);
-    if (file.binary || file.tooLarge) throw new Refusal('BINARY_FILE', `${file.path} has no lines to anchor to`);
+    if (await isBinaryFile(snap, file.path, noContent)) throw new Refusal('BINARY_FILE', `${file.path} has no lines to anchor to`);
     if (!Number.isInteger(startLine) || !Number.isInteger(endLine) || startLine < 1 || startLine > endLine) throw invalid('startLine and endLine must be integers with 1 <= startLine <= endLine');
   }
   const fileLines = await snap.lines(side, file.path);

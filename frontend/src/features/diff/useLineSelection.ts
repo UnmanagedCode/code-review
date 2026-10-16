@@ -101,9 +101,10 @@ export function useLineSelection(rows: Row[], enabled: boolean, resetKey: string
     }
   };
 
-  /** The roving tab stop: the focused cell, else the first selectable one. */
+  /** The roving tab stop: the focused cell while its line is still rendered, else the first selectable one. */
+  const focusPresent = !!focus && rows.some((r) => lineOn(r, focus.side) === focus.n);
   const tabStop = (side: Side, n: number): boolean => {
-    if (focus) return focus.side === side && focus.n === n;
+    if (focus && focusPresent) return focus.side === side && focus.n === n;
     const firstRow = rows.find((r) => lineOn(r, 'new') != null || lineOn(r, 'old') != null);
     if (!firstRow) return false;
     const fs: Side = lineOn(firstRow, 'new') != null ? 'new' : 'old';

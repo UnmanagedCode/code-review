@@ -53,8 +53,9 @@ export function SubmitControls({ onNoRecipient }: { onNoRecipient: () => void })
       {pending && (
         <Alert variant="warning" className="basis-full">
           <AlertDescription>
-            <p>{last!.status === 'failed' ? `Last submission failed (${last!.code ?? 'unknown'})` : 'Last submission was not delivered'}</p>
-            <Button size="sm" variant="outline" onClick={() => sub.resend(pending)}>Re-send</Button>
+            <p>{last!.status === 'failed' ? `Last submission failed (${last!.code ?? 'unknown'})` : 'Last submission isn’t recorded as delivered'}</p>
+            {last!.status === 'pending' && <p id="resend-warning">It may already have reached the session, so re-sending could deliver it twice.</p>}
+            <Button size="sm" variant="outline" onClick={() => sub.resend(pending)} aria-describedby={last!.status === 'pending' ? 'resend-warning' : undefined}>Re-send</Button>
           </AlertDescription>
         </Alert>
       )}

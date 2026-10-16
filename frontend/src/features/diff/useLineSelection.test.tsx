@@ -104,3 +104,15 @@ test('expanding the leading gap (rows[0] changes) keeps the selection; another f
   rerender({ rows: expanded, key: 'r-1:b.ts' });
   expect(result.current.selection).toBeNull();
 });
+
+test('the grid keeps exactly one tab stop after the focused line disappears from the rows', () => {
+  const full = buildRows({ hunks: [hunk()], expansions: {}, texts: {}, total: null });
+  const without = buildRows({ hunks: [hunk({ lines: [{ t: 'ctx', old: 1, new: 1, text: 'c1' }, { t: 'ctx', old: 2, new: 2, text: 'c2' }] })], expansions: {}, texts: {}, total: null });
+  const stops = (rows: typeof full, tab: (s: 'old' | 'new', n: number) => boolean) =>
+    rows.flatMap((r) => (r.kind === 'line' ? (['old', 'new'] as const).flatMap((s) => (r.line[s] != null && tab(s, r.line[s]!) ? [`${s}:${r.line[s]}`] : [])) : []));
+  const { result, rerender } = renderHook(({ rows }) => useLineSelection(rows, true, 'r-1:a.ts'), { initialProps: { rows: full } });
+  act(() => result.current.onPointerDown('new', 4)({ button: 0, pointerType: 'touch' } as never));
+  expect(stops(full, result.current.tabStop)).toEqual(['new:4']);
+  rerender({ rows: without }); // an uncommitted poll removed that line
+  expect(stops(without, result.current.tabStop)).toHaveLength(1);
+});

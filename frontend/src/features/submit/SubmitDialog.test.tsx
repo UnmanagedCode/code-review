@@ -134,13 +134,15 @@ test('a submission left failed after a reload is offered for re-send', async () 
   expect(bridge.sendPrompt).toHaveBeenCalledWith('s-author', 'please review');
 });
 
-test('a submission left pending after a reload is offered for re-send with its own wording', () => {
+test('a submission left pending is offered for re-send, worded as unrecorded and warning of a double delivery', () => {
   installBridge();
   net();
   renderInReview(<SubmitControls onNoRecipient={() => {}} />, {
     review: review({ lastSubmission: { id: 3, status: 'pending', code: null, round: 1 } }),
     submissions: [sub] as never,
   });
-  expect(screen.getByText('Last submission was not delivered')).toBeTruthy();
-  expect(screen.getByRole('button', { name: 'Re-send' })).toBeTruthy();
+  expect(screen.getByText('Last submission isn’t recorded as delivered')).toBeTruthy();
+  const resend = screen.getByRole('button', { name: 'Re-send' });
+  const warning = document.getElementById(resend.getAttribute('aria-describedby')!)!;
+  expect(warning.textContent).toMatch(/may already have reached the session.*twice/);
 });

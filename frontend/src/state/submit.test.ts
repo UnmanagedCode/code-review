@@ -152,7 +152,9 @@ test('SUBMISSION_NOT_PENDING on the result post toasts "Already recorded"', asyn
     'POST api/reviews/r-1/submissions': { submission: sub },
     'POST api/reviews/r-1/submissions/3/result': refusal('SUBMISSION_NOT_PENDING'),
   });
-  const { hook } = setup();
+  const { hook, deps } = setup();
   await act(() => hook.result.current.start());
   expect(info).toHaveBeenCalledWith('Already recorded');
+  expect(deps.onRecorded).toHaveBeenCalledTimes(1);
+  expect(hook.result.current.state.phase).toBe('idle');
 });

@@ -30,20 +30,21 @@ export interface SubmitDeps {
 export function useSubmission({ reviewId, recipientLabel, onRecorded, onNoRecipient }: SubmitDeps) {
   const [state, setState] = useState<SubmitState>({ phase: 'idle' });
 
-  const record = useCallback(async (submission: Submission, result: { ok: boolean; code?: string }): Promise<boolean> => {
+  const record = useCallback(async (submission: Submission, result: { ok: boolean; code?: string }): Promise<'recorded' | 'stale' | 'error'> => {
     try {
       await ep.submissionResult(reviewId, submission.id, result);
       onRecorded();
-      return true;
+      return 'recorded';
     } catch (e) {
       if ((e as { code?: string }).code === 'SUBMISSION_NOT_PENDING') {
+        // Already recorded elsewhere: refetch once and leave the dialog.
         toast.info('Already recorded');
         onRecorded();
         setState({ phase: 'idle' });
-      } else {
-        toast.error(errorText(e));
+        return 'stale';
       }
-      return false;
+      toast.error(errorText(e));
+      return 'error';
     }
   }, [reviewId, onRecorded]);
 
@@ -54,10 +55,11 @@ export function useSubmission({ reviewId, recipientLabel, onRecorded, onNoRecipi
     const outcome = await sendPromptWithin(bridge, submission.recipient, submission.text, SEND_DEADLINE_MS);
     if ('timedOut' in outcome) { setState({ phase: 'timedOut', submission }); return; }
     if (outcome.ok) {
-      if (await record(submission, { ok: true })) {
+      const recorded = await record(submission, { ok: true });
+      if (recorded === 'recorded') {
         setState({ phase: 'delivered', submission });
         toast.success(`Sent to ${recipientLabel}`);
-      } else {
+      } else if (recorded === 'error') {
         // The prompt went out but its result was not recorded: refetch so the header offers "Re-send" for the pending submission.
         setState({ phase: 'idle' });
         onRecorded();
@@ -65,7 +67,7 @@ export function useSubmission({ reviewId, recipientLabel, onRecorded, onNoRecipi
       return;
     }
     // An unrecognised code (a newer cc) is not recorded: the backend would refuse it.
-    if (isBridgeCode(outcome.code)) await record(submission, { ok: false, code: outcome.code });
+    if (isBridgeCode(outcome.code) && (await record(submission, { ok: false, code: outcome.code })) === 'stale') return;
     setState({ phase: 'failed', submission, code: outcome.code });
   }, [record, recipientLabel, onRecorded]);
 
@@ -87,7 +89,7 @@ export function useSubmission({ reviewId, recipientLabel, onRecorded, onNoRecipi
   const resend = useCallback((submission: Submission) => deliver(submission), [deliver]);
   const markSent = useCallback(async () => {
     if (state.phase !== 'manual' && state.phase !== 'failed' && state.phase !== 'timedOut') return;
-    if (await record(state.submission, { ok: true })) setState({ phase: 'delivered', submission: state.submission });
+    if ((await record(state.submission, { ok: true })) === 'recorded') setState({ phase: 'delivered', submission: state.submission });
   }, [state, record]);
   const close = useCallback(() => setState({ phase: 'idle' }), []);
 

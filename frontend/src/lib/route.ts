@@ -63,11 +63,3 @@ function subscribe(fn: () => void): () => void {
 export function useRoute(): Route {
   return useSyncExternalStore(subscribe, read);
 }
-
-/** In-app Back: drop the deepest set param. */
-export function backRoute(r: Route): Route {
-  const order: (keyof Route)[] = ['view', 'thread', 'lines', 'side', 'commit', 'file', 'review'];
-  const next = { ...r };
-  for (const k of order) if (next[k]) { delete next[k]; if (k === 'lines') delete next.side; break; }
-  return next;
-}

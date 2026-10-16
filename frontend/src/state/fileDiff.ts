@@ -129,7 +129,7 @@ export function useFileDiff({ reviewId, path, version, uncommitted, commitFiles 
   const patchVerdict = useCallback((hunkId: string, verdict: Verdict) => patch((f) => ({ ...f, hunks: f.hunks.map((h) => (h.id === hunkId ? { ...h, verdict } : h)) })), [patch]);
 
   return {
-    file, rows, side, total, expand, reveal, patchThread, patchVerdict, reload: fetched.reload, version: fetched.version,
+    file, rows, side, total, expand, reveal, patchThread, patchVerdict, reload: fetched.reload,
     loading: commitMode ? false : fetched.loading && !fetched.data, error: commitMode ? undefined : fetched.error,
   };
 }

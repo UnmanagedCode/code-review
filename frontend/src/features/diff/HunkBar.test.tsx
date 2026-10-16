@@ -1,9 +1,12 @@
 import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { toast } from 'sonner';
+import { useState } from 'react';
 import { expect, test, vi } from 'vitest';
+import { render } from '@testing-library/react';
+import { ReviewProvider } from '@/state/reviewContext';
 import { hunk, refusal, review } from '@/test/fixtures';
-import { renderInReview } from '@/test/renderCtx';
+import { ctxValue, renderInReview } from '@/test/renderCtx';
 import { stubFetch } from '@/test/stubFetch';
 import { HunkBar } from './HunkBar';
 
@@ -59,4 +62,30 @@ test('Comment on hunk opens the composer anchored by {hunkId}', async () => {
   await user.type(screen.getByLabelText('Message'), 'why');
   await user.click(screen.getByRole('button', { name: 'Post' }));
   await waitFor(() => expect(net.calls[0].body).toEqual({ anchor: { hunkId: 'h1' }, kind: 'question', body: 'why' }));
+});
+
+// A harness whose patchVerdict really updates the hunk, so the pressed state reflects what the UI shows.
+function Stateful() {
+  const [h, setH] = useState(hunk({ verdict: 'pending' }));
+  const value = ctxValue({ fileDiff: { patchVerdict: (_id: string, verdict: never) => setH((x) => ({ ...x, verdict })) } as never });
+  return <ReviewProvider value={value}><HunkBar hunk={h} commentable /></ReviewProvider>;
+}
+const pressed = (name: string) => screen.getByRole('button', { name }).getAttribute('aria-pressed');
+
+test('the verdict toggle flips before the server answers', async () => {
+  stubFetch({ 'PUT api/reviews/r-1/hunks/h1/verdict': () => new Promise(() => {}) });
+  render(<Stateful />);
+  expect(pressed('Pending')).toBe('true');
+  await userEvent.setup().click(screen.getByRole('button', { name: 'Accept' }));
+  expect(pressed('Accept')).toBe('true');
+  expect(pressed('Pending')).toBe('false');
+});
+
+test('after a refusal the toggle is back on its previous verdict', async () => {
+  vi.spyOn(toast, 'error').mockImplementation(() => '');
+  stubFetch({ 'PUT api/reviews/r-1/hunks/h1/verdict': refusal('REVIEW_CLOSED') });
+  render(<Stateful />);
+  await userEvent.setup().click(screen.getByRole('button', { name: 'Accept' }));
+  await waitFor(() => expect(pressed('Pending')).toBe('true'));
+  expect(pressed('Accept')).toBe('false');
 });

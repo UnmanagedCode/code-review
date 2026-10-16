@@ -37,6 +37,11 @@ test('the selection clamps at a collapsed gap', () => {
   expect(sel).toMatchObject({ start: 5, end: 5 });
 });
 
+test('anchored at line 2 and dragged to line 22 across a collapsed gap, the range ends at 5', () => {
+  const r = buildRows({ hunks: [h, far], expansions: {}, texts: {}, total: 30 });
+  expect(extendSelection(r, startSelection('new', 2), 22)).toMatchObject({ start: 2, end: 5, anchorLine: 2 });
+});
+
 test('once the gap is expanded the range spans both hunks', () => {
   const texts = Object.fromEntries(Array.from({ length: 30 }, (_, i) => [i + 1, 'x']));
   const r = buildRows({ hunks: [h, far], expansions: { 'after:h1': { top: 15, bottom: 0 } }, texts, total: 30 });

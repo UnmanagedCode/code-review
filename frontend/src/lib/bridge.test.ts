@@ -37,3 +37,9 @@ test('sendPromptWithin reports a timeout when cc never answers', async () => {
   await vi.advanceTimersByTimeAsync(25000);
   await expect(p).resolves.toEqual({ timedOut: true });
 });
+
+test('sendPromptWithin maps a rejected sendPrompt to HOST_ERROR', async () => {
+  const b = installBridge();
+  b.sendPrompt.mockRejectedValue(new Error('frame gone'));
+  await expect(sendPromptWithin(b, 's', 'hi', 1000)).resolves.toEqual({ ok: false, code: 'HOST_ERROR' });
+});

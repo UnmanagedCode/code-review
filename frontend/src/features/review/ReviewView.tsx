@@ -116,7 +116,7 @@ export function ReviewView({ id, chrome }: { id: string; chrome?: ReactNode }) {
   const readOnly = detail.review.status === 'closed' || !!route.commit;
   return (
     <ReviewProvider value={{
-      ...detail, id, commit: route.commit, readOnly, fileDiff, sessions: sessions.data?.sessions ?? [],
+      ...detail, id, commit: route.commit, readOnly, fileDiff, version: rv.version, sessions: sessions.data?.sessions ?? [],
       files: treeFiles, reload: rv.reload, applyReview: rv.applyReview,
     }}>
       {chrome}

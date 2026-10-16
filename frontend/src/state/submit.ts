@@ -57,13 +57,17 @@ export function useSubmission({ reviewId, recipientLabel, onRecorded, onNoRecipi
       if (await record(submission, { ok: true })) {
         setState({ phase: 'delivered', submission });
         toast.success(`Sent to ${recipientLabel}`);
+      } else {
+        // The prompt went out but its result was not recorded: refetch so the header offers "Re-send" for the pending submission.
+        setState({ phase: 'idle' });
+        onRecorded();
       }
       return;
     }
     // An unrecognised code (a newer cc) is not recorded: the backend would refuse it.
     if (isBridgeCode(outcome.code)) await record(submission, { ok: false, code: outcome.code });
     setState({ phase: 'failed', submission, code: outcome.code });
-  }, [record, recipientLabel]);
+  }, [record, recipientLabel, onRecorded]);
 
   const start = useCallback(async () => {
     setState({ phase: 'composing' });

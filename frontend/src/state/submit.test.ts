@@ -1,4 +1,5 @@
 import { act, renderHook } from '@testing-library/react';
+import { toast } from 'sonner';
 import { expect, test, vi } from 'vitest';
 import { BRIDGE_CODES } from '@/lib/refusals';
 import { installBridge } from '@/test/fakeBridge';
@@ -117,4 +118,41 @@ test('SUBMISSION_NOT_PENDING on the result post refetches and returns to idle', 
   await act(() => hook.result.current.start());
   expect(deps.onRecorded).toHaveBeenCalled();
   expect(hook.result.current.state.phase).toBe('idle');
+});
+
+test.each([
+  ['a network error', () => { throw new TypeError('Failed to fetch'); }],
+  ['a 5xx', () => new Response(JSON.stringify({ ok: false, code: 'INTERNAL', reason: 'boom' }), { status: 500 })],
+])('a delivered prompt whose result POST fails with %s returns to idle and refetches, so the re-send banner can show', async (_name, failure) => {
+  installBridge();
+  stubFetch({
+    'POST api/reviews/r-1/submissions': { submission: sub },
+    'POST api/reviews/r-1/submissions/3/result': failure,
+  });
+  const { hook, deps } = setup();
+  await act(() => hook.result.current.start());
+  expect(hook.result.current.state.phase).toBe('idle');
+  expect(deps.onRecorded).toHaveBeenCalled();
+});
+
+test('a sendPrompt rejection is reported as HOST_ERROR and recorded', async () => {
+  const bridge = installBridge();
+  bridge.sendPrompt.mockRejectedValue(new Error('frame gone'));
+  const net = routes();
+  const { hook } = setup();
+  await act(() => hook.result.current.start());
+  expect(results(net)).toEqual([{ ok: false, code: 'HOST_ERROR' }]);
+  expect(hook.result.current.state).toMatchObject({ phase: 'failed', code: 'HOST_ERROR' });
+});
+
+test('SUBMISSION_NOT_PENDING on the result post toasts "Already recorded"', async () => {
+  const info = vi.spyOn(toast, 'info').mockImplementation(() => '');
+  installBridge();
+  stubFetch({
+    'POST api/reviews/r-1/submissions': { submission: sub },
+    'POST api/reviews/r-1/submissions/3/result': refusal('SUBMISSION_NOT_PENDING'),
+  });
+  const { hook } = setup();
+  await act(() => hook.result.current.start());
+  expect(info).toHaveBeenCalledWith('Already recorded');
 });

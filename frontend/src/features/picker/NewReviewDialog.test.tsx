@@ -1,5 +1,6 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { toast } from 'sonner';
 import { expect, test, vi } from 'vitest';
 import { review } from '@/test/fixtures';
 import { stubFetch } from '@/test/stubFetch';
@@ -60,6 +61,7 @@ test('commit posts the chosen sha; uncommitted posts neither base nor sha', asyn
 
 test('a reused review is announced and navigated to', async () => {
   world(undefined, true);
+  const info = vi.spyOn(toast, 'info').mockImplementation(() => '');
   const onClose = vi.fn();
   const user = userEvent.setup();
   render(<NewReviewDialog project="app" worktree="feature" onClose={onClose} />);
@@ -67,4 +69,5 @@ test('a reused review is announced and navigated to', async () => {
   await user.click(screen.getByRole('button', { name: 'Open review' }));
   await waitFor(() => expect(location.search).toContain('review=r-9'));
   expect(onClose).toHaveBeenCalled();
+  expect(info).toHaveBeenCalledWith('Opened the existing review');
 });

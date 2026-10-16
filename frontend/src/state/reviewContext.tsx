@@ -10,6 +10,8 @@ export interface ReviewCtx extends Omit<ReviewDetail, 'review'> {
   commit: string | undefined;
   /** True when writes are off: closed review or commit-filter view. */
   readOnly: boolean;
+  /** Counts the review's successful loads; dependants refetch when it moves. */
+  version: number;
   fileDiff: FileDiffState;
   sessions: Session[];
   reload: () => void;

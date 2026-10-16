@@ -32,7 +32,3 @@ export function extendSelection(rows: Row[], sel: Selection, n: number): Selecti
 
 export const contains = (sel: Selection | null, side: Side, n: number | null): boolean =>
   !!sel && sel.side === side && n != null && n >= sel.start && n <= sel.end;
-
-/** Row indexes (in `rows`) that carry a selectable line number on `side`, in order. */
-export const selectableOn = (rows: Row[], side: Side): number[] =>
-  rows.flatMap((r, i) => (lineOn(r, side) != null ? [i] : []));

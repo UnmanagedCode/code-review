@@ -1,5 +1,8 @@
 import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { expect, test, vi } from 'vitest';
 import { thread } from '@/test/fixtures';
 import { renderInReview } from '@/test/renderCtx';
@@ -51,4 +54,9 @@ test('a hunk anchor is posted as {hunkId}', async () => {
   await user.type(screen.getByLabelText('Message'), 'whole hunk');
   await user.click(post());
   await waitFor(() => expect(posted(net)).toEqual({ anchor: { hunkId: 'h1' }, kind: 'comment', body: 'whole hunk' }));
+});
+
+test('the body limit equals the backend’s MAX_BODY_CHARS', () => {
+  const src = readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..', '..', 'src', 'threads.js'), 'utf8');
+  expect(MAX_BODY_CHARS).toBe(Number(/MAX_BODY_CHARS\s*=\s*([\d_]+)/.exec(src)![1].replace(/_/g, '')));
 });

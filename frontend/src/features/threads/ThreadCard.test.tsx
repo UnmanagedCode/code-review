@@ -2,7 +2,7 @@ import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { toast } from 'sonner';
 import { expect, test, vi } from 'vitest';
-import { agent, message, refusal, thread } from '@/test/fixtures';
+import { agent, message, refusal, review, thread } from '@/test/fixtures';
 import { renderInReview } from '@/test/renderCtx';
 import { stubFetch } from '@/test/stubFetch';
 import { ThreadCard } from './ThreadCard';
@@ -67,4 +67,17 @@ test('a reply refused THREAD_DROPPED shows the dropped message', async () => {
   await user.click(screen.getByRole('button', { name: 'Reply' }));
   await waitFor(() => expect(error).toHaveBeenCalledWith('Its lines changed, so the thread was dropped'));
   expect(value.reload).toHaveBeenCalled();
+});
+
+test('focusing an unread thread through the route marks just that thread read', async () => {
+  history.replaceState(null, '', '?thread=t-1');
+  const net = stubFetch({ 'POST api/reviews/r-1/read': { review: review() } });
+  renderInReview(<ThreadCard thread={thread({ unread: 2 })} />);
+  await waitFor(() => expect(net.calls.map((c) => c.body)).toEqual([{ threadId: 't-1' }]));
+});
+
+test('a thread that is not focused is not marked read', () => {
+  const net = stubFetch({ 'POST api/reviews/r-1/read': { review: review() } });
+  renderInReview(<ThreadCard thread={thread({ unread: 2 })} />);
+  expect(net.calls).toEqual([]);
 });

@@ -133,3 +133,14 @@ test('a submission left failed after a reload is offered for re-send', async () 
   await waitFor(() => expect(results(n)).toEqual([{ ok: true }]));
   expect(bridge.sendPrompt).toHaveBeenCalledWith('s-author', 'please review');
 });
+
+test('a submission left pending after a reload is offered for re-send with its own wording', () => {
+  installBridge();
+  net();
+  renderInReview(<SubmitControls onNoRecipient={() => {}} />, {
+    review: review({ lastSubmission: { id: 3, status: 'pending', code: null, round: 1 } }),
+    submissions: [sub] as never,
+  });
+  expect(screen.getByText('Last submission was not delivered')).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Re-send' })).toBeTruthy();
+});

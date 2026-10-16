@@ -29,3 +29,14 @@ test('a missing code reads as an unreachable backend; reasons are appended only 
   expect(messageFor('REVIEW_CLOSED', 'x')).not.toContain('x');
   expect(errorText(new Error('network'))).toBe(UNREACHABLE);
 });
+
+const submissionsSource = readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..', 'src', 'submissions.js'), 'utf8');
+const backendBridgeCodes = [...(/BRIDGE_CODES\s*=\s*\[([^\]]*)\]/.exec(submissionsSource)?.[1] ?? '').matchAll(/'([A-Z_]+)'/g)].map((m) => m[1]);
+
+test('the UI’s bridge codes are exactly the backend’s accepted set', () => {
+  expect([...BRIDGE_CODES].sort()).toEqual([...backendBridgeCodes].sort());
+});
+
+test('the bridge codes are the seven cc defines', () => {
+  expect([...BRIDGE_CODES].sort()).toEqual(['HOST_ERROR', 'INVALID_ARGUMENT', 'LOOKUP_FAILED', 'SEND_FAILED', 'SESSION_NOT_LIVE', 'SESSION_NOT_READY', 'SESSION_UNKNOWN']);
+});

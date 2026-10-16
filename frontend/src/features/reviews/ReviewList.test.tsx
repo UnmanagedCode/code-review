@@ -1,7 +1,7 @@
-import { render, screen, within } from '@testing-library/react';
+import { act, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, expect, test } from 'vitest';
-import { installFakeEventSource } from '@/test/fakeEventSource';
+import { beforeEach, expect, test, vi } from 'vitest';
+import { FakeEventSource, installFakeEventSource } from '@/test/fakeEventSource';
 import { review } from '@/test/fixtures';
 import { stubFetch } from '@/test/stubFetch';
 import { ReviewList } from './ReviewList';
@@ -35,4 +35,15 @@ test('unread, blockers, HEAD moved and new badges reflect the summary', async ()
   expect(r.getByText('HEAD moved')).toBeTruthy();
   expect(r.getByText('new')).toBeTruthy();
   expect(row.getAttribute('href')).toContain('review=r-1');
+});
+
+test('any SSE event reloads the visible list after the debounce', async () => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+  const net = stubFetch({ 'GET api/reviews': { reviews: [] } });
+  render(<ReviewList project="app" worktree="feature" />);
+  await vi.waitFor(() => expect(net.count('GET api/reviews')).toBe(1));
+  act(() => FakeEventSource.last!.emit({ id: 'r-other', rev: 1 }));
+  expect(net.count('GET api/reviews')).toBe(1);
+  await act(() => vi.advanceTimersByTimeAsync(300));
+  expect(net.count('GET api/reviews')).toBe(2);
 });

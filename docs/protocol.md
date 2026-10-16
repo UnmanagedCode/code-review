@@ -111,7 +111,7 @@ All through `CONDUCTOR_URL`, 3 s timeout; any failure is `CONDUCTOR_UNAVAILABLE`
 
 ## UI routes
 
-The page keeps its state in the query string (`?…`, never the hash) and writes it with `history.pushState`; cc's `navigate` message arrives as `popstate`. Unknown parameters are dropped. In-app Back removes the deepest parameter.
+The page keeps its state in the query string (`?…`, never the hash) and writes it with `history.pushState`; cc's `navigate` message arrives as `popstate`. Unknown parameters are dropped.
 
 | Param | Meaning |
 |---|---|

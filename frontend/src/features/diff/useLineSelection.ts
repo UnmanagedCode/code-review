@@ -6,7 +6,7 @@ import type { Side } from '@/lib/types';
 export interface Cell { side: Side; n: number }
 
 /** Line selection for the diff grid: mouse drag/shift-click, touch taps, keyboard. Disabled = never selects. */
-export function useLineSelection(rows: Row[], enabled: boolean) {
+export function useLineSelection(rows: Row[], enabled: boolean, resetKey: string) {
   const [selection, setSelection] = useState<Selection | null>(null);
   const [composing, setComposing] = useState(false);
   const [focus, setFocus] = useState<Cell | null>(null);
@@ -23,9 +23,8 @@ export function useLineSelection(rows: Row[], enabled: boolean) {
     window.addEventListener('pointerup', up);
     return () => window.removeEventListener('pointerup', up);
   }, []);
-  // A new set of rows (another file) invalidates the selection.
-  const first = rows[0]?.key;
-  useEffect(() => { clear(); setFocus(null); }, [first, clear]);
+  // Another file (or review) invalidates the selection; expanding context does not.
+  useEffect(() => { clear(); setFocus(null); }, [resetKey, clear]);
 
   useEffect(() => {
     if (!moveFocus.current || !focus) return;
@@ -111,5 +110,5 @@ export function useLineSelection(rows: Row[], enabled: boolean) {
     return fs === side && lineOn(firstRow, fs) === n;
   };
 
-  return { selection, dragging: dragActive, composing, clear, openComposer: () => setComposing(true), closeComposer: () => setComposing(false), grid, onPointerDown, onPointerEnter, onKeyDown, tabStop };
+  return { selection, dragging: dragActive, composing, clear, openComposer: () => setComposing(true), grid, onPointerDown, onPointerEnter, onKeyDown, tabStop };
 }

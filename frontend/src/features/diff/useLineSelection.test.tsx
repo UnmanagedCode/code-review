@@ -1,10 +1,12 @@
-import { fireEvent, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, renderHook, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { expect, test } from 'vitest';
-import { diffFile, thread } from '@/test/fixtures';
+import { buildRows } from '@/lib/diffRows';
+import { diffFile, hunk, thread } from '@/test/fixtures';
 import { renderDiff } from '@/test/renderCtx';
 import { stubFetch } from '@/test/stubFetch';
 import { FileDiff } from './FileDiff';
+import { useLineSelection } from './useLineSelection';
 
 // Rows: c1 c2 (del 3) add3 c4 → new lines 1,2,3,4; old lines 1,2,3,4.
 const show = (over = {}) => { history.replaceState(null, '', '?file=src%2Fa.ts'); return renderDiff(<FileDiff />, diffFile(), over); };
@@ -87,4 +89,18 @@ test('the diff is one tab stop', () => {
 test('read-only views (closed review or commit filter) offer no selection', () => {
   show({ readOnly: true });
   expect(document.querySelector('[data-cell]')).toBeNull();
+});
+
+test('expanding the leading gap (rows[0] changes) keeps the selection; another file clears it', () => {
+  const h = hunk();
+  const collapsed = buildRows({ hunks: [h], expansions: {}, texts: { 1: 'x' }, total: null });
+  const expanded = buildRows({ hunks: [{ ...h, oldStart: 3, newStart: 3 }], expansions: { pre: { top: 0, bottom: 2 } }, texts: { 1: 'x', 2: 'y' }, total: null });
+  expect(collapsed[0].key).not.toBe(expanded[0].key);
+  const { result, rerender } = renderHook(({ rows, key }) => useLineSelection(rows, true, key), { initialProps: { rows: collapsed, key: 'r-1:a.ts' } });
+  act(() => result.current.onPointerDown('new', 2)({ button: 0, pointerType: 'touch' } as never));
+  expect(result.current.selection).toMatchObject({ start: 2, end: 2 });
+  rerender({ rows: expanded, key: 'r-1:a.ts' });
+  expect(result.current.selection).toMatchObject({ start: 2, end: 2 });
+  rerender({ rows: expanded, key: 'r-1:b.ts' });
+  expect(result.current.selection).toBeNull();
 });

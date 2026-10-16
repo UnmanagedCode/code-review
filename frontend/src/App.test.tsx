@@ -7,12 +7,21 @@ import { App } from './App';
 import { stubFetch } from './test/stubFetch';
 
 const src = path.dirname(fileURLToPath(import.meta.url));
+const frontend = path.dirname(src);
 
 function sources(dir: string): string[] {
   return readdirSync(dir).flatMap((name) => {
     const p = path.join(dir, name);
     if (statSync(p).isDirectory()) return sources(p);
     return /\.(tsx?|jsx?)$/.test(name) && !/\.test\./.test(name) && !p.includes(`${path.sep}test${path.sep}`) ? [p] : [];
+  });
+}
+/** Every source file under frontend/ (html and public scripts included), minus build output, dependencies and tests. */
+function frontendSources(dir: string): string[] {
+  return readdirSync(dir).flatMap((name) => {
+    const p = path.join(dir, name);
+    if (statSync(p).isDirectory()) return ['dist', 'node_modules', 'test'].includes(name) ? [] : frontendSources(p);
+    return /\.(tsx?|jsx?|mjs|html)$/.test(name) && !/\.test\./.test(name) ? [p] : [];
   });
 }
 const offenders = (re: RegExp, files = sources(src)) => files.filter((f) => re.test(readFileSync(f, 'utf8'))).map((f) => path.relative(src, f));
@@ -25,8 +34,17 @@ test('with no checkout chosen, App offers the project picker', async () => {
 });
 
 // Content must reach the DOM as text, never markup: a model reply rendered raw is script with cc's API.
+// This scan is a backstop over literal source text, not a security boundary.
 test('UI source uses no raw-markup or dynamic-code escape hatch', () => {
-  expect(offenders(/dangerouslySetInnerHTML|\.innerHTML|\.outerHTML|insertAdjacentHTML|document\.write|\beval\(|new Function\(/)).toEqual([]);
+  const banned = /dangerouslySetInnerHTML|\.innerHTML|\.outerHTML|insertAdjacentHTML|document\.write|\beval\(|new Function\(|setHTMLUnsafe|parseHTMLUnsafe|createContextualFragment|DOMParser/;
+  expect(offenders(banned, frontendSources(frontend))).toEqual([]);
+});
+
+test('the escape-hatch scan actually sees the sources it is meant to cover', () => {
+  const seen = frontendSources(frontend).map((f) => path.relative(frontend, f));
+  expect(seen.length).toBeGreaterThan(30);
+  for (const must of ['src/App.tsx', 'index.html', 'public/theme-init.js']) expect(seen).toContain(must);
+  expect(seen.some((f) => f.startsWith('dist') || f.includes('node_modules'))).toBe(false);
 });
 
 test('UI source never assigns location.hash', () => {

@@ -103,8 +103,13 @@ test('a closed review keeps the active segment marked but disables every segment
   for (const name of ['Accept', 'Reject', 'Pending']) expect((screen.getByRole('button', { name }) as HTMLButtonElement).disabled).toBe(true);
 });
 
-// Pins: the active-verdict tint is keyed on aria-pressed (cc's ModeToggle treatment), so every segment carries it.
-test('every verdict segment carries the aria-pressed primary tint', () => {
+// Pins: the active-verdict tint is keyed on aria-pressed (cc's ModeToggle treatment), so every segment carries it, plus
+// its own dark hover shade, without which ghost's dark hover washes the tint out.
+test('every verdict segment carries the aria-pressed primary tint and its dark hover shade', () => {
   renderInReview(<HunkBar hunk={hunk()} commentable />);
-  for (const name of ['Accept', 'Reject', 'Pending']) expect(screen.getByRole('button', { name }).className).toMatch(/\baria-pressed:bg-primary\b/);
+  for (const name of ['Accept', 'Reject', 'Pending']) {
+    const { className } = screen.getByRole('button', { name });
+    expect(className).toMatch(/\baria-pressed:bg-primary\b/);
+    expect(className).toMatch(/(^|\s)dark:aria-pressed:hover:bg-primary\b/);
+  }
 });

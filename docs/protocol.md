@@ -108,3 +108,21 @@ All through `CONDUCTOR_URL`, 3 s timeout; any failure is `CONDUCTOR_UNAVAILABLE`
 - A session is live unless `status` is `exited` or `crashed`. The conductor is the session whose `project` is `.conduct`.
 - The `sessionIds` lists on the other cc routes are not liveness-filtered and are not used.
 - cc stores no session role, so author/reviewer/conductor is derived per review.
+
+## UI routes
+
+The page keeps its state in the query string (`?…`, never the hash) and writes it with `history.pushState`; cc's `navigate` message arrives as `popstate`. Unknown parameters are dropped. In-app Back removes the deepest parameter.
+
+| Param | Meaning |
+|---|---|
+| `project` | The checkout's project; absent = not chosen |
+| `worktree` | Worktree name; absent = main checkout |
+| `review` | Review id |
+| `file` | A path in the diff, or a cited path outside it |
+| `side` | `old` or `new`, for `lines` (default `new`) |
+| `lines` | `10` or `10-20`: highlight, scroll to, and expand context to reach it |
+| `thread` | Focused thread: scrolled to, panel opened, marked read |
+| `commit` | Range reviews: commit-filter view (read-only) |
+| `view` | `new` (New review dialog) or `threads` (thread panel on narrow layouts) |
+
+**Citation links.** A message citation (`path#L10-L20`) renders as `?<route>&file=<path>&side=new&lines=10-20`, built from the route serialiser, never from the message text. Paths that start with `/` or contain a `..` segment are left as text, like the backend's citation resolver.

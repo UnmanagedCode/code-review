@@ -1,6 +1,6 @@
 # Features
 
-What the backend lets the human UI and agents do. Wire formats are in [protocol.md](protocol.md); internals in [architecture.md](architecture.md).
+What the UI and agents can do through the backend. Wire formats are in [protocol.md](protocol.md); internals in [architecture.md](architecture.md).
 
 ## Reviews and targets
 
@@ -54,3 +54,24 @@ A **review** is a persisted discussion about one checkout (a project's main chec
 - **MCP tools** (`code-review__<tool>`): `open_review`, `get_review`, `list_threads`, `get_hunk`, `annotate`, `reply`, `refresh_review`. Schemas and results: [protocol.md](protocol.md#mcp).
 - **Skill** `review-dialog` (`skills/review-dialog/SKILL.md`): how an author or reviewer session works a review.
 - **Conductor convention** `review-in-code-review` (`conventions/conductor-review.md`, scope `conductor`, opt-in per task): open a review on the worker's checkout, have reviewer lenses post findings, hold `merge_worktree` while `mergeBlockers` is above 0.
+
+## Review UI
+
+The plugin page. Wire calls are in [protocol.md](protocol.md); module layout in [architecture.md](architecture.md#frontend).
+
+- **Screens.** Pick a project and worktree (CheckoutBar), list its reviews (this checkout or every checkout of the project; open, closed or all), start one (New review: range with a fork-point shortcut or any ancestor commit, one commit, or uncommitted), then work a review: header, file tree, one file's diff, thread panel.
+- **Layouts.** Wide: left column (checkout and list, or the review header and file tree), the diff in the centre, the thread panel as a right column from `xl`; between `md` and `xl` the panel opens as a right sheet from a Threads button. Narrow (phone or a narrow docked pane): one pane per route (list → file tree → diff), the panel as a bottom sheet. The page follows cc's theme and has no theme control.
+- **Diff.** Unified view only, with both line-number gutters; no syntax highlighting. Context outside the hunks is collapsed; a gap expands 20 lines at a time or fully, and a thread inside a gap opens it. The first 1 500 rows render, then "Show next …". Binary and too-large files show a placeholder with their verdict bar.
+- **Per-hunk bar.** Accept / Reject / Pending (Pending clears) and "Comment on hunk" (anchors the whole hunk). Uncommitted reviews have no verdict controls; file-level hunks (binary, rename, mode) take a verdict but no comment; the commit-filter view has no bar.
+- **Selecting lines.** Mouse: drag over one side's gutter, shift+click to extend, a plain click restarts. Touch: tap a line, tap another to extend, tap an endpoint to clear. Keyboard: the diff is one tab stop; arrows move, ←/→ switch side, Shift+↑/↓ extend, Space/Enter select, `c` comments, Esc clears. A selection covers one side's numbers only and stops at collapsed context; expanding the gap lets it span two hunks. The toolbar under the selection ("L10–L14 (new)") appears when the pointer is released. No selection on binary or too-large files, closed reviews or the commit-filter view.
+- **Threads.** Shown under their end line; several stack in id order. Each card has kind and severity badges, status, disposition, a "re-anchored by context" chip for drifted anchors, a "proposes resolution" chip and banner, author badges ("You", or the role plus the session title), a reply box and resolve controls (a finding resolves "as fixed" or "as dismissed"). Outdated threads appear only in the panel's Outdated tab, labelled with their old lines and round, with a reply box and no status controls.
+- **Thread panel tabs.** This file; All (open/resolved filter, "Next unread"); Outdated; Dropped (uncommitted only).
+- **Message text.** Plain text. `path#L10-L20` citations become in-app links that open the file with the lines highlighted (a cited file outside the diff opens a read-only excerpt); `http(s)` URLs open in a new tab; nothing else is linked.
+- **Commit filter.** Range reviews: choose one commit of the round to see its diff, read-only.
+- **Rounds.** A range review whose HEAD moved shows "HEAD moved — Refresh available"; uncommitted reviews have a Refresh button; commit reviews have none. A refresh reports hunks kept/reset/new and threads moved/drifted/outdated/dropped, or "No changes; still round n".
+- **Closed and gone.** A closed review disables every write and offers Reopen. A removed checkout shows a banner; an unreadable snapshot replaces the tree with the refusal text.
+- **Live updates.** Review events refetch what is on screen; uncommitted reviews also refetch on window focus and every 15 s while the page is visible. Only verdicts update before the server answers, and revert with a toast if refused.
+- **Unread.** Badges come from the server. Focusing a thread (Focus button, `thread=` link, "Next unread") marks it read; "Mark all read" in the header actions menu clears the whole review, including the "new" badge.
+- **Dropped threads.** An uncommitted thread whose lines changed is deleted by the backend. The UI keeps its last fetched copy for the current page session only, in the Dropped tab and as a one-line notice, labelled "dropped: its lines changed". A reload forgets them; replying to one is refused `THREAD_DROPPED`.
+- **Submitting.** "Submit round" (range, commit) or "Request review" (uncommitted) composes the prompt. Embedded in cc, it is sent through the cc bridge: success is recorded and toasts "Sent to …"; a bridge failure is recorded with its code and shown with Retry (same submission), Open agent, Copy prompt and Mark as sent. If cc does not answer within the deadline nothing is recorded and the dialog warns that the prompt may already have arrived, so Retry could deliver it twice. A code the UI does not know is shown raw and not recorded. Standalone, the dialog shows the prompt with Copy and Mark as sent; Close leaves it pending. A submission left failed or pending is offered again as "Re-send" in the header. With no recipient the recipient picker opens.
+- **Session following.** Embedded, the checkout comes from the route, else cc's active session, else the last checkout used. Later session changes to a local project switch the checkout (replacing the history entry); a conductor or remote session leaves the view alone. "Open agent" focuses the recipient session. Standalone, none of this runs.

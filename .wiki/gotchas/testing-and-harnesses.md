@@ -6,5 +6,7 @@
 - Git tests build repos under `os.tmpdir()` (`tests/_git.js`), never inside the project tree; the fake cc (`tests/_fakeCc.js`) is wired by setting `CONDUCTOR_URL`; the store by `CODE_REVIEW_STORE` (`tests/_store.js`). `tests/_*.js` helpers are not matched by the test glob.
 - Each temp repo sits in its own `mkdtemp` dir (`tests/_git.js`) that also holds its worktrees and fixtures; cleanup removes exactly that path, never a name pattern.
 - Real cc and the real `$PROJECTS_ROOT/.code-review` are never touched by tests.
-- `harness/playwright/snap.mjs` writes screenshots to `harness/playwright/out/` (gitignored). It tolerates exactly the two host-URL 404s.
+- `harness/playwright/snap.mjs` and `golden.mjs` write screenshots to `harness/playwright/out/` (gitignored). They tolerate exactly the two host-URL 404s.
 - Mutation `baseline` needs a clean tree and `CC_PROJECTS_ROOT` exported.
+- UI tests: vitest + happy-dom with shared fakes in `frontend/src/test/` (fetch route table, EventSource, `ccBridge`, fixtures); see [ui.md](ui.md).
+- `harness/playwright/seed.mjs` seeds one world through the REST/MCP API using `tests/_world.js`; `snap.mjs` and `golden.mjs` use it. Run `npm run prepare` first so `frontend/dist` is current.

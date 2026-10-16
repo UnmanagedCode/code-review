@@ -78,3 +78,38 @@ Services return a plain object or a refusal `{ok:false, code, reason}`. Low-leve
 - `tests/_store.js`: per-test `CODE_REVIEW_STORE` temp dir.
 - `tests/_world.js`: project `app` + worktrees + fake cc + store in one call, with `HUMAN` and `agent()` actors.
 - `tests/manifest.test.js` and `tests/surfaces.test.js` pin the manifest against the handlers, the flat-schema subset and the skill/convention tool names.
+
+## Frontend
+
+`frontend/src/`; React 19, Vite, Tailwind v4, shadcn components copied from cc into `components/ui/`. Behaviour: [features.md](features.md#review-ui); routes: [protocol.md](protocol.md#ui-routes).
+
+| Dir | Responsibility |
+|---|---|
+| `lib/` | `api.ts` (`ApiError {status, code, reason}`), `endpoints.ts` (the only place `api/…` paths are built), `types.ts` (wire shapes), `refusals.ts` (`messageFor` for backend codes, `bridgeMessage` for bridge codes), `route.ts`, `bridge.ts` (`window.ccBridge`, read per call), `sse.ts` (one shared EventSource), `storage.ts` (the only `localStorage` user, `code-review:` keys) |
+| `lib/` (pure) | `messageText.ts` (segments), `diffRows.ts` (rows and collapsible gaps), `selection.ts` (selection model), `fileTree.ts` |
+| `state/` | Hooks that fetch and write: `useFetch`, `live` (SSE reload, polling), `checkout`, `reviewList`, `review`, `fileDiff`, `threads` (write actions), `threadIndex`, `submit` (delivery state machine), `admin`, `dropped`, `reviewContext` |
+| `features/` | Components by area: `checkout`, `picker`, `reviews`, `review`, `files`, `diff`, `threads`, `submit`, `layout`, `common` |
+
+- Components never call `fetch`; they use `state/` hooks and `lib/endpoints.ts`.
+- **Refetch, never trust events.** An SSE event `{id, rev}` for the open review schedules a debounced refetch only if `rev` exceeds `knownRev`; every write response's review summary raises `knownRev`, so the echo of the UI's own write is ignored. An SSE reconnect refetches what is visible. The open file's diff refetches whenever the review reloads.
+- **Uncommitted reviews** emit no events for working-tree edits: `usePolling` reloads on focus, `visibilitychange` and every `POLL_MS` while visible.
+- **Diff rows.** `buildRows` produces hunk, line and gap rows from hunks plus per-gap expansion counts (`top`, `bottom`) and fetched line texts. The total line count (needed for the trailing gap) comes from a one-line `GET …/file`. Without a diff-wide list endpoint, the thread index fetches the diff of each file whose counts show threads.
+- **Selection.** `useLineSelection` drives a `role="grid"` with roving `tabIndex`; the selection model lives in `lib/selection.ts`.
+- **Submission machine.** `state/submit.ts`: compose → bridge send within `SEND_DEADLINE_MS` → record result; states `idle`, `composing`, `sending`, `delivered`, `failed`, `timedOut`, `manual`.
+- **Theme.** Colours only through tokens (`bg-success/10`, `text-muted-foreground`); a guard test bans literal colours and palette classes.
+
+### UI tests
+
+`npm run test:ui` (vitest, happy-dom). `src/test/` holds the shared fakes:
+
+- `setup.ts`: cleanup, `vi.unstubAllGlobals()`, deletes `window.ccBridge`, clears storage and tombstones, resets the URL.
+- `stubFetch.ts`: route table keyed `METHOD path` (or RegExp); an unstubbed request fails the test.
+- `fakeEventSource.ts`: `emit`, `fail`, `reopen`; installed through `setEventSourceFactory`.
+- `fakeBridge.ts`: `installBridge(session?)` with programmable `sendPrompt`/`openSession` and `emit`.
+- `fixtures.ts`: wire-shaped builders. `renderCtx.tsx`: render under a `ReviewProvider` with spies.
+- happy-dom has no layout: geometry (drag across real rows, overflow, sticky headers) is checked by the Playwright harness.
+- RTL's `waitFor` hangs under vitest fake timers; use `vi.waitFor` there.
+
+### Visual harness
+
+`harness/playwright/seed.mjs` builds one deterministic world (temp repo with a `feature` worktree, fake cc with two sessions, temp store, booted server) through the REST and MCP APIs, reusing the backend test helpers. `snap.mjs` screenshots each screen in light and dark at desktop and phone width; `golden.mjs` drives drag-select and comment, accept, submit without a bridge, and a stub bridge (session switch, failed then retried send). Output goes to `harness/playwright/out/` (gitignored).

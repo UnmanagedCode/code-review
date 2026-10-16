@@ -17,11 +17,13 @@ export function splitLines(content) {
 
 /**
  * Whether `path` must not be shown as text: the diff's own verdict when the file is in it (git honours
- * .gitattributes and caps), a NUL scan of its `lines` otherwise.
+ * .gitattributes and caps), a NUL scan of its content otherwise. `readLines` is called only for the scan, so a
+ * flagged file is refused without being read; a missing file (null) is not binary.
  */
-export function isBinaryFile(snap, path, lines) {
+export async function isBinaryFile(snap, path, readLines) {
   const f = snap.files?.find((x) => x.path === path);
-  return f ? Boolean(f.binary || f.tooLarge) : lines.some((l) => l.includes('\0'));
+  if (f) return Boolean(f.binary || f.tooLarge);
+  return ((await readLines()) ?? []).some((l) => l.includes('\0'));
 }
 
 /** Resolves a review target to the two shas of a round: {headSha, baseSha}. */

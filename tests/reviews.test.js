@@ -315,3 +315,11 @@ test('reviews of a checkout whose path contains a colon work end to end, uncommi
     colon.cleanup();
   }
 });
+
+test('a tooLarge file cannot be read as lines through fileLines either', async () => {
+  const wt = w.addWorktree();
+  wt.write('big.txt', 'x\n'.repeat(600000));
+  const { review } = ok(await open({ kind: 'uncommitted' }));
+  assert.equal(ok(await reviews.getReview(review.id)).files.find((f) => f.path === 'big.txt').tooLarge, true);
+  assert.equal(codeOf(await reviews.fileLines(review.id, { path: 'big.txt', side: 'new' })), 'BINARY_FILE');
+});

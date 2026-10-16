@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { makeRepo, lines } from './_git.js';
-import { resolveTarget, buildSnapshot } from '../src/snapshot.js';
+import { resolveTarget, buildSnapshot, isBinaryFile } from '../src/snapshot.js';
 import { parseCitations, resolveCitation, citationsForMessage, MAX_EXCERPT_LINES } from '../src/citations.js';
 
 const fakeSnap = (files) => ({ lines: async (_side, p) => files[p] ?? null });
@@ -111,4 +111,27 @@ test('a citation into a tooLarge file is unresolved', async () => {
   const snap = await buildSnapshot({ kind: 'uncommitted', repo: repo.dir, checkout: repo.dir, ...shas, limits: { maxFileBytes: 5 } });
   assert.equal(snap.files.find((f) => f.path === 'big.txt').tooLarge, true);
   assert.ok((await resolveCitation({ path: 'big.txt', startLine: 1, endLine: 1 }, snap)).error);
+});
+
+test('a binary or tooLarge file in the diff is refused without reading its content; one outside the diff is read once for the NUL scan', async () => {
+  let reads = 0;
+  const files = [{ path: 'a.png', binary: true, hunks: [] }, { path: 'big.txt', tooLarge: true, hunks: [] }];
+  const snap = { files, lines: async () => { reads++; return ['text']; } };
+  assert.ok((await resolveCitation({ path: 'a.png', startLine: 1, endLine: 1 }, snap)).error);
+  assert.ok((await resolveCitation({ path: 'big.txt', startLine: 1, endLine: 1 }, snap)).error);
+  assert.equal(reads, 0);
+  assert.equal((await resolveCitation({ path: 'other.txt', startLine: 1, endLine: 1 }, snap)).lines[0].text, 'text');
+  assert.equal(reads, 1);
+});
+
+test('isBinaryFile decides from the snapshot flag first and only reads for a file outside the diff', async () => {
+  let reads = 0;
+  const read = async () => { reads++; return ['a\0b']; };
+  const snap = { files: [{ path: 'in.txt', binary: false, hunks: [] }, { path: 'in.bin', binary: true, hunks: [] }] };
+  assert.equal(await isBinaryFile(snap, 'in.txt', read), false, 'the flag wins over NUL bytes in the content');
+  assert.equal(await isBinaryFile(snap, 'in.bin', read), true);
+  assert.equal(reads, 0);
+  assert.equal(await isBinaryFile(snap, 'outside.txt', read), true);
+  assert.equal(reads, 1);
+  assert.equal(await isBinaryFile(snap, 'gone.txt', async () => null), false, 'an absent file is not binary; the caller reports it missing');
 });

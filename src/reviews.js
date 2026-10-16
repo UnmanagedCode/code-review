@@ -217,9 +217,11 @@ export const fileLines = (id, { path, side = 'new', start, end } = {}) => attemp
   if (!path) throw invalid('path is required');
   if (!['old', 'new'].includes(side)) throw invalid('side must be old or new');
   const snap = await env.snapshot();
-  const all = await snap.lines(side, path);
+  let content;
+  const read = async () => (content ??= (await snap.lines(side, path)) ?? false) || null;
+  if (await isBinaryFile(snap, path, read)) throw new Refusal('BINARY_FILE', `${path} is binary`);
+  const all = await read();
   if (!all) throw new Refusal('FILE_NOT_IN_DIFF', `${path} does not exist on the ${side} side`);
-  if (isBinaryFile(snap, path, all)) throw new Refusal('BINARY_FILE', `${path} is binary`);
   const from = start === undefined ? 1 : Number(start);
   const to = end === undefined ? all.length : Number(end);
   if (!Number.isInteger(from) || !Number.isInteger(to)) throw invalid('start and end must be integers');

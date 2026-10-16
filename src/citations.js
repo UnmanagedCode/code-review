@@ -22,9 +22,11 @@ const unsafe = (p) => p.startsWith('/') || p.split('/').includes('..');
  */
 export async function resolveCitation(cit, snapshot) {
   if (unsafe(cit.path)) return { error: 'path must be relative to the checkout root' };
-  const lines = await snapshot.lines('new', cit.path);
+  let content;
+  const read = async () => (content ??= (await snapshot.lines('new', cit.path)) ?? false) || null;
+  if (await isBinaryFile(snapshot, cit.path, read)) return { error: 'binary file' };
+  const lines = await read();
   if (!lines) return { error: 'file not found' };
-  if (isBinaryFile(snapshot, cit.path, lines)) return { error: 'binary file' };
   if (cit.startLine > lines.length) return { error: `file has ${lines.length} lines` };
   const startLine = cit.startLine;
   const endLine = Math.min(cit.endLine, lines.length);

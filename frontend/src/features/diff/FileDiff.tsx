@@ -12,6 +12,7 @@ import { useReviewCtx } from '@/state/reviewContext';
 import { Empty, ErrorState, Loading } from '@/features/common/States';
 import { Composer } from '@/features/threads/Composer';
 import { ThreadCard } from '@/features/threads/ThreadCard';
+import { CitedExcerpt } from './CitedExcerpt';
 import { GapRow } from './GapRow';
 import { Gutter } from './Gutter';
 import { HunkBar } from './HunkBar';
@@ -91,6 +92,7 @@ export function FileDiff({ onBack, extra }: { onBack?: () => void; extra?: React
 
   if (!route.file) return <Empty title="Select a file to see its changes" />;
   if (loading) return <Loading label="Loading diff" rows={8} />;
+  if ((error as { code?: string } | undefined)?.code === 'FILE_NOT_IN_DIFF') return <CitedExcerpt path={route.file} />;
   if (error) return <ErrorState error={error} onRetry={reload} />;
   if (!file) return <Empty title="That file isn’t in this diff" />;
 

@@ -1,5 +1,5 @@
-import { ChevronLeftIcon, ChevronRightIcon } from 'lucide-react';
-import { Fragment, useEffect, useMemo, useState } from 'react';
+import { ArrowLeftIcon, ChevronLeftIcon, ChevronRightIcon } from 'lucide-react';
+import { Fragment, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import type { Row } from '@/lib/diffRows';
@@ -20,11 +20,12 @@ import { useLineSelection } from './useLineSelection';
 export const CHUNK_ROWS = 1500;
 const byId = (a: Thread, b: Thread) => a.id.localeCompare(b.id, undefined, { numeric: true });
 
-function FileHeader({ file, files }: { file: DiffFile; files: { path: string }[] }) {
+function FileHeader({ file, files, onBack, extra }: { file: DiffFile; files: { path: string }[]; onBack?: () => void; extra?: ReactNode }) {
   const i = files.findIndex((f) => f.path === file.path);
   const go = (path: string) => navigate({ file: path, lines: undefined, side: undefined, thread: undefined });
   return (
     <div className="sticky top-0 z-10 flex flex-wrap items-center gap-2 border-b bg-background px-3 py-2">
+      {onBack && <Button variant="ghost" size="icon-sm" aria-label="Back to files" onClick={onBack}><ArrowLeftIcon /></Button>}
       <div className="min-w-0 flex-1">
         <p className="truncate font-mono text-sm font-medium" title={file.path}>{file.path}</p>
         {file.oldPath && <p className="truncate font-mono text-xs text-muted-foreground">renamed from {file.oldPath}</p>}
@@ -33,11 +34,12 @@ function FileHeader({ file, files }: { file: DiffFile; files: { path: string }[]
       <span className="text-xs"><span className="text-success">+{file.additions}</span> <span className="text-destructive">−{file.deletions}</span></span>
       <Button variant="ghost" size="icon-sm" aria-label="Previous file" disabled={i <= 0} onClick={() => go(files[i - 1].path)}><ChevronLeftIcon /></Button>
       <Button variant="ghost" size="icon-sm" aria-label="Next file" disabled={i < 0 || i >= files.length - 1} onClick={() => go(files[i + 1].path)}><ChevronRightIcon /></Button>
+      {extra}
     </div>
   );
 }
 
-export function FileDiff() {
+export function FileDiff({ onBack, extra }: { onBack?: () => void; extra?: ReactNode } = {}) {
   const ctx = useReviewCtx();
   const { file, rows, loading, error, expand, reveal, reload } = ctx.fileDiff;
   const route = useRoute();
@@ -103,7 +105,7 @@ export function FileDiff() {
 
   return (
     <div className="flex min-w-0 flex-col">
-      <FileHeader file={file} files={ctx.files} />
+      <FileHeader file={file} files={ctx.files} onBack={onBack} extra={extra} />
       {!textFile && (
         <div className="flex flex-col gap-2 p-3">
           <p className="text-sm text-muted-foreground">{file.binary ? 'Binary file changed' : 'Too large to diff'}</p>

@@ -54,3 +54,4 @@ export const submissionResult = (id: string, sid: string | number, result: { ok:
   api<{ submission: Submission }>(`${r(id)}/submissions/${encodeURIComponent(String(sid))}/result`, json('POST', result));
 export const markRead = (id: string, threadId?: string) =>
   api<{ review: ReviewSummary }>(`${r(id)}/read`, json('POST', threadId ? { threadId } : {}));
+export const reviewCommits = (id: string) => api<{ commits: Commit[] }>(`${r(id)}/commits`);

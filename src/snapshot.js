@@ -15,6 +15,15 @@ export function splitLines(content) {
   return lines;
 }
 
+/**
+ * Whether `path` must not be shown as text: the diff's own verdict when the file is in it (git honours
+ * .gitattributes and caps), a NUL scan of its `lines` otherwise.
+ */
+export function isBinaryFile(snap, path, lines) {
+  const f = snap.files?.find((x) => x.path === path);
+  return f ? Boolean(f.binary || f.tooLarge) : lines.some((l) => l.includes('\0'));
+}
+
 /** Resolves a review target to the two shas of a round: {headSha, baseSha}. */
 export async function resolveTarget(repo, kind, target = {}) {
   if (kind === 'uncommitted') {
@@ -50,22 +59,32 @@ async function readUncommitted(repo, headSha, limits, opts) {
   // A path HEAD has but the index lacks (`git rm --cached`) shows up deleted above and untracked below.
   // Staging it into the private index makes `diff HEAD` report the working tree against HEAD, once.
   const restage = files.filter((f) => f.status === 'deleted' && rels.includes(f.path)).map((f) => f.path);
-  const staged = [];
+  const survivors = [];
   const oversize = [];
   for (const rel of restage) {
     rels = rels.filter((p) => p !== rel);
     let size;
     try { size = fs.lstatSync(path.join(repo, rel)).size; } catch { continue; } // vanished: it stays deleted
-    if (size > limits.maxFileBytes) { oversize.push(rel); continue; }
-    try { await git.addToIndex(repo, [rel], opts); staged.push(rel); } catch (e) {
+    if (size > limits.maxFileBytes) oversize.push(rel);
+    else survivors.push(rel);
+  }
+  let staged = survivors;
+  if (survivors.length) {
+    try {
+      await git.addToIndex(repo, survivors, opts);
+    } catch (e) {
       if (e instanceof Refusal) throw e;
-      oversize.push(rel); // unreadable: listed, not diffed
+      staged = []; // one unreadable path (e.g. a failing required filter) fails the batch: stage one by one
+      for (const rel of survivors) {
+        try { await git.addToIndex(repo, [rel], opts); staged.push(rel); } catch (e2) {
+          if (e2 instanceof Refusal) throw e2;
+          oversize.push(rel); // unreadable: listed, not diffed
+        }
+      }
     }
   }
-  if (staged.length || oversize.length) {
-    if (staged.length) files = parseDiff(await git.diffWorktree(repo, headSha, opts));
-    files = files.filter((f) => !oversize.includes(f.path));
-  }
+  if (staged.length) files = parseDiff(await git.diffWorktree(repo, headSha, opts));
+  files = files.filter((f) => !oversize.includes(f.path));
   let text = '';
   const extra = [];
   for (const [i, rel] of rels.entries()) {

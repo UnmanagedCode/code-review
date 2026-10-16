@@ -13,7 +13,7 @@ export const DIFF_FLAGS = ['diff', '--no-color', '--no-ext-diff', '--no-textconv
 
 // GIT_OPTIONAL_LOCKS=0 stops `status` from refreshing .git/index, but `git diff <commit>` still rewrites it;
 // working-tree diffs therefore run against a private index copy (see withPrivateIndex).
-const ENV = { ...process.env, LC_ALL: 'C', GIT_OPTIONAL_LOCKS: '0' };
+const baseEnv = () => ({ ...process.env, LC_ALL: 'C', GIT_OPTIONAL_LOCKS: '0' });
 
 // fsmonitor off on every call: with core.fsmonitor=true even `git status` starts a detached daemon that writes into .git.
 // (A clean/smudge filter named by the reviewed repo's own .gitattributes still runs on working-tree paths.)
@@ -30,7 +30,7 @@ export function checkRef(x) {
 /** Runs git in `repo`. Resolves {code, stdout}; exit codes outside `ok` throw an Error carrying stderr. */
 export function run(repo, args, { input, ok = [0], maxBuffer = MAX_DIFF_BYTES, env } = {}) {
   return new Promise((resolve, reject) => {
-    const child = execFile('git', [...BASE_ARGS, '-C', repo, ...args], { env: env ? { ...ENV, ...env } : ENV, maxBuffer, encoding: 'utf8' }, (err, stdout, stderr) => {
+    const child = execFile('git', [...BASE_ARGS, '-C', repo, ...args], { env: { ...baseEnv(), ...env }, maxBuffer, encoding: 'utf8' }, (err, stdout, stderr) => {
       if (!err) return resolve({ code: 0, stdout });
       if (err.code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER') return reject(new Refusal('DIFF_TOO_LARGE', 'output exceeds the size limit'));
       if (typeof err.code === 'number' && ok.includes(err.code)) return resolve({ code: err.code, stdout });
@@ -45,7 +45,7 @@ const out = async (repo, args, opts) => (await run(repo, args, opts)).stdout.tri
 
 /**
  * Calls `fn({env})` with GIT_INDEX_FILE pointing at a unique temp copy of the checkout's index and GIT_OBJECT_DIRECTORY
- * at an empty temp dir (the real objects stay readable as an alternate), both deleted afterwards, so index-refreshing
+ * at a temp dir whose `info/alternates` names the real objects dir, both deleted afterwards, so index-refreshing
  * and staging commands never write the project tree. A missing index is not copied: git starts empty.
  */
 export async function withPrivateIndex(repo, fn) {
@@ -54,8 +54,10 @@ export async function withPrivateIndex(repo, fn) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cr-index-'));
   const copy = path.join(dir, 'index');
   const objects = path.join(dir, 'objects');
-  fs.mkdirSync(objects);
+  fs.mkdirSync(path.join(objects, 'info'), { recursive: true });
   try {
+    // A file, not GIT_ALTERNATE_OBJECT_DIRECTORIES: that variable is colon-separated and would split a path containing ':'.
+    fs.writeFileSync(path.join(objects, 'info', 'alternates'), `${realObjects}\n`);
     if (fs.existsSync(real)) {
       fs.copyFileSync(real, copy);
       // git treats an entry as racily clean (re-hashes it) only if it is not older than the index file, so the copy
@@ -63,8 +65,8 @@ export async function withPrivateIndex(repo, fn) {
       const stat = fs.statSync(real);
       fs.utimesSync(copy, stat.atime, new Date(Math.floor(stat.mtimeMs) - 1));
     }
-    // Objects written while staging (`update-index --add`) land in the private dir; the real store is read through alternates.
-    return await fn({ env: { GIT_INDEX_FILE: copy, GIT_OBJECT_DIRECTORY: objects, GIT_ALTERNATE_OBJECT_DIRECTORIES: realObjects } });
+    // Objects written while staging (`update-index --add`) land in the private dir; the real store is read through its alternates file.
+    return await fn({ env: { GIT_INDEX_FILE: copy, GIT_OBJECT_DIRECTORY: objects } });
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }

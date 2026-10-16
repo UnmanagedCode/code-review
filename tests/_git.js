@@ -44,11 +44,16 @@ export function bindRepo(dir, cleanup = () => fs.rmSync(dir, { recursive: true, 
   return repo;
 }
 
-/** A fresh temp repo on branch `main`. `cleanup()` removes it. */
-export function makeRepo() {
-  const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'cr-repo-')));
+/**
+ * A fresh temp repo on branch `main`, inside its own mkdtemp directory (siblings such as worktrees live there too).
+ * `cleanup()` removes exactly that directory. `dirName` names the repo directory (default `repo`).
+ */
+export function makeRepo({ dirName = 'repo' } = {}) {
+  const parent = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'cr-repo-')));
+  const dir = path.join(parent, dirName);
+  fs.mkdirSync(dir);
   git(dir, 'init', '-q', '-b', 'main');
-  return bindRepo(dir);
+  return bindRepo(dir, () => fs.rmSync(parent, { recursive: true, force: true }));
 }
 
 export const lines = (n, prefix = 'l') => Array.from({ length: n }, (_, i) => `${prefix}${i + 1}`).join('\n') + '\n';

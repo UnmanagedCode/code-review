@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { makeRepo, git, lines } from './_git.js';
+import { execFileSync } from 'node:child_process';
+import os from 'node:os';
 import { resolveTarget, buildSnapshot } from '../src/snapshot.js';
 import { attempt } from '../src/refusals.js';
 import { isDirty, commitLog, withPrivateIndex } from '../src/git.js';
@@ -117,12 +119,8 @@ test('an uncommitted snapshot leaves the main checkout\'s .git/index byte-identi
 test('an uncommitted snapshot leaves a linked worktree\'s index (under the common git dir) byte-identical', async () => {
   const r = repo();
   r.commit({ 'a.txt': 'a\n' });
-  const wt = r.worktreeAdd(path.join(r.dir, '..', `${path.basename(r.dir)}-wt`), 'wt-branch');
-  try {
-    await assertIndexUntouched(r, fs.realpathSync(wt));
-  } finally {
-    fs.rmSync(wt, { recursive: true, force: true });
-  }
+  const wt = r.worktreeAdd(path.join(path.dirname(r.dir), 'wt'), 'wt-branch');
+  await assertIndexUntouched(r, fs.realpathSync(wt));
 });
 
 test('the private index copy is never newer than the original, so git\'s racy-timestamp re-hashing still applies', async () => {
@@ -172,17 +170,13 @@ test('lines() reads both sides, taking a renamed file\'s old side from oldPath',
 test('uncommitted new side is read from the working tree; a symlink escaping the checkout is refused', async () => {
   const r = repo();
   r.commit({ 'a.txt': 'a\n' });
-  const outside = path.join(path.dirname(r.dir), `${path.basename(r.dir)}-outside.txt`);
+  const outside = path.join(path.dirname(r.dir), 'outside.txt'); // in the repo's own temp dir
   fs.writeFileSync(outside, 'secret\n');
-  try {
-    fs.symlinkSync(outside, path.join(r.dir, 'link.txt'));
-    r.write('a.txt', 'live\n');
-    const { snap } = await snapOf(r, 'uncommitted', {});
-    assert.deepEqual(await snap.lines('new', 'a.txt'), ['live']);
-    assert.equal(await snap.lines('new', 'link.txt'), null);
-  } finally {
-    fs.rmSync(outside, { force: true });
-  }
+  fs.symlinkSync(outside, path.join(r.dir, 'link.txt'));
+  r.write('a.txt', 'live\n');
+  const { snap } = await snapOf(r, 'uncommitted', {});
+  assert.deepEqual(await snap.lines('new', 'a.txt'), ['live']);
+  assert.equal(await snap.lines('new', 'link.txt'), null);
 });
 
 test('refs that look like options are refused BAD_REF', async () => {
@@ -348,4 +342,59 @@ test('uncommitted: a restaged path git cannot read degrades to a tooLarge entry 
   } finally {
     fs.chmodSync(path.join(r.dir, 'a.txt'), 0o644);
   }
+});
+
+test('an uncommitted snapshot works in a checkout whose path contains a colon, restaged paths included', async () => {
+  const r = makeRepo({ dirName: 'co:lon' });
+  repos.push(r);
+  r.commit({ 'a.txt': 'one\n', 'b.txt': 'b\n' });
+  r.git('rm', '--cached', '-q', 'a.txt');
+  r.write('a.txt', 'edited\n');
+  r.write('new.txt', 'n\n');
+  assert.ok(r.dir.includes(':'));
+  const { snap } = await snapOf(r, 'uncommitted', {});
+  assert.deepEqual(paths(snap), ['a.txt', 'new.txt']);
+  assert.equal(snap.files.find((f) => f.path === 'a.txt').status, 'modified');
+});
+
+test('a failing batch restage falls back to per-path staging: good paths still diff, the bad one becomes tooLarge', async () => {
+  const r = repo();
+  r.commit({ 'a-bad.txt': 'bad\n', 'b-good.txt': 'one\n', 'c-good.txt': 'one\n' });
+  r.git('rm', '--cached', '-q', 'a-bad.txt', 'b-good.txt', 'c-good.txt');
+  r.git('config', 'filter.boom.clean', 'false');
+  r.git('config', 'filter.boom.required', 'true');
+  r.write('.gitattributes', 'a-bad.txt filter=boom\n');
+  r.write('a-bad.txt', 'bad edited\n');
+  r.write('b-good.txt', 'two\n');
+  r.write('c-good.txt', 'three\n');
+  const { snap } = await snapOf(r, 'uncommitted', {});
+  const by = Object.fromEntries(snap.files.map((f) => [f.path, f]));
+  assert.equal(by['a-bad.txt'].tooLarge, true);
+  assert.equal(by['b-good.txt'].status, 'modified');
+  assert.ok(by['b-good.txt'].hunks[0].lines.some((l) => l.text === 'two'));
+  assert.ok(by['c-good.txt'].hunks[0].lines.some((l) => l.text === 'three'));
+});
+
+test('a restage batch of several paths is one git process, not one per path', async () => {
+  const r = repo();
+  const names = ['a', 'b', 'c', 'd'].map((n) => `${n}.txt`);
+  r.commit(Object.fromEntries(names.map((n) => [n, 'one\n'])));
+  r.git('rm', '--cached', '-q', ...names);
+  for (const n of names) r.write(n, 'two\n');
+  // A logging `git` shim first on PATH counts invocations (src/git.js reads the environment per call).
+  const shimDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cr-shim-'));
+  const log = path.join(shimDir, 'calls.log');
+  const realGit = execFileSync('which', ['git'], { encoding: 'utf8' }).trim();
+  fs.writeFileSync(path.join(shimDir, 'git'), `#!/bin/sh\nprintf '%s\\n' "$*" >> '${log}'\nexec '${realGit}' "$@"\n`, { mode: 0o755 });
+  const savedPath = process.env.PATH;
+  process.env.PATH = `${shimDir}${path.delimiter}${savedPath}`;
+  try {
+    const { snap } = await snapOf(r, 'uncommitted', {});
+    assert.equal(snap.files.length, 4);
+  } finally {
+    process.env.PATH = savedPath;
+  }
+  const calls = fs.readFileSync(log, 'utf8').split('\n').filter((l) => l.includes('update-index'));
+  fs.rmSync(shimDir, { recursive: true, force: true });
+  assert.equal(calls.length, 1);
 });

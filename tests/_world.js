@@ -1,5 +1,4 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { makeRepo, bindRepo, lines } from './_git.js';
 import { tempStore } from './_store.js';
@@ -17,11 +16,10 @@ export async function world() {
   repo.commit({ 'a.js': lines(20), 'b.js': lines(10, 'b') });
   const store = tempStore();
   const cc = await fakeCc({ projects: [{ name: 'app', path: repo.dir, system: 'local' }], worktrees: { app: [] }, instances: [] });
-  const extra = [];
   return {
     repo, cc, store,
     addWorktree(name = 'feature') {
-      const dir = path.join(os.tmpdir(), `cr-wt-${name}-${path.basename(repo.dir)}`);
+      const dir = path.join(path.dirname(repo.dir), `wt-${name}`); // inside the repo's own temp dir, removed with it
       repo.worktreeAdd(dir, `br-${name}`, 'main');
       const real = fs.realpathSync(dir);
       cc.state.worktrees.app.push({
@@ -29,7 +27,6 @@ export async function world() {
         baseSha: repo.git('rev-parse', 'main'), parentPath: repo.dir,
       });
       const wt = bindRepo(real, () => {});
-      extra.push(real);
       /** Simulates cc deleting the worktree. */
       wt.destroy = () => {
         repo.git('worktree', 'remove', '--force', real);
@@ -43,7 +40,6 @@ export async function world() {
     cleanup() {
       cc.close();
       store.cleanup();
-      for (const d of extra) fs.rmSync(d, { recursive: true, force: true });
       repo.cleanup();
     },
   };

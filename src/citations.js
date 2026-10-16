@@ -20,6 +20,8 @@ const unsafe = (p) => p.startsWith('/') || p.split('/').includes('..');
  */
 export async function resolveCitation(cit, snapshot) {
   if (unsafe(cit.path)) return { error: 'path must be relative to the checkout root' };
+  const inDiff = snapshot.files?.find((f) => f.path === cit.path);
+  if (inDiff?.binary || inDiff?.tooLarge) return { error: 'binary file' };
   const lines = await snapshot.lines('new', cit.path);
   if (!lines) return { error: 'file not found' };
   if (cit.startLine > lines.length) return { error: `file has ${lines.length} lines` };

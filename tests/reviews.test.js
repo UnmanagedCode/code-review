@@ -276,3 +276,18 @@ test('the commit filter is refused on commit and uncommitted reviews; uncommitte
   const hunks = ok(await reviews.diff(unc.id, {})).files.flatMap((f) => f.hunks);
   assert.ok(hunks.length > 0 && hunks.every((h) => h.verdict === null));
 });
+
+test('a file git treats as binary through .gitattributes cannot be read as lines either, matching annotate', async () => {
+  w.addWorktree().commit({ '.gitattributes': '*.bin -diff\n', 'x.bin': 'plain text\nmore\n' });
+  const { review } = await open().then(ok);
+  assert.equal(ok(await reviews.getReview(review.id)).files.find((f) => f.path === 'x.bin').binary, true);
+  assert.equal(codeOf(await reviews.fileLines(review.id, { path: 'x.bin', side: 'new' })), 'BINARY_FILE');
+  assert.equal(codeOf(await threads.annotate(review.id, HUMAN, { anchor: { file: 'x.bin', startLine: 1 }, kind: 'comment', body: 'x' })), 'BINARY_FILE');
+});
+
+test('an unchanged file outside the diff falls back to a NUL scan to refuse binary reads', async () => {
+  w.repo.commit({ 'blob.bin': Buffer.from([0, 1, 2, 0, 255, 10]) });
+  w.addWorktree().commit({ 'f.js': 'x\n' });
+  const { review } = await open().then(ok);
+  assert.equal(codeOf(await reviews.fileLines(review.id, { path: 'blob.bin', side: 'new' })), 'BINARY_FILE');
+});

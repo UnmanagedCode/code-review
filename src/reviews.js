@@ -216,9 +216,12 @@ export const commits = (id) => attempt(() => viewReview(id, async (review, env) 
 export const fileLines = (id, { path, side = 'new', start, end } = {}) => attempt(() => viewReview(id, async (review, env) => {
   if (!path) throw invalid('path is required');
   if (!['old', 'new'].includes(side)) throw invalid('side must be old or new');
-  const all = await (await env.snapshot()).lines(side, path);
+  const snap = await env.snapshot();
+  const all = await snap.lines(side, path);
   if (!all) throw new Refusal('FILE_NOT_IN_DIFF', `${path} does not exist on the ${side} side`);
-  if (all.some((l) => l.includes('\0'))) throw new Refusal('BINARY_FILE', `${path} is binary`);
+  // The diff's own verdict (it knows .gitattributes); a NUL scan only where the file is outside the diff.
+  const inDiff = snap.files.find((f) => f.path === path);
+  if (inDiff ? inDiff.binary || inDiff.tooLarge : all.some((l) => l.includes('\0'))) throw new Refusal('BINARY_FILE', `${path} is binary`);
   const from = start === undefined ? 1 : Number(start);
   const to = end === undefined ? all.length : Number(end);
   if (!Number.isInteger(from) || !Number.isInteger(to)) throw invalid('start and end must be integers');

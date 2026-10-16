@@ -75,3 +75,14 @@ test('an uncommitted symlink escaping the checkout is unresolved, a normal file 
     fs.rmSync(outside, { force: true });
   }
 });
+
+test('a citation into a file the snapshot flags binary is unresolved, even without NUL bytes', async () => {
+  repo = makeRepo();
+  repo.commit({ 'a.js': lines(3) });
+  repo.branch('feat');
+  repo.commit({ '.gitattributes': '*.bin -diff\n', 'x.bin': 'plain text\n' });
+  const shas = await resolveTarget(repo.dir, 'range', { base: 'main' });
+  const snap = await buildSnapshot({ kind: 'range', repo: repo.dir, checkout: repo.dir, ...shas });
+  assert.ok((await resolveCitation({ path: 'x.bin', startLine: 1, endLine: 1 }, snap)).error);
+  assert.equal((await resolveCitation({ path: 'a.js', startLine: 1, endLine: 1 }, snap)).lines[0].text, 'l1');
+});

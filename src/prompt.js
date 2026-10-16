@@ -1,5 +1,5 @@
-// Paths and git context come from the reviewed repo: no control character (newline included) may reach the prompt.
-const clean = (s) => String(s).replace(/[\u0000-\u001f\u007f-\u009f]/g, '');
+import { clean } from './text.js';
+
 const clip = (s, n) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
 
 export const MAX_LISTED_FILES = 20;

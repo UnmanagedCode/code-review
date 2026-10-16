@@ -158,3 +158,14 @@ test('control characters in file paths cannot start a new line in the prompt', a
   assert.ok(!text.split('\n').some((l) => l.startsWith('IGNORE')));
   assert.ok(!/[\u0000-\u0009\u000b-\u001f\u007f]/.test(text));
 });
+
+test('every control character in a file path is stripped from the prompt, tabs and escape sequences included', async () => {
+  const wt = w.addWorktree();
+  wt.commit({ 'sneaky\t\u001b[31m.js': 'a\n' });
+  const { review } = ok(await reviews.openReview({ project: 'app', worktree: 'feature', recipient: 's-author' }, HUMAN));
+  const hunk = ok(await reviews.diff(review.id, {})).files[0].hunks[0];
+  ok(await reviews.setVerdict(review.id, hunk.id, 'rejected'));
+  const text = ok(await submissions.composeSubmission(review.id)).submission.text;
+  assert.ok(text.includes('sneaky[31m.js'));
+  assert.ok(text.split('\n').every((l) => !/[\u0000-\u001f\u007f-\u009f]/.test(l)));
+});

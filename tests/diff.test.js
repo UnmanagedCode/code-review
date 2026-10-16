@@ -134,3 +134,12 @@ test('a status or mode change at a fixed path changes the file-level hunk id', (
   assert.notEqual(fileHunkId(`diff --git a/s.sh b/s.sh\nold mode 100644\nnew mode 100755\n`), fileHunkId(`diff --git a/s.sh b/s.sh\nold mode 100644\nnew mode 100700\n`));
   assert.notEqual(fileHunkId(`diff --git a/o.js b/n.js\nrename from o.js\nrename to n.js\n`), fileHunkId(`diff --git a/p.js b/n.js\nrename from p.js\nrename to n.js\n`));
 });
+
+test('the file-level hunk id depends on status even when blobs, modes and paths are equal', () => {
+  const added = `diff --git a/i.png b/i.png\nnew file mode 100644\nindex ${A}..${B} 100644\nBinary files /dev/null and b/i.png differ\n`;
+  const modified = `diff --git a/i.png b/i.png\nindex ${A}..${B} 100644\nBinary files a/i.png and b/i.png differ\n`;
+  const [a, m] = [parseDiff(added)[0], parseDiff(modified)[0]];
+  assert.deepEqual([a.oldMode, a.newMode, a.oldBlob, a.newBlob, a.oldPath], [m.oldMode, m.newMode, m.oldBlob, m.newBlob, m.oldPath]);
+  assert.notEqual(a.status, m.status);
+  assert.notEqual(a.hunks[0].id, m.hunks[0].id);
+});

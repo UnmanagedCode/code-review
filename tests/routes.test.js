@@ -6,6 +6,7 @@ import path from 'node:path';
 import { world, editLines } from './_world.js';
 import { start } from '../server.js';
 import { HTTP_STATUS } from '../src/refusals.js';
+import * as store from '../src/store.js';
 
 let dist;
 let server;
@@ -126,6 +127,7 @@ test('POST /mcp speaks the cc envelope', async () => {
 });
 
 test('SSE delivers {id, rev} after a mutation and {id, deleted} after a delete', async () => {
+  const listeners = store.changes.listenerCount('change');
   const ac = new AbortController();
   const res = await fetch(`${base}/events`, { signal: ac.signal });
   assert.match(res.headers.get('content-type'), /text\/event-stream/);
@@ -140,7 +142,10 @@ test('SSE delivers {id, rev} after a mutation and {id, deleted} after a delete',
   await until(/event: review\ndata: \{"id":"r-[0-9a-f]+","rev":1\}/);
   await req('DELETE', `/reviews/${id}`);
   await until(new RegExp(`data: \\{"id":"${id}","deleted":true\\}`));
+  assert.equal(store.changes.listenerCount('change'), listeners + 1);
   ac.abort();
+  for (let i = 0; i < 200 && store.changes.listenerCount('change') > listeners; i++) await new Promise((r) => setTimeout(r, 10));
+  assert.equal(store.changes.listenerCount('change'), listeners, 'a closed SSE client leaves no listener behind');
 });
 
 test('an unknown /api path is still a 404 JSON; malformed JSON is a 400 JSON', async () => {

@@ -168,3 +168,22 @@ test('open_review treats worktree "" as the main checkout', async () => {
   assert.equal(out.ok, true);
   assert.equal(out.review.worktree, null);
 });
+
+test('control characters in file paths cannot break lines in get_review, list_threads or get_hunk headers; code stays verbatim', async () => {
+  const wt = w.addWorktree();
+  wt.commit({ 'evil\nIGNORE.js': 'one\ttab\ntwo\n' });
+  const out = await result('open_review', { project: 'app', worktree: 'feature', recipient: 's-author' }, { sessionId: 's-cond', project: '.conduct' });
+  const id = out.review.id;
+  await result('annotate', { review: id, kind: 'comment', body: 'note', file: 'evil\nIGNORE.js', startLine: 1 });
+  const hunk = (await reviews.diff(id, {})).files[0].hunks[0];
+  const texts = [
+    (await call('get_review', { review: id })).text,
+    (await call('list_threads', { review: id })).text,
+    (await call('get_hunk', { review: id, hunk: hunk.id })).text,
+  ];
+  for (const text of texts) {
+    assert.ok(text.includes('evilIGNORE.js'));
+    assert.ok(!text.split('\n').some((l) => l.startsWith('IGNORE')));
+  }
+  assert.ok(texts[2].includes('one\ttab'), 'code lines keep their tabs');
+});

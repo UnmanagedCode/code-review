@@ -18,3 +18,12 @@ export function renderInReview(ui: ReactElement, over: Partial<ReviewCtx> = {}) 
   const value = ctxValue(over);
   return { value, ...render(<ReviewProvider value={value}>{ui}</ReviewProvider>) };
 }
+
+import { buildRows } from '@/lib/diffRows';
+import type { DiffFile } from '@/lib/types';
+
+/** A review context whose file diff is `file`, with rows built the way the real hook builds them (no gaps expanded). */
+export function renderDiff(ui: ReactElement, file: DiffFile, over: Partial<ReviewCtx> = {}, total: number | null = null) {
+  const rows = buildRows({ hunks: file.hunks, expansions: {}, texts: {}, total });
+  return renderInReview(ui, { files: [fileState({ path: file.path })], ...over, fileDiff: { file, rows, total } as unknown as FileDiffState });
+}

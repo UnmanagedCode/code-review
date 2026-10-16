@@ -1,6 +1,7 @@
 import { test, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { world, HUMAN, agent, editLines } from './_world.js';
+import { makeRepo, lines } from './_git.js';
 import * as reviews from '../src/reviews.js';
 import * as threads from '../src/threads.js';
 
@@ -290,4 +291,27 @@ test('an unchanged file outside the diff falls back to a NUL scan to refuse bina
   w.addWorktree().commit({ 'f.js': 'x\n' });
   const { review } = await open().then(ok);
   assert.equal(codeOf(await reviews.fileLines(review.id, { path: 'blob.bin', side: 'new' })), 'BINARY_FILE');
+});
+
+test('an ordinary unchanged text file outside the diff is readable as lines', async () => {
+  w.addWorktree().commit({ 'f.js': 'x\n' });
+  const { review } = await open().then(ok);
+  const out = ok(await reviews.fileLines(review.id, { path: 'b.js', side: 'new', start: 1, end: 2 }));
+  assert.deepEqual(out.lines.map((l) => l.text), ['b1', 'b2']);
+});
+
+test('reviews of a checkout whose path contains a colon work end to end, uncommitted included', async () => {
+  const colon = makeRepo({ dirName: 'co:lon' });
+  try {
+    colon.commit({ 'a.js': lines(5) });
+    colon.write('a.js', lines(5).replace('l3', 'edited'));
+    w.cc.state.projects.push({ name: 'colon', path: colon.dir, system: 'local' });
+    const { review } = ok(await reviews.openReview({ project: 'colon', kind: 'uncommitted' }, HUMAN));
+    assert.equal(review.counts.files, 1);
+    ok(await threads.annotate(review.id, HUMAN, { anchor: { file: 'a.js', startLine: 3 }, kind: 'comment', body: 'x' }));
+    assert.equal(ok(await reviews.diff(review.id, {})).files[0].threads.length, 1);
+    assert.equal(ok(await reviews.fileLines(review.id, { path: 'a.js', side: 'old', start: 3, end: 3 })).lines[0].text, 'l3');
+  } finally {
+    colon.cleanup();
+  }
 });

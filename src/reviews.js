@@ -3,7 +3,7 @@ import * as git from './git.js';
 import { withLock } from './mutex.js';
 import { attempt, refuse, Refusal } from './refusals.js';
 import { resolveCheckout, forkPoints, sessions, sessionCheckout } from './checkouts.js';
-import { resolveTarget, buildSnapshot } from './snapshot.js';
+import { resolveTarget, buildSnapshot, isBinaryFile } from './snapshot.js';
 import { followThreads } from './follow.js';
 import { currentRound, authorFor, assertOpen, inReview, viewReview } from './context.js';
 import { summarize, fileStates, hunkView, threadView, targetLabel } from './rollup.js';
@@ -219,9 +219,7 @@ export const fileLines = (id, { path, side = 'new', start, end } = {}) => attemp
   const snap = await env.snapshot();
   const all = await snap.lines(side, path);
   if (!all) throw new Refusal('FILE_NOT_IN_DIFF', `${path} does not exist on the ${side} side`);
-  // The diff's own verdict (it knows .gitattributes); a NUL scan only where the file is outside the diff.
-  const inDiff = snap.files.find((f) => f.path === path);
-  if (inDiff ? inDiff.binary || inDiff.tooLarge : all.some((l) => l.includes('\0'))) throw new Refusal('BINARY_FILE', `${path} is binary`);
+  if (isBinaryFile(snap, path, all)) throw new Refusal('BINARY_FILE', `${path} is binary`);
   const from = start === undefined ? 1 : Number(start);
   const to = end === undefined ? all.length : Number(end);
   if (!Number.isInteger(from) || !Number.isInteger(to)) throw invalid('start and end must be integers');

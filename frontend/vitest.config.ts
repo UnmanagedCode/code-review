@@ -7,5 +7,5 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 export default defineConfig({
   root: here,
   resolve: { alias: { '@': path.join(here, 'src') } },
-  test: { environment: 'happy-dom', include: ['src/**/*.test.{ts,tsx}'] },
+  test: { environment: 'happy-dom', include: ['src/**/*.test.{ts,tsx}'], setupFiles: ['src/test/setup.ts'] },
 });

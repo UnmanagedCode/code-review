@@ -1,6 +1,6 @@
 # Overview
 
-**code-review** is a code-conductor (cc) plugin: the human reviews a checkout's diff in a plugin UI and holds threaded discussions with agents, anchored to selected lines. Agents join through the plugin's MCP tools and a Claude Code skill. The backend (git, store, REST, MCP, skill, conductor convention) is built; the diff UI is still a placeholder.
+**code-review** is a code-conductor (cc) plugin: the human reviews a checkout's diff in a plugin UI and holds threaded discussions with agents, anchored to selected lines. Agents join through the plugin's MCP tools and a Claude Code skill. The backend (git, store, REST, MCP, skill, conductor convention) and the review UI are built.
 
 ## Layout
 

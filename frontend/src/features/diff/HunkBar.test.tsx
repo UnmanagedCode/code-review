@@ -89,3 +89,27 @@ test('after a refusal the toggle is back on its previous verdict', async () => {
   await waitFor(() => expect(pressed('Pending')).toBe('true'));
   expect(pressed('Accept')).toBe('false');
 });
+
+// Pins: exactly one segment is active, and a null verdict counts as Pending.
+test.each([['accepted', 'Accept'], ['rejected', 'Reject'], ['pending', 'Pending'], [null, 'Pending']] as const)('verdict %s marks only %s as the active segment', (verdict, label) => {
+  renderInReview(<HunkBar hunk={hunk({ verdict })} commentable />);
+  for (const name of ['Accept', 'Reject', 'Pending']) expect(pressed(name)).toBe(String(name === label));
+});
+
+// Pins: a closed review still shows which verdict is active, but no segment can change it.
+test('a closed review keeps the active segment marked but disables every segment', () => {
+  renderInReview(<HunkBar hunk={hunk({ verdict: 'rejected' })} commentable />, { review: review({ status: 'closed' }) });
+  expect(pressed('Reject')).toBe('true');
+  for (const name of ['Accept', 'Reject', 'Pending']) expect((screen.getByRole('button', { name }) as HTMLButtonElement).disabled).toBe(true);
+});
+
+// Pins: the active-verdict tint is keyed on aria-pressed (cc's ModeToggle treatment), so every segment carries it, plus
+// its own dark hover shade, without which ghost's dark hover washes the tint out.
+test('every verdict segment carries the aria-pressed primary tint and its dark hover shade', () => {
+  renderInReview(<HunkBar hunk={hunk()} commentable />);
+  for (const name of ['Accept', 'Reject', 'Pending']) {
+    const { className } = screen.getByRole('button', { name });
+    expect(className).toMatch(/\baria-pressed:bg-primary\b/);
+    expect(className).toMatch(/(^|\s)dark:aria-pressed:hover:bg-primary\b/);
+  }
+});

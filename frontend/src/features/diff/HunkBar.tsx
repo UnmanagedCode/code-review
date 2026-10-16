@@ -24,10 +24,10 @@ export function HunkBar({ hunk, commentable }: { hunk: Hunk; commentable: boolea
             <Button
               key={v.value}
               size="sm"
-              variant={(hunk.verdict ?? 'pending') === v.value ? 'secondary' : 'ghost'}
+              variant="ghost"
               aria-pressed={(hunk.verdict ?? 'pending') === v.value}
               disabled={closed}
-              className="rounded-none first:rounded-l-md last:rounded-r-md"
+              className="rounded-none first:rounded-l-md last:rounded-r-md aria-pressed:bg-primary/15 aria-pressed:text-accent-foreground aria-pressed:hover:bg-primary/20 dark:aria-pressed:hover:bg-primary/20"
               onClick={() => (hunk.verdict ?? 'pending') !== v.value && actions.setVerdict(hunk.id, v.value, hunk.verdict)}
             >
               {v.label}

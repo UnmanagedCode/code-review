@@ -12,7 +12,7 @@ const span = (a) => `${clean(a.file)}#L${a.startLine}${a.endLine > a.startLine ?
 export function renderRollup(s, files) {
   const out = [
     `${clean(s.id)} · ${clean(s.label)} · round ${s.round} · ${s.status}`,
-    `recipient: ${s.recipient ? `${clean(s.recipient)} (${s.recipientRole})` : 'none'} · mergeBlockers: ${s.mergeBlockers} · unread: ${s.unread}`,
+    `recipient: ${s.recipient ? `${clean(s.recipient)} (${s.recipientRole})` : 'none'}${s.author ? ` · author: ${clean(s.author)}` : ''} · mergeBlockers: ${s.mergeBlockers} · unread: ${s.unread}`,
     `threads: ${s.counts.threads.open} open, ${s.counts.threads.resolved} resolved, ${s.counts.threads.outdated} outdated`,
   ];
   if (s.snapshotError) out.push(`diff unavailable: ${clean(s.snapshotError)}`);

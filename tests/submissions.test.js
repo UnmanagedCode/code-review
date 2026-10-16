@@ -86,6 +86,56 @@ test('an uncommitted review asks its reviewer to review the changed files, even 
   assert.match(submission.text, /reviewer/);
 });
 
+const cond = agent('s-cond', '.conduct');
+
+async function conductorReview(args = {}) {
+  w.session('s-cond', { project: '.conduct' });
+  const wt = w.addWorktree();
+  wt.commit({ 'a.js': editLines({ 2: 'top-edit' }) });
+  return { wt, review: ok(await reviews.openReview({ project: 'app', worktree: 'feature', ...args }, cond)).review };
+}
+
+test('a conductor recipient of a range review is asked to relay the round to the author', async () => {
+  const { review } = await conductorReview({ author: 's-author' });
+  const [h1] = ok(await reviews.diff(review.id, {})).files[0].hunks;
+  ok(await reviews.setVerdict(review.id, h1.id, 'rejected'));
+  const { submission } = ok(await submissions.composeSubmission(review.id));
+  assert.match(submission.text, /you are the conductor/);
+  assert.match(submission.text, /1 rejected/);
+  assert.ok(submission.text.includes('s-author'));
+  assert.ok(submission.text.includes(`review=${review.id}`));
+  assert.doesNotMatch(submission.text, /refresh_review/);
+});
+
+test('a conductor-opened review with no author still gets the relay line, without a session id', async () => {
+  const { review } = await conductorReview();
+  const { submission } = ok(await submissions.composeSubmission(review.id));
+  assert.match(submission.text, /Relay this round to the author:/);
+  assert.doesNotMatch(submission.text, /session /);
+});
+
+test('a conductor recipient of an uncommitted review is asked to brief a reviewer', async () => {
+  w.session('s-cond', { project: '.conduct' });
+  w.addWorktree().write('a.js', editLines({ 2: 'X' }));
+  const { review } = ok(await reviews.openReview({ project: 'app', worktree: 'feature', kind: 'uncommitted' }, cond));
+  const { submission } = ok(await submissions.composeSubmission(review.id));
+  assert.match(submission.text, /you are the conductor/);
+  assert.match(submission.text, /Please review the uncommitted changes/);
+  assert.ok(submission.text.includes('a.js'));
+  assert.match(submission.text, /Brief a reviewer/);
+  assert.ok(submission.text.includes(`review=${review.id}`));
+});
+
+test('the prompt body follows the review kind, not the recipient role', async () => {
+  const { review } = await conductorReview({ author: 's-author' });
+  w.session('s-rev', { worktree: 'feature' });
+  ok(await reviews.patchReview(review.id, { recipient: 's-rev' }));
+  const { submission } = ok(await submissions.composeSubmission(review.id));
+  assert.match(submission.text, /you are the reviewer/);
+  assert.match(submission.text, /Verdicts: 0 accepted, 0 rejected, 1 pending/);
+  assert.doesNotMatch(submission.text, /Please review the uncommitted/);
+});
+
 test('without a recipient a submission is refused NO_RECIPIENT; a closed review REVIEW_CLOSED', async () => {
   const { review } = await twoHunks({});
   ok(await reviews.patchReview(review.id, { recipient: null }));

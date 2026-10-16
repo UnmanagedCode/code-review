@@ -23,6 +23,7 @@ export async function seed() {
     wt.commit({ 'a.js': editLines({ 3: 'changed3', 4: 'changed4', 8: 'changed8', 19: 'changed19' }) }, 'second');
     w.session('s-author', { worktree: 'feature' });
     w.session('s-rev', { worktree: null });
+    w.session('s-cond', { project: '.conduct' });
 
     srv = await bootServer({ cwd: projectRoot, entry: 'server.js', silent: true, env: { CODE_REVIEW_STORE: w.store.dir, CONDUCTOR_URL: process.env.CONDUCTOR_URL } });
     const call = async (method, p, body) => {
@@ -55,13 +56,16 @@ export async function seed() {
     await call('PUT', `reviews/${id}/hunks/${h2.id}/verdict`, { verdict: 'rejected' });
     wt.commit({ 'c.js': `${lines(10, 'b')}extra line\nanother\n` }, 'fourth'); // HEAD moves past the round: refresh available
 
+    // A conductor-opened commit review: the conductor is the recipient and names the worker as author.
+    const conducted = (await mcp('open_review', { project: 'app', worktree: 'feature', kind: 'commit', author: 's-author', title: 'Conductor review' }, { sessionId: 's-cond', project: '.conduct' })).review;
+
     // An uncommitted review with a reviewer finding.
     wt.write('a.js', editLines({ 2: 'uncommitted2' }));
     const un = (await call('POST', 'reviews', { project: 'app', worktree: 'feature', kind: 'uncommitted', recipient: 's-author' })).review;
     await mcp('annotate', { review: un.id, kind: 'finding', severity: 'minor', body: 'Name this better.', file: 'a.js', side: 'new', startLine: 2 }, rev);
 
     return {
-      url: srv.url, ids: { range: id, uncommitted: un.id }, call,
+      url: srv.url, ids: { range: id, uncommitted: un.id, conducted: conducted.id }, call,
       async close() { await srv.close(); w.cleanup(); },
     };
   } catch (e) {

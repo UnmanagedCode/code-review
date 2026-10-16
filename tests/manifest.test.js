@@ -55,3 +55,9 @@ test('the review-dialog skill exists with its name in the frontmatter', () => {
   const skill = fs.readFileSync(path.join(ROOT, 'skills', 'review-dialog', 'SKILL.md'), 'utf8');
   assert.match(skill, /^---\nname: review-dialog\n/);
 });
+
+test('the open_review schema has no recipient property and has author', () => {
+  const props = manifest.mcp.tools.find((t) => t.name === 'open_review').inputSchema.properties;
+  assert.equal('recipient' in props, false);
+  assert.equal(props.author.type, 'string');
+});

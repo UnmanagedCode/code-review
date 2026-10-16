@@ -5,7 +5,7 @@ export const agent = (sessionId = 's-rev', role: 'author' | 'reviewer' | 'conduc
 
 export const review = (over: Partial<ReviewSummary> = {}): ReviewSummary => ({
   id: 'r-1', project: 'app', worktree: 'feature', branch: 'feature', kind: 'range', target: {}, label: 'main…feature', title: null,
-  status: 'open', recipient: 's-author', recipientRole: 'author', round: 1, headSha: 'a'.repeat(40), baseSha: 'b'.repeat(40),
+  status: 'open', recipient: 's-author', author: null, recipientRole: 'author', round: 1, headSha: 'a'.repeat(40), baseSha: 'b'.repeat(40),
   headMoved: false, dirty: false, checkoutGone: false,
   counts: { files: 1, hunks: { pending: 1, accepted: 0, rejected: 0 }, threads: { open: 0, resolved: 0, outdated: 0 } },
   mergeBlockers: 0, unread: 0, seenByHuman: true, rev: 1, createdAt: '2026-01-01T00:00:00Z', createdBy: HUMAN, lastSubmission: null,

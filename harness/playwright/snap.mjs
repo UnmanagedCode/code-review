@@ -16,7 +16,7 @@ const HOST_URLS = /pluginBridge\.js|pluginTheme\.css/;
 const VIEWPORTS = { desktop: { width: 1280, height: 800 }, phone: { width: 390, height: 844 } };
 
 const world = await seed();
-const { range, uncommitted } = world.ids;
+const { range, uncommitted, conducted } = world.ids;
 const q = (o) => `${world.url}/?${new URLSearchParams({ project: 'app', worktree: 'feature', ...o })}`;
 try {
   await withPage(async (page) => {
@@ -93,6 +93,9 @@ try {
         await page.getByLabel('Prompt').waitFor();
         await shot('submit-dialog');
         await page.getByRole('button', { name: 'Close' }).first().click();
+
+        await open(q({ review: conducted }), page.getByText('Author: s-author'));
+        await shot('conducted-header'); // recipient = the conductor, author = the worker
 
         await open(q({ review: uncommitted, file: 'a.js' }), page.getByRole('grid'));
         await page.getByRole('article').first().waitFor();

@@ -23,7 +23,7 @@ Services return a plain object or a refusal `{ok:false, code, reason}`. Low-leve
 | `follow.js` | moves threads to where their lines now are (refresh and the uncommitted sweep), keeping each earlier round's anchor in `pastAnchors` (range reviews) |
 | `history.js` | `threadsAt(review, n)`: threads as of round n (pure); `anchorChain`, `roundThreadView` |
 | `rounds.js` | past-round views of range reviews: `pickRound`, `roundView`, `roundDiff` (`reviews.diff` delegates `?round=`) |
-| `context.js` | per-request view of a review: `makeEnv`, `inReview` (locked write path), `viewReview` (read path), `authorFor` |
+| `context.js` | per-request view of a review: `makeEnv`, `inReview` (locked write path), `viewReview` (read path), `roleOf`, `authorFor`, `recipientRole` |
 | `reviews.js` | open, list, get, patch, delete, verdict, accept-file, refresh, diff, commits, file lines, hunks |
 | `threads.js` | annotate, reply, thread status, mark read, list |
 | `rollup.js` | counts, `mergeBlockers`, unread, `ReviewSummary`, thread/hunk views (pure) |
@@ -42,7 +42,7 @@ Services return a plain object or a refusal `{ok:false, code, reason}`. Low-leve
 - Writes are atomic (tmp file in the same dir, then `rename`); every write bumps `rev` and emits `change`. `mutate(id, fn)` runs under `withLock(id)` and writes only if `fn` changed the review; creation runs under `withLock('create')`.
 - `schema` is `SCHEMA` (`src/migrate.js`). `start()` runs `migrateStore()` before listening: every stored review below `SCHEMA` is upgraded in place through `mutate` (a review already current is not written, so a second run writes nothing); an unconfigured store is skipped. A review that cannot be read or migrated (unparsable JSON, `MisfiledReview`, an unexpected shape) is logged (`code-review: review <id> left unmigrated: <ErrorName>: <message>`) and left untouched, so it still fails loudly when read; the others migrate and the server starts. Only failing to list the store dir fails startup. Application code reads the current format only.
   - 1 → 2: every thread gets `pastAnchors: []` (an existing value is kept).
-- Review fields: `id, project, worktree, branch, kind, target, baseLabel, title, status, createdAt, createdBy, recipient, seenByHuman, rev, seq, humanSeq, nextThread, nextSubmission, rounds, verdicts, threads, droppedThreads, submissions`.
+- Review fields: `id, project, worktree, branch, kind, target, baseLabel, title, status, createdAt, createdBy, recipient, author (session id; absent or `null` = none, so the recipient is the author), seenByHuman, rev, seq, humanSeq, nextThread, nextSubmission, rounds, verdicts, threads, droppedThreads, submissions`.
 - `seq` is a review-wide counter bumped by every message, verdict and status change; `humanSeq` is the `seq` of the last human one. Unread counts and "since last delivery" compare `seq`s; logic never reads the wall clock (`at`/`createdAt` are display-only).
 - Thread fields: `id, kind, severity, status, disposition, resolution:{by, seq}|null, resolveProposed, statusSeq, openedBy, anchor, pastAnchors, humanReadSeq, createdAt, messages`.
 - A thread's `humanReadSeq` is the `seq` the human has read up to. A human status change takes its own `seq`; opening and agent resolves share the `seq` of their message (how the prompt tells them apart).

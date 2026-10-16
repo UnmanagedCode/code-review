@@ -12,8 +12,11 @@ test('the backend code list was read from source', () => {
   expect(codes).toContain('THREAD_DROPPED');
 });
 
-test('every backend refusal code except the MCP-only one, and INTERNAL, has a specific message', () => {
-  for (const code of [...codes.filter((c) => c !== 'CALLER_UNKNOWN'), 'INTERNAL']) {
+// CALLER_UNKNOWN and AUTHOR_UNKNOWN only come from the MCP surface: the human's REST path refuses an `author` as INVALID_ARGUMENT first.
+const MCP_ONLY = new Set(['CALLER_UNKNOWN', 'AUTHOR_UNKNOWN']);
+
+test('every backend refusal code except the MCP-only ones, and INTERNAL, has a specific message', () => {
+  for (const code of [...codes.filter((c) => !MCP_ONLY.has(c)), 'INTERNAL']) {
     expect(messageFor(code), code).not.toMatch(/^Unexpected refusal/);
   }
 });

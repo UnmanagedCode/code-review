@@ -5,7 +5,7 @@ description: Take part in a code-review plugin review (code-review__* tools) —
 
 # Review dialog
 
-You are the review's **author** when you are its recipient on a range or commit review; otherwise you **review** (on an uncommitted review the human is the author).
+You are the review's **author** on a range or commit review when you are its `author`, or its recipient if it names no author; otherwise you **review** (on an uncommitted review the human is the author).
 
 - **Read** with `get_review`, then `list_threads`; `get_hunk` when you need the code around a thread.
 - **Answer or fix.** Answer a question with `reply`. For a rejected hunk or a requested change: fix it, commit, `refresh_review`, then reply on each thread saying what changed. If you disagree, say why in the thread instead of skipping it.

@@ -51,22 +51,97 @@ test('commit kind defaults to HEAD, resolves to a full sha, reuses, and refuses 
   assert.equal(codeOf(await reviews.refreshReview(review.id)), 'IMMUTABLE_TARGET');
 });
 
-test('recipient default: explicit, else the calling session, else the single attached live session, else none', async () => {
+const cond = agent('s-cond', '.conduct');
+const rosterA = () => {
   w.addWorktree().commit({ 'f.js': 'x\n' });
   w.session('s-a', { worktree: 'feature' });
   w.session('s-b', { worktree: 'feature' });
+  w.session('s-cond', { project: '.conduct' });
+};
+
+test('an agent opener is always the recipient: a recipient argument is refused, even before reuse', async () => {
+  rosterA();
+  assert.equal(ok(await open({}, agent('s-b'))).review.recipient, 's-b');
+  const count = store.list().length;
+  for (const recipient of ['s-a', 's-b', null]) assert.equal(codeOf(await open({ recipient }, agent('s-b'))), 'INVALID_ARGUMENT');
+  assert.equal(store.list().length, count);
+});
+
+test('the human recipient chain: explicit, else the single live attached session, else none', async () => {
+  rosterA();
   w.session('s-dead', { worktree: 'feature', status: 'exited' });
-  const fresh = async (args, actor) => {
-    const { review } = ok(await open(args, actor));
+  const fresh = async (args) => {
+    const { review } = ok(await open(args, HUMAN));
     ok(await reviews.patchReview(review.id, { status: 'closed' }));
     return review;
   };
-  assert.equal((await fresh({ recipient: 's-a' }, agent('s-b'))).recipient, 's-a');
-  assert.equal((await fresh({}, agent('s-b'))).recipient, 's-b');
-  assert.equal((await fresh({}, HUMAN)).recipient, null, 'two live attached sessions are ambiguous');
+  assert.equal((await fresh({ recipient: 's-a' })).recipient, 's-a');
+  assert.equal((await fresh({})).recipient, null, 'two live attached sessions are ambiguous');
   w.cc.state.instances = w.cc.state.instances.filter((i) => i.sessionId !== 's-b');
-  assert.equal((await fresh({}, HUMAN)).recipient, 's-a');
+  assert.equal((await fresh({})).recipient, 's-a');
   assert.equal(codeOf(await open({ recipient: 'ghost' })), 'RECIPIENT_UNKNOWN');
+});
+
+test('reuse keeps the original opener, recipient and author', async () => {
+  rosterA();
+  const first = ok(await open({}, agent('s-a'))).review;
+  const second = ok(await open({}, agent('s-b')));
+  assert.equal(second.reused, true);
+  assert.equal(second.review.id, first.id);
+  assert.equal(second.review.recipient, 's-a');
+  assert.equal(store.read(first.id).recipient, 's-a');
+  ok(await reviews.patchReview(first.id, { status: 'closed' }));
+
+  const byCond = ok(await open({ author: 's-a' }, cond)).review;
+  for (const [args, actor] of [[{ author: 's-b' }, cond], [{}, agent('s-a')]]) {
+    const again = ok(await open(args, actor));
+    assert.equal(again.reused, true);
+    assert.equal(again.review.id, byCond.id);
+  }
+  const stored = store.read(byCond.id);
+  assert.equal(stored.recipient, 's-cond');
+  assert.equal(stored.author, 's-a');
+});
+
+test('author: only a conductor names one, on a range or commit review, and it must be a known session', async () => {
+  rosterA();
+  const made = ok(await open({ author: 's-a' }, cond)).review;
+  assert.equal(made.recipient, 's-cond');
+  assert.equal(made.author, 's-a');
+  assert.equal(made.recipientRole, 'conductor');
+  assert.equal(store.read(made.id).author, 's-a');
+  ok(await reviews.patchReview(made.id, { status: 'closed' }));
+
+  const before = store.list().length;
+  assert.equal(codeOf(await open({ author: 'ghost' }, cond)), 'AUTHOR_UNKNOWN');
+  assert.equal(codeOf(await open({ author: 's-a' }, agent('s-b'))), 'INVALID_ARGUMENT');
+  assert.equal(codeOf(await open({ author: 's-a' }, HUMAN)), 'INVALID_ARGUMENT');
+  assert.equal(codeOf(await open({ author: 's-a', kind: 'uncommitted' }, cond)), 'INVALID_ARGUMENT');
+  assert.equal(store.list().length, before);
+
+  assert.equal(ok(await open({}, cond)).review.author, null);
+});
+
+test('recipientRole follows the stored author and who opened the review', async () => {
+  rosterA();
+  const agentOpened = ok(await open({}, agent('s-a'))).review;
+  assert.equal(agentOpened.recipientRole, 'author');
+  ok(await reviews.patchReview(agentOpened.id, { status: 'closed' }));
+  w.addWorktree('other').write('u.txt', 'u\n');
+  const unc = ok(await open({ worktree: 'other', kind: 'uncommitted' }, agent('s-a'))).review;
+  assert.equal(unc.recipientRole, 'reviewer');
+
+  const role = async (id, recipient) => ok(await reviews.patchReview(id, { recipient })).review.recipientRole;
+  const byCond = ok(await open({ author: 's-a' }, cond)).review;
+  assert.equal(byCond.recipientRole, 'conductor');
+  assert.equal(await role(byCond.id, 's-a'), 'author');
+  assert.equal(await role(byCond.id, 's-b'), 'reviewer');
+  assert.equal(await role(byCond.id, 's-cond'), 'conductor');
+  assert.equal(await role(byCond.id, null), null);
+  ok(await reviews.patchReview(byCond.id, { status: 'closed' }));
+
+  const human = ok(await open({ recipient: 's-a' }, HUMAN)).review;
+  assert.equal(await role(human.id, 's-cond'), 'author', 'the conductor reads as conductor only on a review it opened');
 });
 
 test('verdicts: refused on uncommitted, unknown hunks and bad values; accepted ones count; pending clears', async () => {

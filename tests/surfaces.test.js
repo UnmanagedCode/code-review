@@ -38,3 +38,12 @@ test('no prompt surface offers a tool for setting a verdict', () => {
 test('the skill and the tool descriptions do not repeat each other: the skill cites no mechanics the tools already state', () => {
   assert.doesNotMatch(surfaces.skill, /severity|path#L/);
 });
+
+test('the conductor convention opens a review naming the author and never passes a recipient', () => {
+  const calls = [...surfaces.convention.matchAll(/open_review\(([^)]*)\)/g)].map((m) => m[1]);
+  assert.ok(calls.length > 0);
+  for (const c of calls) {
+    assert.doesNotMatch(c, /recipient/);
+    assert.match(c, /author/);
+  }
+});

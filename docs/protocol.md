@@ -16,7 +16,7 @@ REST under `/api` (JSON), an SSE stream, and the cc MCP endpoint. Behaviour behi
 | Status | Codes |
 |---|---|
 | 400 | `INVALID_ARGUMENT` `BAD_REF` `BASE_REQUIRED` `LINE_OUT_OF_RANGE` `SEVERITY_REQUIRED` `CALLER_UNKNOWN` |
-| 404 | `PROJECT_UNKNOWN` `CHECKOUT_UNKNOWN` `REF_UNKNOWN` `REVIEW_UNKNOWN` `THREAD_UNKNOWN` `HUNK_UNKNOWN` `FILE_NOT_IN_DIFF` `SUBMISSION_UNKNOWN` `COMMIT_NOT_IN_RANGE` `RECIPIENT_UNKNOWN` |
+| 404 | `PROJECT_UNKNOWN` `CHECKOUT_UNKNOWN` `REF_UNKNOWN` `REVIEW_UNKNOWN` `THREAD_UNKNOWN` `HUNK_UNKNOWN` `FILE_NOT_IN_DIFF` `SUBMISSION_UNKNOWN` `COMMIT_NOT_IN_RANGE` `RECIPIENT_UNKNOWN` `ROUND_UNKNOWN` |
 | 409 | `PROJECT_NOT_LOCAL` `CHECKOUT_GONE` `NO_COMMON_ANCESTOR` `UNBORN_HEAD` `IMMUTABLE_TARGET` `NO_VERDICTS` `REVIEW_CLOSED` `BINARY_FILE` `NO_RECIPIENT` `NOTHING_TO_SUBMIT` `SUBMISSION_NOT_PENDING` `THREAD_DROPPED` |
 | 410 | `SNAPSHOT_GONE` (a pinned sha was garbage-collected) |
 | 413 | `DIFF_TOO_LARGE` `BODY_TOO_LARGE` |
@@ -30,9 +30,10 @@ REST under `/api` (JSON), an SSE stream, and the cc MCP endpoint. Behaviour behi
   - `counts.hunks` is `{pending,accepted,rejected}`, or `{total}` for uncommitted reviews.
   - `snapshotError` (`CHECKOUT_GONE|SNAPSHOT_GONE|DIFF_TOO_LARGE`) is present when the diff is unreadable; `counts.files` and `counts.hunks` are then `null`.
 - **FileState:** `path, oldPath, status (added|deleted|modified|renamed), binary, tooLarge, additions, deletions, hunks (count), verdicts:{pending,accepted,rejected}|null, threads:{open,resolved,outdated}, unread`.
-- **Hunk:** text `{id, kind:'text', header, oldStart, oldLines, newStart, newLines, lines:[{t:'ctx'|'add'|'del', old, new, text, noEol?}], verdict}`; file-level `{id, kind:'file', lines:[], verdict}`. `verdict` is `null` for uncommitted reviews and in the commit filter view.
+- **Hunk:** text `{id, kind:'text', header, oldStart, oldLines, newStart, newLines, lines:[{t:'ctx'|'add'|'del', old, new, text, noEol?}], verdict}`; file-level `{id, kind:'file', lines:[], verdict}`. `verdict` is `null` for uncommitted reviews, in the commit filter view and in past-round views.
 - **Thread:** `id, kind, severity, status (open|resolved|outdated), disposition, resolveProposed, anchor:{file, side, startLine, endLine, hunkId, round, linesHash, drifted}, openedBy, unread, messages:[{id, author, body, at, round, proposeResolve, citations:[{raw,path,startLine,endLine}]}]`.
-- **`anchor.round`:** the round whose snapshot the anchor's `lines` and `linesHash` come from: the round the thread was created in, advanced to the new round whenever a refresh re-anchors it. A message's own `round` never changes.
+- **`anchor.round`:** the round whose snapshot the anchor's `lines` and `linesHash` come from: the round the thread was created in, advanced to the new round whenever a refresh re-anchors it. The anchor it had in each earlier round is kept, and past-round views show it. A message's own `round` never changes.
+- **Thread in a past-round view** (`GET /reviews/:id/rounds/:n`, `diff?round=`): the same shape as of round n, plus `laterMessages` (messages written after round n, not included) and `positionUnknown` (true: its anchor in round n was never recorded; `anchor` is its earliest known one). `messages` stop at round n; `unread` is 0; `resolveProposed` is false; `status` is its current one, except that a thread outdated after round n shows `resolved` if it carries a resolution, else `open`. Past rounds are views of range reviews only.
 - **`anchor.drifted`:** true only if the latest re-anchoring found the thread by surrounding context; finding the exact lines again clears it.
 - **Author:** `{kind:'human'}` or `{kind:'session', sessionId, role: author|reviewer|conductor}`.
 - **Session:** `sessionId, project, worktree, title, status, live, conductor, conducted, attached`.
@@ -52,8 +53,10 @@ REST under `/api` (JSON), an SSE stream, and the cc MCP endpoint. Behaviour behi
 | `DELETE /reviews/:id` | | `{ok}` | `REVIEW_UNKNOWN` |
 | `GET /reviews/:id/diff` | `?file` optional | `{review, files:[FileState + {hunks:[Hunk], threads:[Thread]}]}`; threads are the non-outdated ones on that file | `FILE_NOT_IN_DIFF` `SNAPSHOT_GONE` `CHECKOUT_GONE` `DIFF_TOO_LARGE` |
 | `GET /reviews/:id/diff?commit=<sha>` | range reviews; sha or ≥7-char prefix | `{readOnly:true, commit:{sha,subject}, files}` (hunk verdicts `null`, no threads) | `COMMIT_NOT_IN_RANGE`, `INVALID_ARGUMENT` for other kinds |
+| `GET /reviews/:id/diff?round=<n>` | range reviews; `n` a stored round (the current one included); `file` optional | `{readOnly:true, round:Round, files:[FileState + {hunks, threads}]}` as of round n: hunk and file verdicts `null`; threads are those placed in that file then and not outdated by then (past-round Thread shape) | `ROUND_UNKNOWN` `FILE_NOT_IN_DIFF` (not in that round) `SNAPSHOT_GONE` `CHECKOUT_GONE`; `INVALID_ARGUMENT` for other kinds, a non-positive-integer `n`, or with `commit` |
+| `GET /reviews/:id/rounds/:n` | range reviews; `n` as above | `{readOnly:true, round:Round, files:[FileState] (verdicts null, thread counts and unread as of then), counts:{open,resolved,outdated} (placed threads), outdatedThreads:[Thread], unplacedThreads:[Thread]}` | `ROUND_UNKNOWN` `SNAPSHOT_GONE` `CHECKOUT_GONE` `REVIEW_UNKNOWN`; `INVALID_ARGUMENT` as above |
 | `GET /reviews/:id/commits` | | `{commits}` of the current round (range: `baseSha..headSha`; commit: that one; uncommitted: none) | |
-| `GET /reviews/:id/file` | `?path&side=old|new&start&end` | `{path, side, total, lines:[{n,text}]}` | `LINE_OUT_OF_RANGE` `FILE_NOT_IN_DIFF` (path absent on that side) `BINARY_FILE` (the snapshot's binary flag, so `-diff` attributes count) |
+| `GET /reviews/:id/file` | `?path&side=old|new&start&end&round` (`round`: range reviews, read that round instead of the current one; refusals as for `diff?round`) | `{path, side, total, lines:[{n,text}]}` | `LINE_OUT_OF_RANGE` `FILE_NOT_IN_DIFF` (path absent on that side) `BINARY_FILE` (the snapshot's binary flag, so `-diff` attributes count) |
 | `PUT /reviews/:id/hunks/:hunkId/verdict` | `{verdict: pending|accepted|rejected}` (`pending` clears) | `{hunkId, verdict, review}` | `NO_VERDICTS` `HUNK_UNKNOWN` `REVIEW_CLOSED` `INVALID_ARGUMENT` |
 | `POST /reviews/:id/accept-file` | `{file, hunkIds:[id]}` (ids of that file's hunks, as shown pending) | `{file, accepted:[hunkId], review}` (`accepted` = ids that changed; ids with a verdict are skipped) | `NO_VERDICTS` `FILE_NOT_IN_DIFF` `HUNK_UNKNOWN` (any id not in that file this round; nothing written) `REVIEW_CLOSED` `INVALID_ARGUMENT` |
 | `POST /reviews/:id/threads` | `{anchor:{file,side?,startLine,endLine?}|{hunkId}, kind, severity?, body}` | `{thread}` (human-authored) | `LINE_OUT_OF_RANGE` `FILE_NOT_IN_DIFF` `BINARY_FILE` `HUNK_UNKNOWN` `SEVERITY_REQUIRED` `INVALID_ARGUMENT` `REVIEW_CLOSED` |
@@ -124,6 +127,7 @@ The page keeps its state in the query string (`?…`, never the hash) and writes
 | `lines` | `10` or `10-20`: highlight, scroll to, and expand context to reach it |
 | `thread` | Focused thread: scrolled to, panel opened, marked read |
 | `commit` | Range reviews: commit-filter view (read-only) |
+| `round` | Range reviews: past-round view (read-only), a positive integer; ignored with `commit`, dropped when it names the current round or a later one. Focusing a thread there marks nothing read |
 | `view` | `new` (New review dialog) or `threads` (thread panel on narrow layouts) |
 
 **Citation links.** A message citation (`path#L10-L20`) renders as `?<route>&file=<path>&side=new&lines=10-20`, built from the route serialiser, never from the message text. Paths that start with `/` or contain a `..` segment are left as text, like the backend's citation resolver.

@@ -4,6 +4,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { world, editLines } from './_world.js';
+import { bindRepo } from './_git.js';
+import { tempStore } from './_store.js';
 import { start } from '../server.js';
 import { HTTP_STATUS } from '../src/refusals.js';
 import * as store from '../src/store.js';
@@ -12,7 +14,9 @@ let dist;
 let server;
 let base;
 let w;
+let bootStore;
 before(async () => {
+  bootStore = tempStore(); // start() migrates the store: never let it reach a real one
   dist = fs.mkdtempSync(path.join(os.tmpdir(), 'cr-routes-dist-'));
   fs.writeFileSync(path.join(dist, 'index.html'), '<!doctype html>');
   server = await start({ port: 0, distDir: dist });
@@ -22,6 +26,7 @@ after(() => {
   server.closeAllConnections();
   server.close();
   fs.rmSync(dist, { recursive: true, force: true });
+  bootStore.cleanup();
 });
 beforeEach(async () => {
   w = await world();
@@ -73,6 +78,26 @@ test('review lifecycle over HTTP: open, reuse, get, diff, file, commits, patch, 
   assert.equal((await req('GET', '/reviews?project=app')).body.reviews.length, 1);
   assert.equal((await req('DELETE', `/reviews/${id}`)).body.ok, true);
   assert.equal((await req('GET', `/reviews/${id}`)).status, 404);
+});
+
+test('GET /reviews/:id/rounds/:n is a past round\'s view; diff and file take ?round=; an unknown round is 404 ROUND_UNKNOWN', async () => {
+  const id = (await openReview()).review.id;
+  const t = (await req('POST', `/reviews/${id}/threads`, { anchor: { file: 'a.js', side: 'new', startLine: 18 }, kind: 'comment', body: 'x' })).body.thread;
+  bindRepo(w.cc.state.worktrees.app[0].worktreePath).commit({ 'a.js': ['ins1', ...editLines({ 2: 'top-edit', 18: 'bottom-edit' }).split('\n')].join('\n') });
+  assert.equal((await req('POST', `/reviews/${id}/refresh`)).body.round, 2);
+  const view = await req('GET', `/reviews/${id}/rounds/1`);
+  assert.equal(view.status, 200);
+  assert.deepEqual(Object.keys(view.body).sort(), ['counts', 'files', 'ok', 'outdatedThreads', 'readOnly', 'round', 'unplacedThreads']);
+  assert.equal(view.body.round.n, 1);
+  const diff = (await req('GET', `/reviews/${id}/diff?file=a.js&round=1`)).body;
+  assert.deepEqual([diff.readOnly, diff.round.n, diff.files[0].threads.map((x) => [x.id, x.anchor.startLine])], [true, 1, [[t.id, 18]]]);
+  assert.equal((await req('GET', `/reviews/${id}/diff?file=a.js`)).body.files[0].threads[0].anchor.startLine, 19);
+  assert.deepEqual((await req('GET', `/reviews/${id}/file?path=a.js&start=1&end=1&round=1`)).body.lines, [{ n: 1, text: 'l1' }]);
+  const unknown = await req('GET', `/reviews/${id}/rounds/9`);
+  assert.deepEqual([unknown.status, unknown.body.code], [404, 'ROUND_UNKNOWN']);
+  assert.equal(HTTP_STATUS.ROUND_UNKNOWN, 404);
+  assert.equal((await req('GET', `/reviews/${id}/diff?round=9`)).status, 404);
+  assert.equal((await req('GET', `/reviews/${id}/rounds/x`)).status, 400);
 });
 
 test('verdicts, threads, messages, status, read, refresh, submissions each return their documented shape', async () => {

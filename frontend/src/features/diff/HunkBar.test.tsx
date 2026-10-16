@@ -113,3 +113,8 @@ test('every verdict segment carries the aria-pressed primary tint and its dark h
     expect(className).toMatch(/(^|\s)dark:aria-pressed:hover:bg-primary\b/);
   }
 });
+
+test('the past-round view renders no bar at all', () => {
+  const { container } = renderInReview(<HunkBar hunk={hunk()} commentable />, { round: 1, readOnly: true });
+  expect(container.firstChild).toBeNull();
+});

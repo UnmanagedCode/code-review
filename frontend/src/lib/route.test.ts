@@ -3,7 +3,7 @@ import { expect, test, vi } from 'vitest';
 import { navigate, parseRoute, toSearch, useRoute, type Route } from './route';
 
 test('parse∘serialise round-trips every param', () => {
-  const full: Route = { project: 'app', worktree: 'feature', review: 'r-1', file: 'src/a b.ts', side: 'old', lines: '10-20', thread: 't-3', commit: 'abc1234', view: 'threads' };
+  const full: Route = { project: 'app', worktree: 'feature', review: 'r-1', file: 'src/a b.ts', side: 'old', lines: '10-20', thread: 't-3', commit: 'abc1234', round: '12', view: 'threads' };
   expect(parseRoute(toSearch(full))).toEqual(full);
 });
 
@@ -35,4 +35,9 @@ test('useRoute re-reads on popstate and after navigate', () => {
   expect(result.current).toEqual({ project: 'x' });
   act(() => navigate({ review: 'r-2' }));
   expect(result.current).toEqual({ project: 'x', review: 'r-2' });
+});
+
+test('round keeps a positive integer only', () => {
+  expect(parseRoute('?round=3').round).toBe('3');
+  for (const bad of ['0', '-1', 'x', '01', '1.5']) expect(parseRoute(`?round=${bad}`).round, bad).toBeUndefined();
 });

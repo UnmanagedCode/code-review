@@ -92,3 +92,8 @@ test('the header updates before the server answers', async () => {
   expect(screen.getByText('2/3 accepted · 1 rejected')).toBeTruthy();
   expect(button().disabled).toBe(true);
 });
+
+test('no Accept file in the past-round view', () => {
+  const { container } = renderInReview(<FileVerdict file={file('pending')} />, { round: 1, readOnly: true });
+  expect(container.firstChild).toBeNull();
+});

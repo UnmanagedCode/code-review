@@ -32,6 +32,7 @@ const BACKEND: Record<string, string> = {
   SUBMISSION_NOT_PENDING: 'Already recorded',
   RECIPIENT_UNKNOWN: 'That session no longer exists',
   COMMIT_NOT_IN_RANGE: 'That commit is not in this review’s range',
+  ROUND_UNKNOWN: 'This review has no such round',
   UNSUPPORTED_MEDIA_TYPE: 'Unexpected backend error',
   INTERNAL: 'Unexpected backend error',
 };

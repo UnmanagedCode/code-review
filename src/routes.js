@@ -2,6 +2,7 @@ import express from 'express';
 import * as cc from './cc.js';
 import * as store from './store.js';
 import * as reviews from './reviews.js';
+import * as rounds from './rounds.js';
 import * as threads from './threads.js';
 import * as submissions from './submissions.js';
 import { sessions, checkoutInfo, checkoutCommits } from './checkouts.js';
@@ -63,8 +64,9 @@ export function apiRouter() {
   r.get('/reviews/:id', route((req) => reviews.getReview(req.params.id)));
   r.patch('/reviews/:id', route((req) => reviews.patchReview(req.params.id, req.body ?? {})));
   r.delete('/reviews/:id', route((req) => reviews.deleteReview(req.params.id)));
-  r.get('/reviews/:id/diff', route((req) => reviews.diff(req.params.id, { file: req.query.file, commit: req.query.commit })));
+  r.get('/reviews/:id/diff', route((req) => reviews.diff(req.params.id, { file: req.query.file, commit: req.query.commit, round: req.query.round })));
   r.get('/reviews/:id/commits', route((req) => reviews.commits(req.params.id)));
+  r.get('/reviews/:id/rounds/:n', route((req) => rounds.roundView(req.params.id, req.params.n)));
   r.get('/reviews/:id/file', route((req) => reviews.fileLines(req.params.id, req.query)));
 
   r.put('/reviews/:id/hunks/:hunkId/verdict', route((req) => reviews.setVerdict(req.params.id, req.params.hunkId, req.body?.verdict)));

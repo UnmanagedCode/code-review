@@ -52,6 +52,10 @@ export function makeAnchor({ file, side, startLine, endLine, round, fileLines, h
   return anchor;
 }
 
+/** The positional part of an anchor: what the API shows and what a thread keeps of each earlier round. */
+export const anchorView = ({ file, side, startLine, endLine, hunkId, round, linesHash, drifted }) =>
+  ({ file, side, startLine, endLine, hunkId, round, linesHash, drifted });
+
 /**
  * Finds `anchor` in `newLines`. Returns {startLine, endLine, drifted} or null.
  * 'reanchor' falls back to unique surrounding context; 'volatile' never does.

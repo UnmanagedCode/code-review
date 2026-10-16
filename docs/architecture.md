@@ -4,7 +4,7 @@ Backend internals. Behaviour: [features.md](features.md); wire formats: [protoco
 
 ## Modules (`src/`)
 
-Services return a plain object or a refusal `{ok:false, code, reason}`. Low-level helpers throw `Refusal`; `attempt()` converts it. REST routes and MCP tools call the same service functions; neither surface has logic of its own. `server.js` only mounts `apiRouter()` under `/api`.
+Services return a plain object or a refusal `{ok:false, code, reason}`. Low-level helpers throw `Refusal`; `attempt()` converts it. REST routes and MCP tools call the same service functions; neither surface has logic of its own. `server.js` mounts `apiRouter()` under `/api`; `start()` runs `migrateStore()` before it listens.
 
 | Module | Responsibility |
 |---|---|
@@ -12,14 +12,17 @@ Services return a plain object or a refusal `{ok:false, code, reason}`. Low-leve
 | `mutex.js` | `withLock(key, fn)`: per-key promise chain |
 | `refusals.js` | `Refusal`, `refuse`, `attempt`, `HTTP_STATUS` (single source of codes) |
 | `store.js` | one JSON file per review: `read`, atomic `write` (bumps `rev`), `list`, `remove`, `mutate`, and the `changes` emitter |
+| `migrate.js` | `SCHEMA` (the review-file format, single source), `migrateReview`, `migrateStore` (startup upgrade) |
 | `cc.js` | cc REST client (`projects`, `worktrees`, `instances`) |
 | `checkouts.js` | resolve a checkout, fork-point chain, sessions, picker data |
 | `git.js` | git wrapper: ref safety, pinned diff flags, plumbing calls, private index |
 | `text.js` | `clean()`: strips control characters from header fields (prompt and MCP text) |
 | `diff.js` | parse unified diff into files/hunks; hunk ids; file-level hunks (pure) |
 | `snapshot.js` | `resolveTarget` (kind → `{headSha, baseSha}`) and `buildSnapshot` (`{files, fingerprint, lines(side, path)}`) |
-| `anchor.js` | `linesHash`, `makeAnchor`, `locate`, `hunkFor` (pure) |
-| `follow.js` | moves threads to where their lines now are (refresh and the uncommitted sweep) |
+| `anchor.js` | `linesHash`, `makeAnchor`, `anchorView` (positional fields), `locate`, `hunkFor` (pure) |
+| `follow.js` | moves threads to where their lines now are (refresh and the uncommitted sweep), keeping each earlier round's anchor in `pastAnchors` |
+| `history.js` | `threadsAt(review, n)`: threads as of round n (pure); `anchorChain`, `roundThreadView` |
+| `rounds.js` | past-round views of range reviews: `pickRound`, `roundView`, `roundDiff` (`reviews.diff` delegates `?round=`) |
 | `context.js` | per-request view of a review: `makeEnv`, `inReview` (locked write path), `viewReview` (read path), `authorFor` |
 | `reviews.js` | open, list, get, patch, delete, verdict, accept-file, refresh, diff, commits, file lines, hunks |
 | `threads.js` | annotate, reply, thread status, mark read, list |
@@ -35,9 +38,11 @@ Services return a plain object or a refusal `{ok:false, code, reason}`. Low-leve
 - Location: `<root>/reviews/<id>.json`, id `r-<10 hex>`; ids are validated before touching the filesystem. The root is outside every project tree, so it survives plugin updates.
 - The `changes` emitter has no listener cap (one listener per open SSE client). Message bodies are capped at `MAX_BODY_CHARS`.
 - Writes are atomic (tmp file in the same dir, then `rename`); every write bumps `rev` and emits `change`. `mutate(id, fn)` runs under `withLock(id)` and writes only if `fn` changed the review; creation runs under `withLock('create')`.
-- `schema: 1` is written for a future migration to self-check; there is no migration yet.
+- `schema` is `SCHEMA` (`src/migrate.js`). `start()` runs `migrateStore()` before listening: every stored review below `SCHEMA` is upgraded in place through `mutate` (a review already current is not written, so a second run writes nothing); an unconfigured store is skipped; any other error (e.g. an unparsable file) fails startup. Application code reads the current format only.
+  - 1 → 2: every thread gets `pastAnchors: []` (an existing value is kept).
 - Review fields: `id, project, worktree, branch, kind, target, baseLabel, title, status, createdAt, createdBy, recipient, seenByHuman, rev, seq, humanSeq, nextThread, nextSubmission, rounds, verdicts, threads, droppedThreads, submissions`.
 - `seq` is a review-wide counter bumped by every message, verdict and status change; `humanSeq` is the `seq` of the last human one. Unread counts and "since last delivery" compare `seq`s; logic never reads the wall clock (`at`/`createdAt` are display-only).
+- Thread fields: `id, kind, severity, status, disposition, resolution:{by, seq}|null, resolveProposed, statusSeq, openedBy, anchor, pastAnchors, humanReadSeq, createdAt, messages`.
 - A thread's `humanReadSeq` is the `seq` the human has read up to. A human status change takes its own `seq`; opening and agent resolves share the `seq` of their message (how the prompt tells them apart).
 
 ## Git
@@ -60,6 +65,9 @@ Services return a plain object or a refusal `{ok:false, code, reason}`. Low-leve
 - File-level hunk id: hash of path, status, oldPath, blob ids and modes.
 - `linesHash`: sha256 (first 16 hex) of the lines with trailing `[ \t\r]` stripped, indentation kept.
 - Anchor: `round` (the snapshot its `lines`/`linesHash` were read from; `followThreads` sets it to the new round on every re-anchor), selected `lines`, `ctxBefore`/`ctxAfter` (hash and count of up to `CONTEXT_LINES` neighbours), `hunkId` from `hunkFor` (the hunk containing `endLine`, else the last one overlapped, else null), `drifted`.
+- `pastAnchors`: the thread's anchor in each round before `anchor.round`, oldest first, positional fields only (`anchorView`). `followThreads` appends the old anchor whenever it re-anchors a thread into a different round: once per range refresh, and on the first uncommitted sweep after an uncommitted refresh (sweeps within a round add nothing). Outdated threads are never followed, so their last chain entry is the last round they were located in.
+- Derived, not stored: a thread's creation round (`messages[0].round`); the round it went outdated (its last chain entry's round + 1); its status just before (`resolution` set → `resolved`, else `open`: going outdated changes only `status`).
+- Not derivable: open/resolved as of an earlier round. Only the latest status change is stored (`statusSeq`, `resolution`), and rounds carry no `seq`, so past-round views show the current status (see the [protocol](protocol.md#shapes)).
 - `locate(anchor, lines, mode)`: windows whose `linesHash` matches, ranked by context matches, then distance to the old start, then earliest. An exact match always reports `drifted: false`. Mode `reanchor` additionally accepts a unique `ctxBefore` followed by a unique `ctxAfter` with a gap of 1 to `2·len + 10` lines (`drifted`); mode `volatile` never does.
 
 ## Refresh and the uncommitted sweep
@@ -73,10 +81,12 @@ Services return a plain object or a refusal `{ok:false, code, reason}`. Low-leve
 
 - Binary detection: a file in the diff is binary when the snapshot says so (git honours `.gitattributes`, e.g. `*.bin -diff`); a NUL scan is the fallback only for files outside the diff. `isBinaryFile` in `snapshot.js` is the one predicate, used by line reads and citation excerpts (and matching `annotate`): in the diff → `binary || tooLarge`, decided without reading the file; outside it → NUL scan of the content, which it reads through a callback only then.
 - Mutating routes require a JSON content type (`routes.js` checks the header itself: `req.is` answers null for a body-less request).
-- `tests/_git.js`: temp repos (`makeRepo`, `bindRepo` for worktrees) with pinned identity, dates and no signing. Each repo lives in its own `mkdtemp` directory, which also holds its worktrees and fixtures; cleanup removes exactly that directory, never anything matched by name.
+- `tests/_git.js`: temp repos (`makeRepo`, `bindRepo` for worktrees) with pinned identity, dates and no signing; `gitDirSig(dir)` (size and mtime of everything under `dir/.git`) proves a read path leaves git dirs untouched. Each repo lives in its own `mkdtemp` directory, which also holds its worktrees and fixtures; cleanup removes exactly that directory, never anything matched by name.
 - `tests/_fakeCc.js`: HTTP fake of the three cc routes on port 0, set via `CONDUCTOR_URL`; modes `ok|error|hang` (hang tests set `CODE_REVIEW_CC_TIMEOUT_MS` low).
 - `tests/_store.js`: per-test `CODE_REVIEW_STORE` temp dir.
 - `tests/_world.js`: project `app` + worktrees + fake cc + store in one call, with `HUMAN` and `agent()` actors.
+- `start()` migrates the store, so every test that boots the server points `CODE_REVIEW_STORE` at a temp dir first.
+- `tests/history.test.js` (pure `threadsAt`), `tests/migrate.test.js`, `tests/rounds.test.js` (past-round views over real git; a round recorded by "another process" is pushed into the store so its snapshot is not cached and reading it runs git).
 - `tests/manifest.test.js` and `tests/surfaces.test.js` pin the manifest against the handlers, the flat-schema subset and the skill/convention tool names.
 
 ## Frontend
@@ -87,13 +97,14 @@ Services return a plain object or a refusal `{ok:false, code, reason}`. Low-leve
 |---|---|
 | `lib/` | `api.ts` (`ApiError {status, code, reason}`), `endpoints.ts` (the only place `api/…` paths are built), `types.ts` (wire shapes), `refusals.ts` (`messageFor` for backend codes, `bridgeMessage` for bridge codes), `route.ts`, `bridge.ts` (`window.ccBridge`, read per call), `sse.ts` (one shared EventSource), `storage.ts` (the only `localStorage` user, `code-review:` keys) |
 | `lib/` (pure) | `messageText.ts` (segments), `diffRows.ts` (rows and collapsible gaps), `selection.ts` (selection model), `fileTree.ts` |
-| `state/` | Hooks that fetch and write: `useFetch`, `live` (SSE reload, polling), `checkout`, `reviewList`, `review`, `fileDiff`, `threads` (write actions), `threadIndex`, `submit` (delivery state machine), `admin`, `dropped`, `reviewContext` |
+| `state/` | Hooks that fetch and write: `useFetch`, `live` (SSE reload, polling), `checkout`, `reviewList`, `review`, `round` (past-round view), `fileDiff`, `threads` (write actions), `threadIndex`, `submit` (delivery state machine), `admin`, `dropped`, `reviewContext` |
 | `features/` | Components by area: `checkout`, `picker`, `reviews`, `review`, `files`, `diff`, `threads`, `submit`, `layout`, `common` |
 
 - Components never call `fetch`; they use `state/` hooks and `lib/endpoints.ts`.
 - **Refetch, never trust events.** An SSE event `{id, rev}` for the open review schedules a debounced refetch only if `rev` exceeds `knownRev`; every write response's review summary raises `knownRev`, so the echo of the UI's own write is ignored. An SSE reconnect refetches what is visible. The open file's diff refetches whenever the review reloads.
 - **Uncommitted reviews** emit no events for working-tree edits: `usePolling` reloads on focus, `visibilitychange` and every `POLL_MS` while visible.
 - **Diff rows.** `buildRows` produces hunk, line and gap rows from hunks plus per-gap expansion counts (`top`, `bottom`) and fetched line texts. The total line count (needed for the trailing gap) comes from a one-line `GET …/file`. Without a diff-wide list endpoint, the thread index fetches the diff of each file whose counts show threads.
+- **Past-round view.** `ReviewView` derives `round` from the route (range reviews, no `commit`, below the current round) and puts it in the review context with `readOnly: true`. `files`, `outdatedThreads`, `unplacedThreads` and `threadCounts` then come from `useRoundView`; `useFileDiff`, `useThreadIndex` and `CitedExcerpt` pass `round` to `diff`/`file`. Until the review loads, a `round=` URL holds the open file's fetch, since the live and past views cannot be told apart yet.
 - **Selection.** `useLineSelection` drives a `role="grid"` with roving `tabIndex`; the selection model lives in `lib/selection.ts`.
 - **Submission machine.** `state/submit.ts`: compose → bridge send within `SEND_DEADLINE_MS` → record result; states `idle`, `composing`, `sending`, `delivered`, `failed`, `timedOut`, `manual`.
 - **Theme.** Colours only through tokens (`bg-success/10`, `text-muted-foreground`); a guard test bans literal colours and palette classes.
@@ -112,4 +123,4 @@ Services return a plain object or a refusal `{ok:false, code, reason}`. Low-leve
 
 ### Visual harness
 
-`harness/playwright/seed.mjs` builds one deterministic world (temp repo with a `feature` worktree, fake cc with two sessions, temp store, booted server) through the REST and MCP APIs, reusing the backend test helpers. `snap.mjs` screenshots each screen in light and dark at desktop and phone width; `golden.mjs` drives drag-select and comment, accept, submit without a bridge, and a stub bridge (session switch, failed then retried send). Output goes to `harness/playwright/out/` (gitignored).
+`harness/playwright/seed.mjs` builds one deterministic world (temp repo with a `feature` worktree, fake cc with two sessions, temp store, booted server) through the REST and MCP APIs, reusing the backend test helpers. `snap.mjs` screenshots each screen in light and dark at desktop and phone width; `golden.mjs` drives drag-select and comment, accept, submit without a bridge, picking round 1 and back, and a stub bridge (session switch, failed then retried send). Output goes to `harness/playwright/out/` (gitignored).

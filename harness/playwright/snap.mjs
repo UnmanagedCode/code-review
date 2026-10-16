@@ -76,6 +76,14 @@ try {
           await shot('threads-outdated');
         }
 
+        // Round 1 of the range review, read-only: the banner, then a.js with the question that is outdated now.
+        await open(q({ review: range, round: '1' }), page.getByRole('button', { name: 'Back to current round' }));
+        await page.getByRole('link', { name: /a\.js/ }).first().waitFor();
+        await shot('round-1-overview');
+        await open(q({ review: range, round: '1', file: 'a.js' }), page.getByRole('grid'));
+        await page.getByRole('article').first().waitFor();
+        await shot('round-1-diff');
+
         await open(q({ review: range, file: 'logo.bin' }), page.getByText('Binary file changed'));
         await shot('binary-file');
 

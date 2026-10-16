@@ -2,9 +2,9 @@ import { useSyncExternalStore } from 'react';
 
 export interface Route {
   project?: string; worktree?: string; review?: string; file?: string; side?: 'old' | 'new';
-  lines?: string; thread?: string; commit?: string; view?: 'new' | 'threads';
+  lines?: string; thread?: string; commit?: string; round?: string; view?: 'new' | 'threads';
 }
-const KEYS = ['project', 'worktree', 'review', 'file', 'side', 'lines', 'thread', 'commit', 'view'] as const;
+const KEYS = ['project', 'worktree', 'review', 'file', 'side', 'lines', 'thread', 'commit', 'round', 'view'] as const;
 
 export function parseRoute(search: string): Route {
   const p = new URLSearchParams(search);
@@ -15,6 +15,7 @@ export function parseRoute(search: string): Route {
     if (k === 'side' && v !== 'old' && v !== 'new') continue;
     if (k === 'view' && v !== 'new' && v !== 'threads') continue;
     if (k === 'lines' && !/^\d+(-\d+)?$/.test(v)) continue;
+    if (k === 'round' && !/^[1-9]\d*$/.test(v)) continue;
     (route as Record<string, string>)[k] = v;
   }
   return route;

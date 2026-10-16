@@ -74,3 +74,34 @@ test('expanding a gap fetches only the window it reveals and renders those lines
   const ctx = result.current.rows.filter((r) => r.kind === 'line' && r.key.startsWith('pre:'));
   expect(ctx).toHaveLength(10);
 });
+
+test('a past-round file diff and its context expansion are read from that round', async () => {
+  const net = stubFetch({
+    'GET api/reviews/r-1/diff': { readOnly: true, round: { n: 1 }, files: [diffFile({ hunks: [hunk({ oldStart: 11, newStart: 11 })] })] },
+    'GET api/reviews/r-1/file': (u: URL) => {
+      const [s, e] = [Number(u.searchParams.get('start')), Number(u.searchParams.get('end'))];
+      return { path: 'src/a.ts', side: 'new', total: 40, lines: Array.from({ length: e - s + 1 }, (_, i) => ({ n: s + i, text: `L${s + i}` })) };
+    },
+  });
+  const { result } = renderHook(() => useFileDiff({ reviewId: 'r-1', path: 'src/a.ts', version: 1, uncommitted: false, round: 1 }));
+  await vi.waitFor(() => expect(result.current.total).toBe(40));
+  await act(async () => { await result.current.expand('pre', 'bottom'); });
+  const diff = net.calls.find((c) => c.url.pathname.endsWith('/diff'))!;
+  expect([diff.url.searchParams.get('file'), diff.url.searchParams.get('round')]).toEqual(['src/a.ts', '1']);
+  const files = net.calls.filter((c) => c.url.pathname.endsWith('/file'));
+  expect(files.length).toBeGreaterThan(1);
+  expect(files.every((c) => c.url.searchParams.get('round') === '1')).toBe(true);
+});
+
+test('moving between rounds refetches the open file for the new round', async () => {
+  const net = stubFetch({
+    'GET api/reviews/r-1/diff': { review: review(), files: [diffFile()] },
+    'GET api/reviews/r-1/file': { path: 'src/a.ts', side: 'new', total: 4, lines: [] },
+  });
+  const { rerender } = renderHook((p: { round?: number }) => useFileDiff({ reviewId: 'r-1', path: 'src/a.ts', version: 1, uncommitted: false, round: p.round }), { initialProps: { round: 1 } as { round?: number } });
+  await vi.waitFor(() => expect(net.count('GET api/reviews/r-1/diff')).toBe(1));
+  rerender({ round: undefined });
+  await vi.waitFor(() => expect(net.count('GET api/reviews/r-1/diff')).toBe(2));
+  const diffs = net.calls.filter((c) => c.url.pathname.endsWith('/diff'));
+  expect(diffs.map((c) => c.url.searchParams.get('round'))).toEqual(['1', null]);
+});

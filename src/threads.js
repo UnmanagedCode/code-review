@@ -80,7 +80,7 @@ export const annotate = (id, actor, { anchor, kind, severity, body }) => attempt
   const first = message(review, actor, body);
   const thread = {
     id: `t${review.nextThread++}`, kind, severity: kind === 'finding' ? severity : null, status: 'open', disposition: null,
-    resolution: null, resolveProposed: false, statusSeq: first.seq, openedBy: first.author, anchor: built,
+    resolution: null, resolveProposed: false, statusSeq: first.seq, openedBy: first.author, anchor: built, pastAnchors: [],
     humanReadSeq: actor.kind === 'human' ? first.seq : 0, createdAt: now(), messages: [first],
   };
   review.threads.push(thread);

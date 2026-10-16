@@ -96,6 +96,31 @@ try {
     await page.getByRole('button', { name: 'Mark as sent' }).click();
     await page.getByText(/Round 2 · submitted/).waitFor();
     await shot('3-submitted');
+
+    // 5. Pick round 1: read-only, and the question that is outdated now sits under its round-1 lines again.
+    // Back to the current round, it is gone from the diff.
+    await page.getByRole('combobox', { name: 'Round' }).selectOption('1');
+    await page.getByRole('button', { name: 'Back to current round' }).waitFor();
+    await page.getByRole('link', { name: /a\.js/ }).first().click();
+    const question = page.locator('[role=rowgroup] article', { hasText: 'Why change both lines?' });
+    await question.waitFor();
+    const atLine4 = await page.evaluate(() => {
+      const card = [...document.querySelectorAll('[role="rowgroup"] article')].find((a) => a.textContent.includes('Why change both lines?'));
+      // Read-only rows carry no data-cell (no gutter selection): match the row by its new-side number and text.
+      const row = card?.parentElement?.previousElementSibling;
+      return [...(row?.querySelectorAll('[role=gridcell]') ?? [])].map((c) => c.textContent).join('|');
+    });
+    assert.equal(atLine4, '|4|+|changed4', 'in round 1 the question renders under new line 4, its last line then');
+    assert.equal(await page.getByRole('group', { name: 'Hunk verdict' }).count(), 0, 'no verdict controls in a past round');
+    assert.equal(await page.getByLabel('Reply').count(), 0, 'no reply box in a past round');
+    await shot('5-round-1');
+    await page.getByRole('button', { name: 'Back to current round' }).click();
+    await page.getByRole('combobox', { name: 'Commit filter' }).waitFor();
+    assert.ok(!new URL(page.url()).searchParams.has('round'));
+    await page.getByRole('link', { name: /a\.js/ }).first().click();
+    await page.getByRole('group', { name: 'Hunk verdict' }).first().waitFor();
+    assert.equal(await question.count(), 0, 'the outdated question is not in the current diff');
+    await shot('5-back-to-current');
     assert.deepEqual(errors, []);
   }, { headless: true, viewport: { width: 1280, height: 800 } });
 

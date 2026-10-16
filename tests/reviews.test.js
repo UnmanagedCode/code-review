@@ -5,6 +5,7 @@ import { makeRepo, lines } from './_git.js';
 import * as reviews from '../src/reviews.js';
 import * as threads from '../src/threads.js';
 import * as store from '../src/store.js';
+import { SCHEMA } from '../src/migrate.js';
 
 let w;
 beforeEach(async () => { w = await world(); });
@@ -343,6 +344,57 @@ test('refresh re-rounds a re-anchored thread: its anchor round becomes the new r
   ok(await reviews.refreshReview(review.id));
   const after = ok(await reviews.diff(review.id, {})).files[0].threads.find((x) => x.id === t.id);
   assert.equal(after.anchor.round, 2);
+  const stored = store.read(review.id).threads.find((x) => x.id === t.id);
+  assert.deepEqual(stored.pastAnchors, [t.anchor], 'the round-1 position is kept, positional fields only');
+});
+
+test('a thread starts with no earlier positions, and gains one per range refresh that re-anchors it', async () => {
+  const { wt, review } = await twoHunkReview();
+  const t = ok(await threads.annotate(review.id, HUMAN, { anchor: { file: 'a.js', side: 'new', startLine: 18, endLine: 18 }, kind: 'comment', body: 'x' })).thread;
+  const pastOf = () => store.read(review.id).threads.find((x) => x.id === t.id).pastAnchors;
+  assert.deepEqual(pastOf(), []);
+  wt.commit({ 'a.js': ['ins1', ...editLines({ 2: 'top-edit', 18: 'bottom-edit' }).split('\n')].join('\n') });
+  ok(await reviews.refreshReview(review.id));
+  wt.commit({ 'b.js': 'unrelated\n' });
+  ok(await reviews.refreshReview(review.id));
+  assert.deepEqual(pastOf().map((a) => [a.round, a.startLine]), [[1, 18], [2, 19]]);
+  assert.equal(store.read(review.id).threads.find((x) => x.id === t.id).anchor.round, 3);
+});
+
+test('an outdated thread records no further positions: its last one is its current anchor', async () => {
+  const { wt, review } = await twoHunkReview();
+  const t = ok(await threads.annotate(review.id, HUMAN, { anchor: { file: 'a.js', side: 'new', startLine: 2, endLine: 2 }, kind: 'comment', body: 'x' })).thread;
+  wt.commit({ 'a.js': editLines({ 1: 'r1', 2: 'r2', 3: 'r3', 4: 'r4', 18: 'bottom-edit' }) });
+  assert.equal(ok(await reviews.refreshReview(review.id)).threads.outdated, 1);
+  wt.commit({ 'b.js': 'unrelated\n' });
+  ok(await reviews.refreshReview(review.id));
+  const stored = store.read(review.id).threads.find((x) => x.id === t.id);
+  assert.equal(stored.status, 'outdated');
+  assert.deepEqual(stored.pastAnchors, []);
+  assert.equal(stored.anchor.round, 1);
+});
+
+test('uncommitted: the sweep within one round records no position; the first sweep after a refresh records one', async () => {
+  const wt = w.addWorktree();
+  wt.write('a.js', editLines({ 10: 'X10' }));
+  const { review } = ok(await open({ kind: 'uncommitted' }));
+  const t = ok(await threads.annotate(review.id, HUMAN, { anchor: { file: 'a.js', side: 'new', startLine: 10, endLine: 10 }, kind: 'comment', body: 'x' })).thread;
+  const stored = () => store.read(review.id).threads.find((x) => x.id === t.id);
+  wt.write('a.js', ['ins1', ...editLines({ 10: 'X10' }).split('\n')].join('\n'));
+  ok(await reviews.diff(review.id, { file: 'a.js' }));
+  ok(await reviews.diff(review.id, { file: 'a.js' }));
+  assert.equal(stored().anchor.startLine, 11);
+  assert.deepEqual(stored().pastAnchors, []);
+  ok(await reviews.refreshReview(review.id));
+  ok(await reviews.diff(review.id, { file: 'a.js' }));
+  assert.deepEqual(stored().pastAnchors.map((a) => [a.round, a.startLine]), [[1, 11]]);
+  assert.equal(stored().anchor.round, 2);
+});
+
+test('a new review is stored at the current schema', async () => {
+  w.addWorktree().commit({ 'f.js': 'x\n' });
+  const { review } = ok(await open());
+  assert.equal(store.read(review.id).schema, SCHEMA);
 });
 
 test('drift is not sticky: it is counted each time it happens and cleared once the exact lines are found again', async () => {

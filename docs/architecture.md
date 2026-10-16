@@ -21,7 +21,7 @@ Services return a plain object or a refusal `{ok:false, code, reason}`. Low-leve
 | `anchor.js` | `linesHash`, `makeAnchor`, `locate`, `hunkFor` (pure) |
 | `follow.js` | moves threads to where their lines now are (refresh and the uncommitted sweep) |
 | `context.js` | per-request view of a review: `makeEnv`, `inReview` (locked write path), `viewReview` (read path), `authorFor` |
-| `reviews.js` | open, list, get, patch, delete, verdict, refresh, diff, commits, file lines, hunks |
+| `reviews.js` | open, list, get, patch, delete, verdict, accept-file, refresh, diff, commits, file lines, hunks |
 | `threads.js` | annotate, reply, thread status, mark read, list |
 | `rollup.js` | counts, `mergeBlockers`, unread, `ReviewSummary`, thread/hunk views (pure) |
 | `citations.js` | parse and resolve `path#L…` |

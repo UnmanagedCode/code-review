@@ -42,6 +42,8 @@ export const fileLines = (id: string, path: string, side: 'old' | 'new', start: 
   api<FileLines>(`${r(id)}/file${q({ path, side, start, end })}`);
 export const setVerdict = (id: string, hunkId: string, verdict: Verdict) =>
   api<{ hunkId: string; verdict: Verdict; review: ReviewSummary }>(`${r(id)}/hunks/${encodeURIComponent(hunkId)}/verdict`, json('PUT', { verdict }));
+export const acceptFile = (id: string, file: string, hunkIds: string[]) =>
+  api<{ file: string; accepted: string[]; review: ReviewSummary }>(`${r(id)}/accept-file`, json('POST', { file, hunkIds }));
 export const createThread = (id: string, input: { anchor: ThreadAnchorInput; kind: ThreadKind; severity?: Severity; body: string }) =>
   api<{ thread: Thread }>(`${r(id)}/threads`, json('POST', input));
 export const replyThread = (id: string, tid: string, body: string) =>

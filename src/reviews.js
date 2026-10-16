@@ -18,6 +18,14 @@ export const bump = (review) => ++review.seq;
 
 const invalid = (reason) => new Refusal('INVALID_ARGUMENT', reason);
 
+/** One human verdict: its own seq, recorded as the latest human activity. */
+function record(review, hunkId, verdict) {
+  const seq = bump(review);
+  review.humanSeq = seq;
+  if (verdict === 'pending') delete review.verdicts[hunkId];
+  else review.verdicts[hunkId] = { verdict, seq, at: now() };
+}
+
 /** ReviewSummary for a review inside its request context. */
 export async function summaryOf(review, env) {
   const co = await env.checkout();
@@ -131,13 +139,32 @@ export const setVerdict = (id, hunkId, verdict) => attempt(async () => {
     if (review.kind === 'uncommitted') throw new Refusal('NO_VERDICTS', 'uncommitted reviews carry no verdicts');
     const known = (await env.snapshot()).files.some((f) => f.hunks.some((h) => h.id === hunkId));
     if (!known) throw new Refusal('HUNK_UNKNOWN', `no such hunk in round ${currentRound(review).n}: ${hunkId}`);
-    const seq = bump(review);
-    review.humanSeq = seq;
-    if (verdict === 'pending') delete review.verdicts[hunkId];
-    else review.verdicts[hunkId] = { verdict, seq, at: now() };
+    record(review, hunkId, verdict);
     return { ok: true };
   });
   return res.ok ? { ...(await summaryById(id)), hunkId, verdict } : res;
+});
+
+/** Accepts the listed pending hunks of one file in one write; hunks with a verdict keep it. */
+export const acceptFile = (id, file, hunkIds) => attempt(async () => {
+  const res = await inReview(id, async (review, env) => {
+    if (typeof file !== 'string' || !file) throw invalid('file must be a non-empty string');
+    if (!Array.isArray(hunkIds) || !hunkIds.length || !hunkIds.every((h) => typeof h === 'string')) throw invalid('hunkIds must be a non-empty array of hunk ids');
+    assertOpen(review);
+    if (review.kind === 'uncommitted') throw new Refusal('NO_VERDICTS', 'uncommitted reviews carry no verdicts');
+    const f = (await env.snapshot()).files.find((x) => x.path === file);
+    if (!f) throw new Refusal('FILE_NOT_IN_DIFF', `${file} is not in the diff`);
+    const unknown = hunkIds.find((h) => !f.hunks.some((x) => x.id === h));
+    if (unknown) throw new Refusal('HUNK_UNKNOWN', `no such hunk in ${file} in round ${currentRound(review).n}: ${unknown}`);
+    const accepted = [];
+    for (const hunkId of hunkIds) {
+      if (review.verdicts[hunkId]) continue; // also skips a repeated id
+      record(review, hunkId, 'accepted');
+      accepted.push(hunkId);
+    }
+    return { ok: true, accepted };
+  });
+  return res.ok ? { ...(await summaryById(id)), file, accepted: res.accepted } : res;
 });
 
 /** Re-snapshots a range or uncommitted review. */

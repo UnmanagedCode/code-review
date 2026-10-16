@@ -8,7 +8,7 @@
   - [testing-and-harnesses.md](gotchas/testing-and-harnesses.md) — two test runners, temp repos/fake cc, what the mutation harness covers.
   - [git-plumbing.md](gotchas/git-plumbing.md) — index rewrites and the private index, pinned flags, `--no-index`, quoted paths, base re-resolution.
   - [anchoring.md](gotchas/anchoring.md) — hunk ids, `linesHash`, locate modes, cross-hunk rule.
-  - [ui.md](gotchas/ui.md) — selection clamps, drag/toolbar, SSE echo, optimistic verdicts, bridge timeout, route precedence, happy-dom limits.
+  - [ui.md](gotchas/ui.md) — selection clamps, drag/toolbar, SSE echo, optimistic verdicts, accept-file ids, bridge timeout, route precedence, happy-dom limits.
   - [cc-metadata.md](gotchas/cc-metadata.md) — the cc routes used, liveness, conductor rule, no session role.
 - architecture/
   - [serving.md](architecture/serving.md) — `server.js` middleware order and exports.

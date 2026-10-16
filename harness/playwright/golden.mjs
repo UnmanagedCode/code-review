@@ -67,9 +67,27 @@ try {
     await page.goto(q({ review: range, file: 'c.js' }));
     const tree = page.getByRole('link', { name: /c\.js/ }).first();
     await tree.getByText('0 accepted, 0 rejected, 1 pending').waitFor();
-    await page.getByRole('button', { name: 'Accept' }).first().click();
+    await page.getByRole('group', { name: 'Hunk verdict' }).first().getByRole('button', { name: 'Accept', exact: true }).click();
     await tree.getByText('1 accepted, 0 rejected, 0 pending').waitFor();
     await shot('2-accepted');
+
+    // 2b. Accept file on a.js (seeded: one accepted, one rejected hunk). Clear the accepted one first so a hunk is pending;
+    // Accept file then accepts it and leaves the rejected hunk rejected; the header and tree tallies follow.
+    await page.goto(q({ review: range, file: 'a.js' }));
+    const aTree = page.getByRole('link', { name: /a\.js/ }).first();
+    const bars = page.getByRole('group', { name: 'Hunk verdict' });
+    await aTree.getByText('1 accepted, 1 rejected, 0 pending').waitFor();
+    await bars.nth(0).getByRole('button', { name: 'Pending' }).click();
+    await page.getByText('0/2 accepted · 1 rejected').waitFor();
+    await aTree.getByText('0 accepted, 1 rejected, 1 pending').waitFor();
+    await shot('2b-before-accept-file');
+    await page.getByRole('button', { name: 'Accept file' }).click();
+    await page.getByText('1/2 accepted · 1 rejected').waitFor();
+    await aTree.getByText('1 accepted, 1 rejected, 0 pending').waitFor();
+    assert.equal(await bars.nth(0).getByRole('button', { name: 'Accept', exact: true }).getAttribute('aria-pressed'), 'true');
+    assert.equal(await bars.nth(1).getByRole('button', { name: 'Reject', exact: true }).getAttribute('aria-pressed'), 'true');
+    assert.equal(await page.getByRole('button', { name: 'Accept file' }).isDisabled(), true);
+    await shot('2b-accepted-file');
 
     // 3. Submit round without a bridge: copy dialog, Mark as sent, header says submitted.
     await page.getByRole('button', { name: 'Submit round' }).click();

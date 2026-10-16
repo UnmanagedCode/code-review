@@ -13,6 +13,7 @@ import { Empty, ErrorState, Loading } from '@/features/common/States';
 import { Composer } from '@/features/threads/Composer';
 import { ThreadCard } from '@/features/threads/ThreadCard';
 import { CitedExcerpt } from './CitedExcerpt';
+import { FileVerdict } from './FileVerdict';
 import { GapRow } from './GapRow';
 import { Gutter } from './Gutter';
 import { HunkBar } from './HunkBar';
@@ -27,12 +28,13 @@ function FileHeader({ file, files, onBack, extra }: { file: DiffFile; files: { p
   return (
     <div className="sticky top-0 z-10 flex flex-wrap items-center gap-2 border-b bg-background px-3 py-2">
       {onBack && <Button variant="ghost" size="icon-sm" aria-label="Back to files" onClick={onBack}><ArrowLeftIcon /></Button>}
-      <div className="min-w-0 flex-1">
+      <div className="min-w-0 flex-1 basis-24">
         <p className="truncate font-mono text-sm font-medium" title={file.path}>{file.path}</p>
         {file.oldPath && <p className="truncate font-mono text-xs text-muted-foreground">renamed from {file.oldPath}</p>}
       </div>
       <Badge variant="outline">{file.status}</Badge>
       <span className="text-xs"><span className="text-success">+{file.additions}</span> <span className="text-destructive">−{file.deletions}</span></span>
+      <FileVerdict file={file} />
       <Button variant="ghost" size="icon-sm" aria-label="Previous file" disabled={i <= 0} onClick={() => go(files[i - 1].path)}><ChevronLeftIcon /></Button>
       <Button variant="ghost" size="icon-sm" aria-label="Next file" disabled={i < 0 || i >= files.length - 1} onClick={() => go(files[i + 1].path)}><ChevronRightIcon /></Button>
       {extra}

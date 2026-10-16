@@ -39,5 +39,20 @@ export function useReviewActions() {
         toast.error(errorText(e));
       }
     },
+    /**
+     * Optimistic like setVerdict; `hunkIds` are the file's pending hunks, so a refusal reverts them to pending, then reloads:
+     * the revert can clobber a per-hunk verdict set while this request was in flight.
+     */
+    async acceptFile(file: string, hunkIds: string[]) {
+      hunkIds.forEach((h) => fileDiff.patchVerdict(h, 'accepted'));
+      try {
+        applyReview((await ep.acceptFile(id, file, hunkIds)).review);
+        reload();
+      } catch (e) {
+        hunkIds.forEach((h) => fileDiff.patchVerdict(h, 'pending'));
+        toast.error(errorText(e));
+        reload();
+      }
+    },
   };
 }

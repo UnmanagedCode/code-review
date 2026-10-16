@@ -1,0 +1,249 @@
+import { test, beforeEach, afterEach } from 'node:test';
+import assert from 'node:assert/strict';
+import { world, HUMAN, agent, editLines } from './_world.js';
+import { lines } from './_git.js';
+import * as reviews from '../src/reviews.js';
+import * as threads from '../src/threads.js';
+import { MAX_BODY_CHARS } from '../src/threads.js';
+
+let w;
+beforeEach(async () => { w = await world(); });
+afterEach(() => w.cleanup());
+
+const ok = (res) => { assert.equal(res.ok, true, JSON.stringify(res)); return res; };
+const codeOf = (res) => { assert.equal(res.ok, false, 'expected a refusal'); return res.code; };
+const open = async (args = {}, actor = HUMAN) => ok(await reviews.openReview({ project: 'app', worktree: 'feature', ...args }, actor)).review;
+const at = (file, startLine, endLine = startLine, side = 'new') => ({ file, side, startLine, endLine });
+const say = (id, anchor, extra = {}, actor = HUMAN) =>
+  threads.annotate(id, actor, { anchor, kind: 'comment', body: 'b', ...extra });
+
+async function rangeReview(files = { 'a.js': editLines({ 2: 'X' }) }, args = {}, actor = HUMAN) {
+  const wt = w.addWorktree();
+  wt.commit(files);
+  return { wt, review: await open(args, actor) };
+}
+
+test('annotate: a finding needs a severity, other kinds ignore it', async () => {
+  const { review } = await rangeReview();
+  assert.equal(codeOf(await say(review.id, at('a.js', 2), { kind: 'finding' })), 'SEVERITY_REQUIRED');
+  assert.equal(codeOf(await say(review.id, at('a.js', 2), { kind: 'finding', severity: 'huge' })), 'SEVERITY_REQUIRED');
+  assert.equal(ok(await say(review.id, at('a.js', 2), { kind: 'finding', severity: 'major' })).thread.severity, 'major');
+  assert.equal(ok(await say(review.id, at('a.js', 2), { kind: 'question', severity: 'major' })).thread.severity, null);
+  assert.equal(codeOf(await say(review.id, at('a.js', 2), { kind: 'rant' })), 'INVALID_ARGUMENT');
+  assert.equal(codeOf(await say(review.id, at('a.js', 2), { body: '  ' })), 'INVALID_ARGUMENT');
+});
+
+test('annotate: lines outside the file, a reversed range, an absent file and an absent side are refused', async () => {
+  const { review } = await rangeReview();
+  assert.equal(codeOf(await say(review.id, at('a.js', 21))), 'LINE_OUT_OF_RANGE');
+  assert.equal(codeOf(await say(review.id, at('a.js', 5, 4))), 'INVALID_ARGUMENT');
+  assert.equal(codeOf(await say(review.id, at('a.js', 0))), 'INVALID_ARGUMENT');
+  assert.equal(codeOf(await say(review.id, at('b.js', 1))), 'FILE_NOT_IN_DIFF');
+  ok(await say(review.id, at('a.js', 20)));
+});
+
+test('annotate: context outside any hunk is allowed and carries no hunk id', async () => {
+  const { review } = await rangeReview();
+  const t = ok(await say(review.id, at('a.js', 15, 16))).thread;
+  assert.equal(t.anchor.hunkId, null);
+  assert.equal(ok(await say(review.id, at('a.js', 2))).thread.anchor.hunkId !== null, true);
+});
+
+test('annotate: a binary file takes no line anchors', async () => {
+  const { review } = await rangeReview({ 'img.bin': Buffer.from([0, 1, 2, 0, 255]) });
+  const diff = ok(await reviews.diff(review.id, {}));
+  assert.equal(diff.files[0].binary, true);
+  assert.equal(codeOf(await say(review.id, at('img.bin', 1))), 'BINARY_FILE');
+  assert.equal(codeOf(await threads.annotate(review.id, HUMAN, { anchor: { hunkId: diff.files[0].hunks[0].id }, kind: 'comment', body: 'x' })), 'BINARY_FILE');
+});
+
+test('annotate: a hunk-only anchor spans the hunk\'s new lines, or its old lines for a pure deletion', async () => {
+  const { review } = await rangeReview();
+  const hunk = ok(await reviews.diff(review.id, {})).files[0].hunks[0];
+  const t = ok(await threads.annotate(review.id, HUMAN, { anchor: { hunkId: hunk.id }, kind: 'comment', body: 'x' })).thread;
+  assert.deepEqual([t.anchor.side, t.anchor.startLine, t.anchor.endLine, t.anchor.hunkId], ['new', hunk.newStart, hunk.newStart + hunk.newLines - 1, hunk.id]);
+  assert.equal(codeOf(await threads.annotate(review.id, HUMAN, { anchor: { hunkId: 'nope' }, kind: 'comment', body: 'x' })), 'HUNK_UNKNOWN');
+
+  const del = w.addWorktree('del');
+  del.commit({ 'b.js': null });
+  const delReview = await open({ worktree: 'del' });
+  const dh = ok(await reviews.diff(delReview.id, {})).files[0].hunks[0];
+  assert.equal(dh.newLines, 0);
+  const d = ok(await threads.annotate(delReview.id, HUMAN, { anchor: { hunkId: dh.id }, kind: 'comment', body: 'x' })).thread;
+  assert.deepEqual([d.anchor.side, d.anchor.startLine, d.anchor.endLine], ['old', 1, 10]);
+});
+
+const roster = () => {
+  w.session('s-author', { worktree: 'feature' });
+  w.session('s-rev', { worktree: 'feature' });
+};
+const author = agent('s-author');
+const reviewer = agent('s-rev');
+const conductor = agent('s-cond', '.conduct');
+
+test('roles are derived per review and frozen on messages: recipient=author, conductor project=conductor, others reviewer', async () => {
+  roster();
+  const { review } = await rangeReview(undefined, { recipient: 's-author' });
+  const t = ok(await say(review.id, at('a.js', 2), {}, reviewer)).thread;
+  ok(await threads.reply(review.id, author, t.id, { body: 'a' }));
+  ok(await threads.reply(review.id, conductor, t.id, { body: 'c' }));
+  const msgs = ok(await threads.reply(review.id, HUMAN, t.id, { body: 'h' })).thread.messages;
+  assert.deepEqual(msgs.map((m) => m.author), [
+    { kind: 'session', sessionId: 's-rev', role: 'reviewer' },
+    { kind: 'session', sessionId: 's-author', role: 'author' },
+    { kind: 'session', sessionId: 's-cond', role: 'conductor' },
+    { kind: 'human' },
+  ]);
+});
+
+test('on an uncommitted review every non-conductor agent is a reviewer, even the recipient', async () => {
+  roster();
+  const wt = w.addWorktree();
+  wt.write('a.js', editLines({ 2: 'X' }));
+  const review = await open({ kind: 'uncommitted', recipient: 's-author' });
+  const t = ok(await say(review.id, at('a.js', 2), {}, author)).thread;
+  assert.equal(t.openedBy.role, 'reviewer');
+});
+
+test('resolve: the opener resolves its own non-finding thread; anyone else only proposes', async () => {
+  roster();
+  const { review } = await rangeReview(undefined, { recipient: 's-author' });
+  const mine = ok(await say(review.id, at('a.js', 2), {}, reviewer)).thread;
+  const done = ok(await threads.reply(review.id, reviewer, mine.id, { body: 'ok', resolve: true })).thread;
+  assert.equal(done.status, 'resolved');
+  assert.equal(done.resolveProposed, false);
+  const theirs = ok(await say(review.id, at('a.js', 3), {}, reviewer)).thread;
+  const proposed = ok(await threads.reply(review.id, author, theirs.id, { body: 'fixed', resolve: true })).thread;
+  assert.equal(proposed.status, 'open');
+  assert.equal(proposed.resolveProposed, true);
+  assert.equal(proposed.messages[1].proposeResolve, true);
+  assert.equal(ok(await threads.reply(review.id, author, theirs.id, { body: 'more' })).thread.status, 'open', 'a plain reply never changes status');
+});
+
+test('resolve: a finding is closed only by the human with a disposition; the human can reopen', async () => {
+  roster();
+  const { review } = await rangeReview(undefined, { recipient: 's-author' });
+  const f = ok(await say(review.id, at('a.js', 2), { kind: 'finding', severity: 'major' }, reviewer)).thread;
+  const tryClose = ok(await threads.reply(review.id, reviewer, f.id, { body: 'done', resolve: true })).thread;
+  assert.equal(tryClose.status, 'open');
+  assert.equal(tryClose.resolveProposed, true);
+  assert.equal(codeOf(await threads.setThreadStatus(review.id, f.id, { status: 'resolved' })), 'INVALID_ARGUMENT');
+  const closed = ok(await threads.setThreadStatus(review.id, f.id, { status: 'resolved', disposition: 'dismissed' })).thread;
+  assert.deepEqual([closed.status, closed.disposition, closed.resolveProposed], ['resolved', 'dismissed', false]);
+  const reopened = ok(await threads.setThreadStatus(review.id, f.id, { status: 'open' })).thread;
+  assert.deepEqual([reopened.status, reopened.disposition], ['open', null]);
+  const c = ok(await say(review.id, at('a.js', 3))).thread;
+  assert.equal(ok(await threads.setThreadStatus(review.id, c.id, { status: 'resolved', disposition: 'fixed' })).thread.disposition, null, 'only findings carry a disposition');
+  assert.equal(codeOf(await threads.setThreadStatus(review.id, 'tX', { status: 'open' })), 'THREAD_UNKNOWN');
+});
+
+async function uncommittedReview(edits = { 10: 'X10' }, actor = HUMAN) {
+  const wt = w.addWorktree();
+  wt.write('a.js', editLines(edits));
+  return { wt, review: await open({ kind: 'uncommitted' }, actor) };
+}
+
+test('uncommitted: an edit elsewhere in the same hunk keeps the thread where it was', async () => {
+  const { wt, review } = await uncommittedReview();
+  const t = ok(await say(review.id, at('a.js', 10))).thread;
+  wt.write('a.js', editLines({ 10: 'X10', 12: 'other' }));
+  const live = ok(await reviews.diff(review.id, { file: 'a.js' })).files[0].threads;
+  assert.deepEqual(live.map((x) => [x.id, x.anchor.startLine]), [[t.id, 10]]);
+});
+
+test('uncommitted: lines inserted above move the thread with its lines', async () => {
+  const { wt, review } = await uncommittedReview();
+  const t = ok(await say(review.id, at('a.js', 10))).thread;
+  wt.write('a.js', ['ins1', 'ins2', ...editLines({ 10: 'X10' }).split('\n')].join('\n'));
+  const live = ok(await reviews.diff(review.id, { file: 'a.js' })).files[0].threads;
+  assert.deepEqual(live.map((x) => [x.id, x.anchor.startLine]), [[t.id, 12]]);
+});
+
+test('uncommitted: changed lines drop the thread, and a later reply says THREAD_DROPPED', async () => {
+  const { wt, review } = await uncommittedReview();
+  const t = ok(await say(review.id, at('a.js', 10))).thread;
+  wt.write('a.js', editLines({ 10: 'rewritten' }));
+  assert.deepEqual(ok(await reviews.diff(review.id, { file: 'a.js' })).files[0].threads, []);
+  assert.equal(codeOf(await threads.reply(review.id, HUMAN, t.id, { body: 'x' })), 'THREAD_DROPPED');
+  assert.equal(codeOf(await threads.setThreadStatus(review.id, t.id, { status: 'resolved' })), 'THREAD_DROPPED');
+  assert.equal(codeOf(await threads.reply(review.id, HUMAN, 't99', { body: 'x' })), 'THREAD_UNKNOWN');
+});
+
+test('uncommitted: a thread whose file leaves the diff is dropped', async () => {
+  const { wt, review } = await uncommittedReview();
+  ok(await say(review.id, at('a.js', 10)));
+  wt.git('checkout', '--', 'a.js');
+  assert.equal(ok(await reviews.getReview(review.id)).review.counts.threads.open, 0);
+});
+
+test('uncommitted: with the checkout gone the review stays readable from the store, threads intact', async () => {
+  const { wt, review } = await uncommittedReview();
+  ok(await say(review.id, at('a.js', 10)));
+  wt.destroy();
+  const detail = ok(await reviews.getReview(review.id));
+  assert.equal(detail.review.checkoutGone, true);
+  assert.equal(detail.review.snapshotError, 'CHECKOUT_GONE');
+  assert.equal(detail.review.counts.threads.open, 1);
+  assert.equal(codeOf(await reviews.diff(review.id, {})), 'CHECKOUT_GONE');
+});
+
+test('unread: agent messages count for the human, human ones do not, markRead clears', async () => {
+  roster();
+  const { review } = await rangeReview(undefined, { recipient: 's-author' });
+  const t = ok(await say(review.id, at('a.js', 2))).thread;
+  assert.equal(ok(await reviews.getReview(review.id)).review.unread, 0);
+  ok(await threads.reply(review.id, author, t.id, { body: 'a' }));
+  ok(await threads.reply(review.id, reviewer, t.id, { body: 'b' }));
+  const detail = ok(await reviews.getReview(review.id));
+  assert.equal(detail.review.unread, 2);
+  assert.equal(detail.files[0].unread, 2);
+  assert.equal(ok(await threads.markRead(review.id, { threadId: t.id })).review.unread, 0);
+  ok(await threads.reply(review.id, author, t.id, { body: 'c' }));
+  assert.equal(ok(await reviews.getReview(review.id)).review.unread, 1);
+  ok(await threads.reply(review.id, HUMAN, t.id, { body: 'my answer' }));
+  assert.equal(ok(await reviews.getReview(review.id)).review.unread, 0, 'the human replying has read everything before it');
+  assert.equal(codeOf(await threads.markRead(review.id, { threadId: 'tX' })), 'THREAD_UNKNOWN');
+});
+
+test('a review opened by an agent is unseen until the human marks it read', async () => {
+  roster();
+  const { review } = await rangeReview(undefined, {}, reviewer);
+  assert.equal(review.seenByHuman, false);
+  assert.equal(ok(await threads.markRead(review.id)).review.seenByHuman, true);
+});
+
+test('open question threads count as merge blockers until resolved', async () => {
+  const { review } = await rangeReview();
+  const q = ok(await say(review.id, at('a.js', 2), { kind: 'question' })).thread;
+  assert.equal(ok(await reviews.getReview(review.id)).review.mergeBlockers, 1);
+  ok(await threads.setThreadStatus(review.id, q.id, { status: 'resolved' }));
+  assert.equal(ok(await reviews.getReview(review.id)).review.mergeBlockers, 0);
+});
+
+test('mergeBlockers counts open questions only, not other open threads', async () => {
+  const { review } = await rangeReview();
+  ok(await say(review.id, at('a.js', 2), { kind: 'comment' }));
+  ok(await say(review.id, at('a.js', 3), { kind: 'suggestion' }));
+  ok(await say(review.id, at('a.js', 4), { kind: 'finding', severity: 'blocker' }));
+  assert.equal(ok(await reviews.getReview(review.id)).review.mergeBlockers, 0);
+  ok(await say(review.id, at('a.js', 5), { kind: 'question' }));
+  assert.equal(ok(await reviews.getReview(review.id)).review.mergeBlockers, 1);
+});
+
+test('a message body over the cap is refused BODY_TOO_LARGE, when opening a thread and when replying', async () => {
+  const { review } = await rangeReview();
+  const huge = 'x'.repeat(MAX_BODY_CHARS + 1);
+  assert.equal(codeOf(await say(review.id, at('a.js', 2), { body: huge })), 'BODY_TOO_LARGE');
+  const t = ok(await say(review.id, at('a.js', 2), { body: 'x'.repeat(MAX_BODY_CHARS) })).thread;
+  assert.equal(codeOf(await threads.reply(review.id, HUMAN, t.id, { body: huge })), 'BODY_TOO_LARGE');
+});
+
+test('annotate refuses a tooLarge file with BINARY_FILE, for a line anchor and for a hunk anchor', async () => {
+  const wt = w.addWorktree();
+  wt.write('big.txt', 'x\n'.repeat(600000));
+  const review = await open({ kind: 'uncommitted' });
+  const big = ok(await reviews.diff(review.id, {})).files.find((f) => f.path === 'big.txt');
+  assert.equal(big.tooLarge, true);
+  assert.equal(codeOf(await say(review.id, at('big.txt', 1))), 'BINARY_FILE');
+  assert.equal(codeOf(await threads.annotate(review.id, HUMAN, { anchor: { hunkId: big.hunks[0].id }, kind: 'comment', body: 'x' })), 'BINARY_FILE');
+});

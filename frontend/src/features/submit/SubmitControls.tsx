@@ -25,7 +25,7 @@ export function SubmitControls({ onNoRecipient }: { onNoRecipient: () => void })
 
   const last = review.lastSubmission;
   const pending = last && (last.status === 'failed' || last.status === 'pending') && sub.state.phase === 'idle'
-    ? ctx.submissions.find((s) => String(s.id) === String(last.id)) : undefined;
+    ? ctx.submissions.find((x) => String(x.id) === String(last.id)) : undefined;
 
   const dialogState = sub.state.phase === 'manual' || sub.state.phase === 'failed' || sub.state.phase === 'timedOut' ? sub.state : null;
   const submission: Submission | undefined = dialogState?.submission;
@@ -59,7 +59,7 @@ export function SubmitControls({ onNoRecipient }: { onNoRecipient: () => void })
         </Alert>
       )}
       <Dialog open={!!dialogState} onOpenChange={(o) => !o && sub.close()}>
-        <DialogContent>
+        <DialogContent className="[&>*]:min-w-0">
           <DialogHeader>
             <DialogTitle>{uncommitted ? 'Request review' : 'Submit round'}</DialogTitle>
             <DialogDescription>
@@ -75,7 +75,7 @@ export function SubmitControls({ onNoRecipient }: { onNoRecipient: () => void })
             <Alert variant="warning"><AlertDescription id="retry-warning">The prompt may already have arrived, so retrying could deliver it twice.</AlertDescription></Alert>
           )}
           <Textarea ref={textRef} readOnly rows={10} aria-label="Prompt" value={submission?.text ?? ''} className="font-mono text-xs" />
-          <DialogFooter>
+          <DialogFooter className="sm:flex-wrap">
             {dialogState?.phase === 'manual' ? (
               <Button variant="ghost" onClick={sub.close}>Close</Button>
             ) : (

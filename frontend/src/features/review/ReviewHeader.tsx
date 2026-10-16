@@ -48,7 +48,6 @@ export function ReviewHeader() {
           Recipient: {recipient?.title || review.recipient || 'none'}
         </button>
         <span className="flex-1" />
-        <SubmitControls onNoRecipient={() => setPicker(true)} />
         <DropdownMenu>
           <DropdownMenuTrigger asChild><Button variant="outline" size="icon" aria-label="Review actions"><MoreHorizontalIcon /></Button></DropdownMenuTrigger>
           <DropdownMenuContent align="end">
@@ -59,6 +58,7 @@ export function ReviewHeader() {
             <DropdownMenuItem variant="destructive" onSelect={() => setConfirmDelete(true)}>Delete review…</DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
+        <SubmitControls onNoRecipient={() => setPicker(true)} />
       </div>
       {confirmDelete && (
         <div role="alertdialog" aria-label="Confirm delete" className="flex flex-wrap items-center gap-2 rounded-md border border-destructive/30 p-2 text-sm">

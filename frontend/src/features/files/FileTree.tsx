@@ -10,7 +10,7 @@ function FileMeta({ f }: { f: FileState }) {
   const v = f.verdicts;
   const t = f.threads;
   return (
-    <span className="flex shrink-0 items-center gap-2 text-xs text-muted-foreground">
+    <span className="flex basis-full flex-wrap items-center gap-x-3 pl-5 text-xs text-muted-foreground">
       <span><span className="text-success">+{f.additions}</span> <span className="text-destructive">−{f.deletions}</span></span>
       {v ? <span>{v.accepted} accepted, {v.rejected} rejected, {v.pending} pending</span> : <span>{f.hunks} {f.hunks === 1 ? 'hunk' : 'hunks'}</span>}
       {t.open + t.resolved + t.outdated > 0 && <span>{t.open} open, {t.resolved} resolved, {t.outdated} outdated</span>}

@@ -156,7 +156,7 @@ export function FileDiff({ onBack, extra }: { onBack?: () => void; extra?: React
                         {inline.map((t) => <ThreadCard key={t.id} thread={t} />)}
                       </div>
                     )}
-                    {endsSelection && sel.selection && (
+                    {endsSelection && sel.selection && !sel.dragging && (
                       <div className="sticky left-0 px-3 py-2 font-sans text-sm">
                         {sel.composing ? (
                           <Composer

@@ -15,8 +15,9 @@ test('mouse: pointerdown then pointerenter with the button held selects the drag
   show();
   fireEvent.pointerDown(cell('new', 2), { button: 0, buttons: 1, pointerType: 'mouse' });
   fireEvent.pointerEnter(cell('new', 4), { buttons: 1, pointerType: 'mouse' });
-  expect(label()).toContain('L2–L4 (new)');
+  expect(label()).toBeNull(); // held back while dragging, so the rows under the pointer do not move
   fireEvent.pointerUp(window);
+  expect(label()).toContain('L2–L4 (new)');
   fireEvent.pointerEnter(cell('new', 1), { buttons: 1 });
   expect(label()).toContain('L2–L4 (new)');
 });
@@ -25,9 +26,10 @@ test('mouse: a drag onto the other side’s gutter does not extend; a plain clic
   show();
   fireEvent.pointerDown(cell('new', 2), { button: 0, buttons: 1, pointerType: 'mouse' });
   fireEvent.pointerEnter(cell('old', 3), { buttons: 1 });
-  expect(label()).toContain('L2 (new)');
   fireEvent.pointerUp(window);
+  expect(label()).toContain('L2 (new)');
   fireEvent.pointerDown(cell('old', 4), { button: 0, buttons: 1, pointerType: 'mouse' });
+  fireEvent.pointerUp(window);
   expect(label()).toContain('L4 (old)');
 });
 
@@ -36,6 +38,7 @@ test('mouse: shift+click extends from the anchor', () => {
   fireEvent.pointerDown(cell('new', 1), { button: 0, pointerType: 'mouse' });
   fireEvent.pointerUp(window);
   fireEvent.pointerDown(cell('new', 3), { button: 0, shiftKey: true, pointerType: 'mouse' });
+  fireEvent.pointerUp(window);
   expect(label()).toContain('L1–L3 (new)');
 });
 

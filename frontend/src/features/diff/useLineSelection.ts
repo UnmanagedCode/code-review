@@ -11,13 +11,15 @@ export function useLineSelection(rows: Row[], enabled: boolean) {
   const [composing, setComposing] = useState(false);
   const [focus, setFocus] = useState<Cell | null>(null);
   const dragging = useRef(false);
+  // The toolbar is held back while dragging: inserting it would shift the rows under the pointer.
+  const [dragActive, setDragActive] = useState(false);
   const grid = useRef<HTMLDivElement>(null);
   const moveFocus = useRef(false);
 
   const clear = useCallback(() => { setSelection(null); setComposing(false); }, []);
   useEffect(() => { if (!enabled) clear(); }, [enabled, clear]);
   useEffect(() => {
-    const up = () => { dragging.current = false; };
+    const up = () => { dragging.current = false; setDragActive(false); };
     window.addEventListener('pointerup', up);
     return () => window.removeEventListener('pointerup', up);
   }, []);
@@ -44,6 +46,7 @@ export function useLineSelection(rows: Row[], enabled: boolean) {
       return;
     }
     dragging.current = true;
+    setDragActive(true);
     if (e.shiftKey && selection?.side === side) select(extendSelection(rows, selection, n));
     else select(startSelection(side, n));
   };
@@ -108,5 +111,5 @@ export function useLineSelection(rows: Row[], enabled: boolean) {
     return fs === side && lineOn(firstRow, fs) === n;
   };
 
-  return { selection, composing, clear, openComposer: () => setComposing(true), closeComposer: () => setComposing(false), grid, onPointerDown, onPointerEnter, onKeyDown, tabStop };
+  return { selection, dragging: dragActive, composing, clear, openComposer: () => setComposing(true), closeComposer: () => setComposing(false), grid, onPointerDown, onPointerEnter, onKeyDown, tabStop };
 }

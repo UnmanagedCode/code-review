@@ -158,3 +158,16 @@ test('SUBMISSION_NOT_PENDING on the result post toasts "Already recorded"', asyn
   expect(deps.onRecorded).toHaveBeenCalledTimes(1);
   expect(hook.result.current.state.phase).toBe('idle');
 });
+
+test('a bridge failure whose result POST is refused SUBMISSION_NOT_PENDING ends idle, not failed, with one refetch', async () => {
+  const bridge = installBridge();
+  bridge.sendPrompt.mockResolvedValue({ ok: false, code: 'SESSION_NOT_READY' });
+  stubFetch({
+    'POST api/reviews/r-1/submissions': { submission: sub },
+    'POST api/reviews/r-1/submissions/3/result': refusal('SUBMISSION_NOT_PENDING'),
+  });
+  const { hook, deps } = setup();
+  await act(() => hook.result.current.start());
+  expect(hook.result.current.state.phase).toBe('idle');
+  expect(deps.onRecorded).toHaveBeenCalledTimes(1);
+});

@@ -129,6 +129,9 @@ test('a submission left failed after a reload is offered for re-send', async () 
     submissions: [{ ...sub, status: 'failed' }] as never,
   });
   expect(screen.getByText('Last submission failed (SESSION_NOT_READY)')).toBeTruthy();
+  // A failed submission's delivery is known (the bridge refused it), so no double-delivery warning.
+  expect(screen.queryByText(/twice/)).toBeNull();
+  expect(screen.getByRole('button', { name: 'Re-send' }).getAttribute('aria-describedby')).toBeNull();
   await press('Re-send');
   await waitFor(() => expect(results(n)).toEqual([{ ok: true }]));
   expect(bridge.sendPrompt).toHaveBeenCalledWith('s-author', 'please review');

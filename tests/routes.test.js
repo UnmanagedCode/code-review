@@ -4,6 +4,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { world, editLines } from './_world.js';
+import { bindRepo } from './_git.js';
+import { tempStore } from './_store.js';
 import { start } from '../server.js';
 import { HTTP_STATUS } from '../src/refusals.js';
 import * as store from '../src/store.js';
@@ -12,7 +14,9 @@ let dist;
 let server;
 let base;
 let w;
+let bootStore;
 before(async () => {
+  bootStore = tempStore(); // start() migrates the store: never let it reach a real one
   dist = fs.mkdtempSync(path.join(os.tmpdir(), 'cr-routes-dist-'));
   fs.writeFileSync(path.join(dist, 'index.html'), '<!doctype html>');
   server = await start({ port: 0, distDir: dist });
@@ -22,6 +26,7 @@ after(() => {
   server.closeAllConnections();
   server.close();
   fs.rmSync(dist, { recursive: true, force: true });
+  bootStore.cleanup();
 });
 beforeEach(async () => {
   w = await world();
@@ -73,6 +78,67 @@ test('review lifecycle over HTTP: open, reuse, get, diff, file, commits, patch, 
   assert.equal((await req('GET', '/reviews?project=app')).body.reviews.length, 1);
   assert.equal((await req('DELETE', `/reviews/${id}`)).body.ok, true);
   assert.equal((await req('GET', `/reviews/${id}`)).status, 404);
+});
+
+test('GET /reviews/:id/rounds/:n is a past round\'s view; diff and file take ?round=; an unknown round is 404 ROUND_UNKNOWN', async () => {
+  const id = (await openReview()).review.id;
+  const t = (await req('POST', `/reviews/${id}/threads`, { anchor: { file: 'a.js', side: 'new', startLine: 18 }, kind: 'comment', body: 'x' })).body.thread;
+  bindRepo(w.cc.state.worktrees.app[0].worktreePath).commit({ 'a.js': ['ins1', ...editLines({ 2: 'top-edit', 18: 'bottom-edit' }).split('\n')].join('\n') });
+  assert.equal((await req('POST', `/reviews/${id}/refresh`)).body.round, 2);
+  const view = await req('GET', `/reviews/${id}/rounds/1`);
+  assert.equal(view.status, 200);
+  assert.deepEqual(Object.keys(view.body).sort(), ['counts', 'files', 'ok', 'outdatedThreads', 'readOnly', 'round', 'unplacedThreads']);
+  assert.equal(view.body.round.n, 1);
+  const diff = (await req('GET', `/reviews/${id}/diff?file=a.js&round=1`)).body;
+  assert.deepEqual([diff.readOnly, diff.round.n, diff.files[0].threads.map((x) => [x.id, x.anchor.startLine])], [true, 1, [[t.id, 18]]]);
+  assert.equal((await req('GET', `/reviews/${id}/diff?file=a.js`)).body.files[0].threads[0].anchor.startLine, 19);
+  assert.deepEqual((await req('GET', `/reviews/${id}/file?path=a.js&start=1&end=1&round=1`)).body.lines, [{ n: 1, text: 'l1' }]);
+  const unknown = await req('GET', `/reviews/${id}/rounds/9`);
+  assert.deepEqual([unknown.status, unknown.body.code], [404, 'ROUND_UNKNOWN']);
+  assert.equal(HTTP_STATUS.ROUND_UNKNOWN, 404);
+  assert.equal((await req('GET', `/reviews/${id}/diff?round=9`)).status, 404);
+  assert.equal((await req('GET', `/reviews/${id}/rounds/x`)).status, 400);
+});
+
+test('with an unparsable and a misfiled review file present, the list still answers 200 and a review can be opened', async (t) => {
+  const errors = t.mock.method(console, 'error', () => {});
+  const good = (await openReview()).review.id;
+  const dir = path.join(w.store.dir, 'reviews');
+  fs.writeFileSync(path.join(dir, `${store.newId()}.json`), '{ not json');
+  fs.writeFileSync(path.join(dir, `${store.newId()}.json`), JSON.stringify({ ...store.read(good), id: store.newId() }));
+  const listed = await req('GET', '/reviews?project=app');
+  assert.equal(listed.status, 200);
+  assert.deepEqual(listed.body.reviews.map((r) => r.id), [good]);
+  const fresh = await req('POST', '/reviews', { project: 'app', worktree: 'feature', kind: 'uncommitted' });
+  assert.equal(fresh.status, 200);
+  assert.equal(fresh.body.reused, false);
+  assert.ok(errors.mock.callCount() >= 2, 'each skipped file is logged');
+});
+
+test('a 500 logs one cleaned header line, then only the stack\'s frames: a misfiled review\'s multi-line inner id forges no line', async (t) => {
+  const errors = t.mock.method(console, 'error', () => {});
+  const id = store.newId();
+  fs.mkdirSync(path.join(w.store.dir, 'reviews'), { recursive: true });
+  // Lines shaped like a log header, like a stack frame, and like plain text, plus an escape sequence.
+  const inner = 'r-x\ncode-review: forged\u001b[31m\n    at forged (evil.js:1:1)\nplain forged';
+  fs.writeFileSync(path.join(w.store.dir, 'reviews', `${id}.json`), JSON.stringify({ id: inner }));
+  for (const [method, url] of [['GET', `/reviews/${id}`], ['GET', `/reviews/${id}/diff`], ['DELETE', `/reviews/${id}`]]) {
+    errors.mock.resetCalls();
+    const res = await req(method, url);
+    assert.equal(res.status, 500, url);
+    assert.match(res.body.reason, /\n/, 'precondition: the raw error message carries the newline');
+    assert.equal(errors.mock.callCount(), 1, url);
+    assert.equal(errors.mock.calls[0].arguments.length, 1, url);
+    const [header, ...rest] = errors.mock.calls[0].arguments[0].split('\n');
+    assert.doesNotMatch(header, /[\u0000-\u001f\u007f-\u009f]/, url);
+    assert.match(header, new RegExp(`^code-review: ${method} /api${url} failed: MisfiledReview: `));
+    assert.ok(rest.length > 0, `${url}: the stack's frames follow the header`);
+    for (const l of rest) {
+      assert.match(l, /^ {4}at \S/, `${url}: every line after the header is a frame`);
+      assert.doesNotMatch(l, /forged|evil\.js|[\u0000-\u001f\u007f-\u009f]/, `${url}: no message text in the frames`);
+    }
+    assert.ok(rest.some((l) => l.includes('src/store.js')), `${url}: the frames locate the throw`);
+  }
 });
 
 test('verdicts, threads, messages, status, read, refresh, submissions each return their documented shape', async () => {

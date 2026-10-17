@@ -17,12 +17,17 @@ export interface FileDiffOptions {
   uncommitted: boolean;
   /** Commit-filter view: the file comes from this list and is read-only (no context expansion). */
   commitFiles?: DiffFile[];
+  /** Past-round view of a range review: the file and its expandable context are read from that round. */
+  round?: number;
 }
 
 /** The open file's hunks and threads, its expandable context, and the local patches for mutation responses. */
-export function useFileDiff({ reviewId, path, version, uncommitted, commitFiles }: FileDiffOptions) {
+export function useFileDiff({ reviewId, path, version, uncommitted, commitFiles, round }: FileDiffOptions) {
   const commitMode = !!commitFiles;
-  const fetched = useFetch(path && !commitMode ? async () => (await ep.diff(reviewId, path)).files[0] : null, [reviewId, path, commitMode]);
+  const fetched = useFetch(
+    path && !commitMode ? async () => (await (round ? ep.roundDiff(reviewId, round, path) : ep.diff(reviewId, path))).files[0] : null,
+    [reviewId, path, commitMode, round],
+  );
   const lastVersion = useRef(version);
   useEffect(() => {
     if (lastVersion.current !== version) { lastVersion.current = version; fetched.reload(); }
@@ -36,16 +41,16 @@ export function useFileDiff({ reviewId, path, version, uncommitted, commitFiles 
   const [total, setTotal] = useState<number | null>(null);
   const textsRef = useRef(texts);
   textsRef.current = texts;
-  useEffect(() => { setExpansions({}); setTexts({}); setTotal(null); }, [reviewId, path, commitMode]);
+  useEffect(() => { setExpansions({}); setTexts({}); setTotal(null); }, [reviewId, path, commitMode, round]);
 
   const expandable = !commitMode && !!file && !file.binary && !file.tooLarge && file.hunks.some((h) => h.kind === 'text');
   const hunkSig = file ? file.hunks.map((h) => h.id).join() : '';
   useEffect(() => {
     if (!expandable || !path) return;
     let live = true;
-    ep.fileLines(reviewId, path, side, 1, 1).then((r) => { if (live) setTotal(r.total); }, () => {});
+    ep.fileLines(reviewId, path, side, 1, 1, round).then((r) => { if (live) setTotal(r.total); }, () => {});
     return () => { live = false; };
-  }, [reviewId, path, side, expandable, hunkSig]);
+  }, [reviewId, path, side, expandable, hunkSig, round]);
 
   // Uncommitted threads that vanish between loads are kept (session-local) as tombstones.
   const seen = useRef<{ path: string; threads: Map<string, Thread> } | null>(null);
@@ -71,10 +76,10 @@ export function useFileDiff({ reviewId, path, version, uncommitted, commitFiles 
       while (lo <= hi && textsRef.current[lo] !== undefined) lo++;
       while (hi >= lo && textsRef.current[hi] !== undefined) hi--;
       if (lo > hi) continue;
-      for (const l of (await ep.fileLines(reviewId, path, side, lo, hi)).lines) add[l.n] = l.text;
+      for (const l of (await ep.fileLines(reviewId, path, side, lo, hi, round)).lines) add[l.n] = l.text;
     }
     if (Object.keys(add).length) setTexts((t) => ({ ...t, ...add }));
-  }, [reviewId, path, side]);
+  }, [reviewId, path, side, round]);
 
   const expandTo = useCallback(async (changes: Record<string, { top: number; bottom: number }>) => {
     if (!file) return;

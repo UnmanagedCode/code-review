@@ -2,6 +2,7 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { toast } from 'sonner';
 import { expect, test, vi } from 'vitest';
+import { parseRoute } from '@/lib/route';
 import { review } from '@/test/fixtures';
 import { stubFetch } from '@/test/stubFetch';
 import { NewReviewDialog } from './NewReviewDialog';
@@ -70,4 +71,14 @@ test('a reused review is announced and navigated to', async () => {
   await waitFor(() => expect(location.search).toContain('review=r-9'));
   expect(onClose).toHaveBeenCalled();
   expect(info).toHaveBeenCalledWith('Opened the existing review');
+});
+
+test('opening the new review drops every review-scoped key of the one before, round included', async () => {
+  history.replaceState(null, '', '?project=app&worktree=feature&review=r-1&round=1&file=a.js&thread=t-1&view=new');
+  world();
+  const user = userEvent.setup();
+  render(<NewReviewDialog project="app" worktree="feature" onClose={() => {}} />);
+  await waitFor(() => expect((screen.getByRole('button', { name: 'Open review' }) as HTMLButtonElement).disabled).toBe(false));
+  await user.click(screen.getByRole('button', { name: 'Open review' }));
+  await waitFor(() => expect(parseRoute(location.search)).toEqual({ project: 'app', worktree: 'feature', review: 'r-9' }));
 });

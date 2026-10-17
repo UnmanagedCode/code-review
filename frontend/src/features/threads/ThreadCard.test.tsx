@@ -81,3 +81,26 @@ test('a thread that is not focused is not marked read', () => {
   renderInReview(<ThreadCard thread={thread({ unread: 2 })} />);
   expect(net.calls).toEqual([]);
 });
+
+test('a round view says how many later replies it hides, and nothing when there are none', () => {
+  const { unmount } = renderInReview(<ThreadCard thread={thread({ laterMessages: 2 })} />, { round: 1, readOnly: true });
+  expect(screen.getByText(/2 later replies/)).toBeTruthy();
+  unmount();
+  renderInReview(<ThreadCard thread={thread({ laterMessages: 0 })} />, { round: 1, readOnly: true });
+  expect(screen.queryByText(/later repl/)).toBeNull();
+});
+
+test('a thread whose position in the viewed round is unknown says so, with the round its shown position is from', () => {
+  const t = thread({ positionUnknown: true, anchor: { ...thread().anchor, round: 3 } });
+  renderInReview(<ThreadCard thread={t} />, { round: 1, readOnly: true });
+  expect(screen.getByText(/round 1 unknown.*round 3/)).toBeTruthy();
+});
+
+test('focusing a thread in a round view posts no read mark and offers no reply', async () => {
+  history.replaceState(null, '', '?round=1&thread=t-1');
+  const net = stubFetch({});
+  renderInReview(<ThreadCard thread={thread({ unread: 0 })} />, { round: 1, readOnly: true });
+  await waitFor(() => expect(screen.getByRole('article')).toBeTruthy());
+  expect(net.calls).toEqual([]);
+  expect(screen.queryByLabelText('Reply')).toBeNull();
+});

@@ -5,6 +5,7 @@ import path from 'node:path';
 import { storeRoot } from './paths.js';
 import { withLock } from './mutex.js';
 import { refuse, isRefusal } from './refusals.js';
+import { errorLine, oneLine } from './text.js';
 
 /** Emits 'change' with {id, rev} after a write or {id, deleted:true} after a remove. */
 export const changes = new EventEmitter();
@@ -16,15 +17,34 @@ const fileOf = (id) => path.join(dirOf(), `${id}.json`);
 
 export const newId = () => `r-${randomBytes(5).toString('hex')}`;
 
-/** The review, or null when absent or when `id` is not store-shaped. */
+/**
+ * A review file whose content names another review (a copy restored under a new name, a symlink into another store).
+ * It is never read as either review, so nothing is ever written from it: `write` persists under the content's id.
+ */
+export class MisfiledReview extends Error {
+  constructor(id, inner) {
+    super(`${id}.json holds review ${typeof inner === 'string' ? inner : 'with no id'}`);
+    this.name = 'MisfiledReview';
+  }
+}
+
+/** The review, or null when absent or when `id` is not store-shaped. Throws on unparsable JSON and on `MisfiledReview`. */
 export function read(id) {
   if (!ID_RE.test(id)) return null;
+  let review;
   try {
-    return JSON.parse(fs.readFileSync(fileOf(id), 'utf8'));
+    review = JSON.parse(fs.readFileSync(fileOf(id), 'utf8'));
   } catch (e) {
     if (e.code === 'ENOENT') return null;
     throw e;
   }
+  if (review?.id !== id) throw new MisfiledReview(id, review?.id);
+  return review;
+}
+
+/** Logs a review file left aside, on one line (`errorLine`); `id` is cleaned too, so no caller can forge log lines. */
+export function logSkipped(id, what, e) {
+  console.error(`code-review: review ${oneLine(id)} ${oneLine(what)}: ${errorLine(e)}`);
 }
 
 /** Atomically writes `review` (tmp file + rename), bumping `rev`. */
@@ -37,11 +57,23 @@ export function write(review) {
   changes.emit('change', { id: review.id, rev: review.rev });
 }
 
-export function list() {
+/** Ids of the stored reviews, from file names only (no file is parsed). */
+export function ids() {
   let names;
   try { names = fs.readdirSync(dirOf()); } catch (e) { if (e.code === 'ENOENT') return []; throw e; }
-  return names.filter((n) => n.endsWith('.json')).map((n) => read(n.slice(0, -5))).filter(Boolean);
+  return names.filter((n) => n.endsWith('.json')).map((n) => n.slice(0, -5)).filter((id) => ID_RE.test(id));
 }
+
+/** Every readable review; a file that cannot be read as its review is logged and skipped, so one bad file hides only itself. */
+export const list = () => ids().flatMap((id) => {
+  try {
+    const review = read(id);
+    return review ? [review] : [];
+  } catch (e) {
+    logSkipped(id, 'skipped', e);
+    return [];
+  }
+});
 
 export function remove(id) {
   if (!ID_RE.test(id)) return;

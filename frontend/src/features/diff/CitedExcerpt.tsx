@@ -7,10 +7,10 @@ import { Empty, ErrorState, Loading } from '@/features/common/States';
 
 /** Read-only excerpt of a cited file that is not part of the diff. */
 export function CitedExcerpt({ path }: { path: string }) {
-  const { id } = useReviewCtx();
+  const { id, round } = useReviewCtx();
   const route = useRoute();
   const range = parseLines(route.lines);
-  const excerpt = useFetch(range ? () => ep.fileLines(id, path, route.side ?? 'new', range.start, range.end) : null, [id, path, route.lines, route.side]);
+  const excerpt = useFetch(range ? () => ep.fileLines(id, path, route.side ?? 'new', range.start, range.end, round) : null, [id, path, route.lines, route.side, round]);
   if (!range) return <Empty title="That file isn’t in this diff" />;
   if (excerpt.loading && !excerpt.data) return <Loading label="Loading excerpt" rows={3} />;
   if (excerpt.error) {

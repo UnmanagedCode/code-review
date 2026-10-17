@@ -126,3 +126,62 @@ test('CODE_REVIEW_STORE takes precedence over $PROJECTS_ROOT', () => {
 test('the change emitter has no listener cap, since every open SSE client is a listener', () => {
   assert.equal(store.changes.getMaxListeners(), 0);
 });
+
+test('ids lists id-named .json files without parsing them', () => {
+  const { dir } = fresh();
+  const good = store.newId();
+  store.write({ schema: 1, id: good, rev: 0 });
+  const bad = store.newId();
+  fs.writeFileSync(path.join(dir, 'reviews', `${bad}.json`), '{ not json');
+  fs.writeFileSync(path.join(dir, 'reviews', 'notes.txt'), 'x');
+  fs.writeFileSync(path.join(dir, 'reviews', 'notes.json'), '{}');
+  assert.deepEqual(store.ids().sort(), [good, bad].sort());
+});
+
+test('list skips and logs an unparsable file and a misfiled one, returning the readable reviews', (t) => {
+  const { dir } = fresh();
+  const errors = t.mock.method(console, 'error', () => {});
+  const good = store.newId();
+  store.write({ schema: 1, id: good, rev: 0 });
+  const bad = store.newId();
+  fs.writeFileSync(path.join(dir, 'reviews', `${bad}.json`), '{ not json');
+  const misfiled = store.newId();
+  fs.writeFileSync(path.join(dir, 'reviews', `${misfiled}.json`), JSON.stringify({ schema: 1, id: good, rev: 3 }));
+  assert.deepEqual(store.list().map((r) => r.id), [good]);
+  const logged = errors.mock.calls.map((c) => c.arguments[0]);
+  assert.equal(logged.length, 2);
+  assert.ok(logged.some((l) => l.includes(bad) && l.includes('SyntaxError')));
+  assert.ok(logged.some((l) => l.includes(misfiled) && l.includes('MisfiledReview')));
+});
+
+test('reading a file whose content names another review, or no review, throws MisfiledReview', () => {
+  const { dir } = fresh();
+  const other = store.newId();
+  const a = store.newId();
+  const b = store.newId();
+  fs.mkdirSync(path.join(dir, 'reviews'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'reviews', `${a}.json`), JSON.stringify({ id: other }));
+  fs.writeFileSync(path.join(dir, 'reviews', `${b}.json`), 'null');
+  assert.throws(() => store.read(a), { name: 'MisfiledReview' });
+  assert.throws(() => store.read(b), { name: 'MisfiledReview' });
+});
+
+test('mutating a misfiled review writes nothing anywhere', async () => {
+  const { dir } = fresh();
+  const victim = store.newId();
+  store.write({ schema: 1, id: victim, rev: 0, title: 'victim' });
+  const copy = store.newId();
+  fs.writeFileSync(path.join(dir, 'reviews', `${copy}.json`), JSON.stringify({ schema: 1, id: victim, rev: 0, title: 'copy' }));
+  const before = fs.readdirSync(path.join(dir, 'reviews')).map((n) => [n, fs.readFileSync(path.join(dir, 'reviews', n), 'utf8')]);
+  await assert.rejects(store.mutate(copy, (r) => { r.title = 'changed'; }), { name: 'MisfiledReview' });
+  assert.deepEqual(fs.readdirSync(path.join(dir, 'reviews')).map((n) => [n, fs.readFileSync(path.join(dir, 'reviews', n), 'utf8')]), before);
+});
+
+test('logSkipped writes one line even when the id and the error carry newlines and control characters', (t) => {
+  const errors = t.mock.method(console, 'error', () => {});
+  store.logSkipped('r-1\nforged\u001b', 'skipped', new Error('bad\r\nline'));
+  assert.equal(errors.mock.callCount(), 1);
+  const line = errors.mock.calls[0].arguments[0];
+  assert.doesNotMatch(line, /[\u0000-\u001f\u007f-\u009f]/);
+  assert.equal(line, 'code-review: review r-1 forged skipped: Error: bad line');
+});

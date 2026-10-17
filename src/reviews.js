@@ -7,6 +7,8 @@ import { resolveTarget, buildSnapshot, isBinaryFile } from './snapshot.js';
 import { followThreads } from './follow.js';
 import { currentRound, authorFor, assertOpen, inReview, viewReview } from './context.js';
 import { summarize, fileStates, hunkView, threadView, targetLabel } from './rollup.js';
+import { SCHEMA } from './migrate.js';
+import { pickRound, roundDiff } from './rounds.js';
 
 const KINDS = ['range', 'commit', 'uncommitted'];
 const VERDICTS = ['pending', 'accepted', 'rejected'];
@@ -83,7 +85,7 @@ export const openReview = (args, actor) => attempt(() => withLock('create', asyn
   const recipient = await resolveRecipient(args.recipient, actor, { project: args.project, worktree });
   const branch = co.branch ?? (await git.currentBranch(co.path));
   const review = {
-    schema: 1, id: store.newId(), project: args.project, worktree, branch, kind, target,
+    schema: SCHEMA, id: store.newId(), project: args.project, worktree, branch, kind, target,
     baseLabel: kind === 'range' ? target.base : null, title: '', status: 'open', createdAt: now(), createdBy: null,
     recipient, seenByHuman: actor.kind === 'human', rev: 0, seq: 0, humanSeq: 0, nextThread: 1, nextSubmission: 1,
     rounds: [{ n: 1, ...shas, fingerprint: snap.fingerprint, createdAt: now(), submittedAt: null }],
@@ -206,8 +208,12 @@ export const refreshReview = (id) => attempt(async () => inReview(id, async (rev
 
 const withThreads = (review, file) => review.threads.filter((t) => t.status !== 'outdated' && t.anchor.file === file).map(threadView);
 
-/** Files with hunks and threads for the whole review, one file, or (read-only) one commit of a range. */
-export const diff = (id, { file, commit } = {}) => attempt(() => viewReview(id, async (review, env) => {
+/** Files with hunks and threads for the whole review, one file, or (read-only) one commit or one past round of a range. */
+export const diff = (id, { file, commit, round } = {}) => attempt(() => viewReview(id, async (review, env) => {
+  if (round !== undefined) {
+    if (commit) throw invalid('the commit filter and a round cannot be combined');
+    return roundDiff(review, env, { file, round });
+  }
   if (commit) {
     if (review.kind !== 'range') throw invalid('the commit filter applies to range reviews only');
     const repo = await env.repo();
@@ -239,11 +245,11 @@ export const commits = (id) => attempt(() => viewReview(id, async (review, env) 
   return { ok: true, commits: await git.commitLog(await env.repo(), { range }) };
 }));
 
-/** A window of one side of a file, for context expansion and citation jumps. */
-export const fileLines = (id, { path, side = 'new', start, end } = {}) => attempt(() => viewReview(id, async (review, env) => {
+/** A window of one side of a file (in the current round, or a given round of a range), for context expansion and citation jumps. */
+export const fileLines = (id, { path, side = 'new', start, end, round } = {}) => attempt(() => viewReview(id, async (review, env) => {
   if (!path) throw invalid('path is required');
   if (!['old', 'new'].includes(side)) throw invalid('side must be old or new');
-  const snap = await env.snapshot();
+  const snap = await env.snapshot(round === undefined ? undefined : pickRound(review, round).n);
   let content;
   const read = async () => (content ??= (await snap.lines(side, path)) ?? false) || null;
   if (await isBinaryFile(snap, path, read)) throw new Refusal('BINARY_FILE', `${path} is binary`);

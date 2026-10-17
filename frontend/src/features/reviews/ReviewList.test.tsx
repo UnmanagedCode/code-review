@@ -2,6 +2,7 @@ import { act, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, expect, test, vi } from 'vitest';
 import { FakeEventSource, installFakeEventSource } from '@/test/fakeEventSource';
+import { parseRoute } from '@/lib/route';
 import { review } from '@/test/fixtures';
 import { stubFetch } from '@/test/stubFetch';
 import { ReviewList } from './ReviewList';
@@ -46,4 +47,12 @@ test('any SSE event reloads the visible list after the debounce', async () => {
   expect(net.count('GET api/reviews')).toBe(1);
   await act(() => vi.advanceTimersByTimeAsync(300));
   expect(net.count('GET api/reviews')).toBe(2);
+});
+
+test('opening a review from the list drops every review-scoped key of the one left, round included', async () => {
+  history.replaceState(null, '', '?project=app&worktree=feature&review=r-1&round=1&file=a.js&commit=abc1234&view=threads');
+  stubFetch({ 'GET api/reviews': { reviews: [review({ id: 'r-2', title: 'Other' })] } });
+  render(<ReviewList project="app" worktree="feature" />);
+  await userEvent.setup().click(await screen.findByRole('link', { name: /Other/ }));
+  expect(parseRoute(location.search)).toEqual({ project: 'app', worktree: 'feature', review: 'r-2' });
 });

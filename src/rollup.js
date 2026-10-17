@@ -1,5 +1,6 @@
 import { parseCitations } from './citations.js';
 import { currentRound } from './context.js';
+import { anchorView } from './anchor.js';
 
 export const verdictOf = (review, hunkId) => review.verdicts[hunkId]?.verdict ?? 'pending';
 
@@ -73,10 +74,9 @@ export function summarize(review, files, live) {
 
 /** Thread as the API shows it. */
 export function threadView(t) {
-  const { file, side, startLine, endLine, hunkId, round, linesHash, drifted } = t.anchor;
   return {
     id: t.id, kind: t.kind, severity: t.severity, status: t.status, disposition: t.disposition,
-    resolveProposed: t.resolveProposed, anchor: { file, side, startLine, endLine, hunkId, round, linesHash, drifted },
+    resolveProposed: t.resolveProposed, anchor: anchorView(t.anchor),
     openedBy: t.openedBy, unread: unreadOf(t),
     messages: t.messages.map((m) => ({
       id: m.id, author: m.author, body: m.body, at: m.at, round: m.round, proposeResolve: m.proposeResolve,

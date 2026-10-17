@@ -1,7 +1,7 @@
 import { api } from './api';
 import type {
   CheckoutInfo, Commit, DiffFile, FileState, ForkPoint, Kind, RefreshReport, ReviewSummary, Round, Session,
-  Severity, Submission, Thread, ThreadAnchorInput, ThreadKind, Verdict,
+  Severity, Submission, Thread, ThreadAnchorInput, ThreadCounts, ThreadKind, Verdict,
 } from './types';
 
 /** One typed function per REST call in docs/protocol.md; the only place `api/…` paths are built. */
@@ -15,6 +15,8 @@ const json = (method: string, body?: unknown): RequestInit => ({ method, ...(bod
 const r = (id: string) => `api/reviews/${encodeURIComponent(id)}`;
 
 export interface ReviewDetail { review: ReviewSummary; files: FileState[]; rounds: Round[]; submissions: Submission[]; outdatedThreads: Thread[] }
+/** A past round of a range review, read-only: its files, the counts of its placed threads, its outdated and unplaced threads. */
+export interface RoundView { readOnly: true; round: Round; files: FileState[]; counts: ThreadCounts; outdatedThreads: Thread[]; unplacedThreads: Thread[] }
 export interface FileLines { path: string; side: 'old' | 'new'; total: number; lines: { n: number; text: string }[] }
 
 export const projects = () => api<{ projects: { name: string }[] }>('api/projects');
@@ -38,8 +40,12 @@ export const deleteReview = (id: string) => api<{ ok: true }>(r(id), json('DELET
 export const diff = (id: string, file?: string) => api<{ review: ReviewSummary; files: DiffFile[] }>(`${r(id)}/diff${q({ file })}`);
 export const commitDiff = (id: string, commit: string) =>
   api<{ readOnly: true; commit: { sha: string; subject: string }; files: DiffFile[] }>(`${r(id)}/diff${q({ commit })}`);
-export const fileLines = (id: string, path: string, side: 'old' | 'new', start: number, end: number) =>
-  api<FileLines>(`${r(id)}/file${q({ path, side, start, end })}`);
+export const roundView = (id: string, n: number) => api<RoundView>(`${r(id)}/rounds/${n}`);
+export const roundDiff = (id: string, round: number, file?: string) =>
+  api<{ readOnly: true; round: Round; files: DiffFile[] }>(`${r(id)}/diff${q({ file, round })}`);
+/** `round`: read a past round of a range review instead of the current one. */
+export const fileLines = (id: string, path: string, side: 'old' | 'new', start: number, end: number, round?: number) =>
+  api<FileLines>(`${r(id)}/file${q({ path, side, start, end, round })}`);
 export const setVerdict = (id: string, hunkId: string, verdict: Verdict) =>
   api<{ hunkId: string; verdict: Verdict; review: ReviewSummary }>(`${r(id)}/hunks/${encodeURIComponent(hunkId)}/verdict`, json('PUT', { verdict }));
 export const acceptFile = (id: string, file: string, hunkIds: string[]) =>

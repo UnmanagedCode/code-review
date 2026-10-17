@@ -2,7 +2,7 @@ import { test, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { makeRepo, git, lines } from './_git.js';
+import { makeRepo, git, lines, gitDirSig } from './_git.js';
 import { execFileSync } from 'node:child_process';
 import os from 'node:os';
 import { resolveTarget, buildSnapshot } from '../src/snapshot.js';
@@ -243,20 +243,6 @@ test('commitLog lists newest first and flags merge commits', async () => {
 });
 
 // Names, sizes and mtimes of everything under .git, to prove git wrote nothing there.
-function gitDirSig(dir) {
-  const out = [];
-  const walk = (d) => {
-    for (const e of fs.readdirSync(d, { withFileTypes: true })) {
-      const p = path.join(d, e.name);
-      if (e.isDirectory()) { walk(p); continue; }
-      const s = fs.statSync(p);
-      out.push(`${path.relative(dir, p)} ${s.size} ${s.mtimeMs}`);
-    }
-  };
-  walk(path.join(dir, '.git'));
-  return out.sort();
-}
-
 test('in a repo with core.fsmonitor=true, isDirty and range and uncommitted snapshots leave .git untouched (no daemon files)', async () => {
   const r = repo();
   r.commit({ 'a.txt': 'a\n' });

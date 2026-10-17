@@ -37,3 +37,9 @@ test('threads render under the row of their end line', () => {
   expect(rows[idx].compareDocumentPosition(card) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   expect(rows[idx + 1]?.compareDocumentPosition(card) & Node.DOCUMENT_POSITION_PRECEDING).toBeTruthy();
 });
+
+test('a past round\'s file says which round it shows, so a phone without the sidebar banner still knows', () => {
+  withRoute('src/a.ts');
+  renderDiff(<FileDiff />, diffFile(), { round: 1, readOnly: true });
+  expect(screen.getByText(/round 1/)).toBeTruthy();
+});

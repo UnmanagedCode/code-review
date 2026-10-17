@@ -6,9 +6,9 @@ const CONCURRENCY = 4;
 
 /**
  * Every non-outdated thread of the review. No REST call lists them, so this fetches the diff of each file whose counts
- * show threads (never the whole diff, which can be huge). Idle until `enabled`.
+ * show threads (never the whole diff, which can be huge). Idle until `enabled`. `round`: a past round's threads, as of then.
  */
-export function useThreadIndex(reviewId: string, files: FileState[], version: number, enabled: boolean) {
+export function useThreadIndex(reviewId: string, files: FileState[], version: number, enabled: boolean, round?: number) {
   const [state, setState] = useState<{ threads: Thread[]; loading: boolean; error: unknown }>({ threads: [], loading: false, error: undefined });
   const withThreads = files.filter((f) => f.threads.open + f.threads.resolved > 0).map((f) => f.path);
   const key = withThreads.join('\n');
@@ -20,7 +20,7 @@ export function useThreadIndex(reviewId: string, files: FileState[], version: nu
     const found: Thread[] = [];
     const worker = async () => {
       for (let p = queue.shift(); p !== undefined; p = queue.shift()) {
-        found.push(...(await ep.diff(reviewId, p)).files.flatMap((f) => f.threads));
+        found.push(...(await (round ? ep.roundDiff(reviewId, round, p) : ep.diff(reviewId, p))).files.flatMap((f) => f.threads));
       }
     };
     Promise.all(Array.from({ length: Math.min(CONCURRENCY, queue.length) }, worker)).then(
@@ -28,6 +28,6 @@ export function useThreadIndex(reviewId: string, files: FileState[], version: nu
       (error) => { if (live) setState({ threads: [], loading: false, error }); },
     );
     return () => { live = false; };
-  }, [reviewId, key, version, enabled]);
+  }, [reviewId, key, version, enabled, round]);
   return state;
 }

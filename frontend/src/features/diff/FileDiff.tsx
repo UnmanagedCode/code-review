@@ -23,6 +23,7 @@ export const CHUNK_ROWS = 1500;
 const byId = (a: Thread, b: Thread) => a.id.localeCompare(b.id, undefined, { numeric: true });
 
 function FileHeader({ file, files, onBack, extra }: { file: DiffFile; files: { path: string }[]; onBack?: () => void; extra?: ReactNode }) {
+  const { round } = useReviewCtx();
   const i = files.findIndex((f) => f.path === file.path);
   const go = (path: string) => navigate({ file: path, lines: undefined, side: undefined, thread: undefined });
   return (
@@ -32,6 +33,7 @@ function FileHeader({ file, files, onBack, extra }: { file: DiffFile; files: { p
         <p className="truncate font-mono text-sm font-medium" title={file.path}>{file.path}</p>
         {file.oldPath && <p className="truncate font-mono text-xs text-muted-foreground">renamed from {file.oldPath}</p>}
       </div>
+      {round !== undefined && <Badge variant="info">round {round} · read-only</Badge>}
       <Badge variant="outline">{file.status}</Badge>
       <span className="text-xs"><span className="text-success">+{file.additions}</span> <span className="text-destructive">−{file.deletions}</span></span>
       <FileVerdict file={file} />

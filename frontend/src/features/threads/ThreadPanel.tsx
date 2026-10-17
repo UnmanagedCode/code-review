@@ -20,11 +20,11 @@ export function ThreadPanel() {
   const [tab, setTab] = useState('file');
   const [status, setStatus] = useState<'open' | 'resolved' | 'all'>('open');
   const dropped = useDropped(ctx.id);
-  const index = useThreadIndex(ctx.id, ctx.files, ctx.version, tab === 'all');
+  const index = useThreadIndex(ctx.id, ctx.files, ctx.version, tab === 'all', ctx.round);
   const fileThreads = ctx.fileDiff.file?.threads ?? [];
   const allThreads = index.threads.filter((t) => status === 'all' || t.status === status);
   const nextUnread = index.threads.find((t) => t.unread > 0);
-  const counts = ctx.review.counts.threads;
+  const counts = ctx.threadCounts;
   return (
     <section aria-label="Threads" className="flex min-h-0 flex-1 flex-col">
       <Tabs value={tab} onValueChange={setTab} className="min-h-0 flex-1 gap-0">
@@ -32,6 +32,7 @@ export function ThreadPanel() {
           <TabsTrigger value="file">This file</TabsTrigger>
           <TabsTrigger value="all">All <Badge variant="secondary">{counts.open + counts.resolved}</Badge></TabsTrigger>
           <TabsTrigger value="outdated">Outdated <Badge variant="secondary">{ctx.outdatedThreads.length}</Badge></TabsTrigger>
+          {ctx.unplacedThreads.length > 0 && <TabsTrigger value="unplaced">Position unknown <Badge variant="secondary">{ctx.unplacedThreads.length}</Badge></TabsTrigger>}
           {dropped.length > 0 && <TabsTrigger value="dropped">Dropped <Badge variant="secondary">{dropped.length}</Badge></TabsTrigger>}
         </TabsList>
         <div className="min-h-0 flex-1 overflow-y-auto">
@@ -53,6 +54,7 @@ export function ThreadPanel() {
           <TabsContent value="outdated">
             {ctx.outdatedThreads.length ? list(ctx.outdatedThreads, { showLocation: false }) : <Empty title="No outdated threads" />}
           </TabsContent>
+          <TabsContent value="unplaced">{list(ctx.unplacedThreads, { showLocation: false })}</TabsContent>
           <TabsContent value="dropped">{list(dropped, { dropped: true })}</TabsContent>
         </div>
       </Tabs>

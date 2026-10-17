@@ -57,3 +57,15 @@ export function makeRepo({ dirName = 'repo' } = {}) {
 }
 
 export const lines = (n, prefix = 'l') => Array.from({ length: n }, (_, i) => `${prefix}${i + 1}`).join('\n') + '\n';
+
+/** Size and mtime of every file under `dir`'s `.git` (a directory, or a linked worktree's `.git` file): equal before and after = untouched. */
+export function gitDirSig(dir) {
+  const out = [];
+  const walk = (p) => {
+    const s = fs.statSync(p);
+    if (s.isDirectory()) { for (const name of fs.readdirSync(p)) walk(path.join(p, name)); return; }
+    out.push(`${path.relative(dir, p)} ${s.size} ${s.mtimeMs}`);
+  };
+  walk(path.join(dir, '.git'));
+  return out.sort();
+}

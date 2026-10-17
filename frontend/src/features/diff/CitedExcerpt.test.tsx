@@ -19,3 +19,11 @@ test('FILE_NOT_IN_DIFF reads as "not present at this round"', async () => {
   renderInReview(<CitedExcerpt path="gone.md" />);
   expect(await screen.findByText('Cited file isn’t present at this round')).toBeTruthy();
 });
+
+test('in a past-round view the excerpt is read from that round', async () => {
+  history.replaceState(null, '', '?file=docs%2Fx.md&lines=2&round=1');
+  const net = stubFetch({ 'GET api/reviews/r-1/file': { path: 'docs/x.md', side: 'new', total: 9, lines: [{ n: 2, text: 'then' }] } });
+  renderInReview(<CitedExcerpt path="docs/x.md" />, { round: 1, readOnly: true });
+  expect(await screen.findByText('then')).toBeTruthy();
+  expect(net.calls[0].url.searchParams.get('round')).toBe('1');
+});

@@ -39,18 +39,6 @@ test('"Next unread" focuses the first unread thread, which posts read {threadId}
   await waitFor(() => expect(net.calls.filter((c) => c.method === 'POST').map((c) => c.body)).toEqual([{ threadId: 't-7' }]));
 });
 
-test('the Position unknown tab appears only with unplaced threads and lists them', async () => {
-  const { unmount } = render(<ReviewProvider value={ctxValue({ fileDiff: { file: undefined } as never })}><ThreadPanel /></ReviewProvider>);
-  expect(screen.queryByRole('tab', { name: /Position unknown/ })).toBeNull();
-  unmount();
-  const unplaced = [thread({ id: 't-4', positionUnknown: true }), thread({ id: 't-5', positionUnknown: true })];
-  render(<ReviewProvider value={ctxValue({ round: 1, readOnly: true, unplacedThreads: unplaced, fileDiff: { file: undefined } as never })}><ThreadPanel /></ReviewProvider>);
-  const tab = screen.getByRole('tab', { name: /Position unknown/ });
-  expect(tab.textContent).toContain('2');
-  await userEvent.setup().click(tab);
-  expect(screen.getAllByRole('article')).toHaveLength(2);
-});
-
 test('the All count is the shown threads\' counts, not the review\'s', () => {
   const value = ctxValue({ review: review({ counts: { ...review().counts, threads: { open: 9, resolved: 9, outdated: 0 } } }), threadCounts: { open: 2, resolved: 1, outdated: 0 }, fileDiff: { file: undefined } as never });
   render(<ReviewProvider value={value}><ThreadPanel /></ReviewProvider>);

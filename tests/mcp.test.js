@@ -117,15 +117,6 @@ test('list_threads filters by status and file; get_hunk finds a hunk by id or by
   assert.equal((await result('get_hunk', { review: review.id })).code, 'INVALID_ARGUMENT');
 });
 
-test('open_review refuses a recipient argument from any agent, and stores nothing', async () => {
-  const wt = w.addWorktree();
-  wt.commit({ 'f.js': 'x\n' });
-  const cond = { sessionId: 's-cond', project: '.conduct' };
-  assert.equal((await result('open_review', { project: 'app', worktree: 'feature', recipient: 's-author' }, cond)).code, 'INVALID_ARGUMENT');
-  assert.equal((await result('open_review', { recipient: 's-rev' }, { sessionId: 's-author', project: 'app' })).code, 'INVALID_ARGUMENT');
-  assert.equal((await reviews.listReviews()).reviews.length, 0);
-});
-
 test('open_review: a conductor opening becomes the recipient and its author argument is stored', async () => {
   const { review } = await reviewOnFeature();
   assert.equal(review.recipient, 's-cond');

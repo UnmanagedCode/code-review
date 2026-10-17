@@ -7,7 +7,6 @@ import { resolveTarget, buildSnapshot, isBinaryFile } from './snapshot.js';
 import { followThreads } from './follow.js';
 import { currentRound, authorFor, assertOpen, inReview, viewReview } from './context.js';
 import { summarize, fileStates, hunkView, threadView, targetLabel } from './rollup.js';
-import { SCHEMA } from './migrate.js';
 import { pickRound, roundDiff } from './rounds.js';
 
 const KINDS = ['range', 'commit', 'uncommitted'];
@@ -65,7 +64,6 @@ async function resolveRecipient(explicit, checkout) {
 export const openReview = (args, actor) => attempt(() => withLock('create', async () => {
   const kind = args.kind ?? 'range';
   if (!KINDS.includes(kind)) throw invalid(`kind must be one of ${KINDS.join(', ')}`);
-  if (actor.kind === 'agent' && args.recipient !== undefined) throw invalid('the agent that opens a review is its recipient: do not pass recipient');
   if (args.author !== undefined) {
     if (actor.kind !== 'agent' || !isConductorProject(actor.project)) throw invalid('only a conductor names an author');
     if (kind === 'uncommitted') throw invalid('an uncommitted review has no author: the human is the author');
@@ -91,7 +89,7 @@ export const openReview = (args, actor) => attempt(() => withLock('create', asyn
   const recipient = actor.kind === 'agent' ? actor.sessionId : await resolveRecipient(args.recipient, { project: args.project, worktree });
   const branch = co.branch ?? (await git.currentBranch(co.path));
   const review = {
-    schema: SCHEMA, id: store.newId(), project: args.project, worktree, branch, kind, target,
+    id: store.newId(), project: args.project, worktree, branch, kind, target,
     baseLabel: kind === 'range' ? target.base : null, title: '', status: 'open', createdAt: now(), createdBy: null,
     recipient, author: args.author ?? null, seenByHuman: actor.kind === 'human', rev: 0, seq: 0, humanSeq: 0, nextThread: 1, nextSubmission: 1,
     rounds: [{ n: 1, ...shas, fingerprint: snap.fingerprint, createdAt: now(), submittedAt: null }],

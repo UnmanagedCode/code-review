@@ -56,7 +56,7 @@ function twoRounds(roundView: unknown = undefined) {
   const then = diffFile({ path: 'old.ts', hunks: [{ ...diffFile().hunks[0], verdict: null }], threads: [thread({ anchor: { ...thread().anchor, file: 'old.ts' }, laterMessages: 1 })] });
   return stubFetch({
     'GET api/reviews/r-1': { review: review({ round: 2 }), files: [fileState()], rounds, submissions: [], outdatedThreads: [] },
-    'GET api/reviews/r-1/rounds/1': roundView ?? { readOnly: true, round: rounds[0], files: [fileState({ path: 'old.ts', verdicts: null })], counts: { open: 1, resolved: 0, outdated: 0 }, outdatedThreads: [], unplacedThreads: [] },
+    'GET api/reviews/r-1/rounds/1': roundView ?? { readOnly: true, round: rounds[0], files: [fileState({ path: 'old.ts', verdicts: null })], counts: { open: 1, resolved: 0, outdated: 0 }, outdatedThreads: [] },
     'GET api/reviews/r-1/diff': (u: URL) => (u.searchParams.get('round') === '1'
       ? { readOnly: true, round: rounds[0], files: [then] }
       : { review: review({ round: 2 }), files: [diffFile({ threads: [thread()] })] }),
@@ -112,7 +112,7 @@ test('a refused round view shows its error in place of the file tree, with the r
 test('a closed review in a past-round view says it is closed but offers no Reopen', async () => {
   stubFetch({
     'GET api/reviews/r-1': { review: review({ round: 2, status: 'closed' }), files: [fileState()], rounds: [1, 2].map((n) => ({ n, headSha: `${n}`.repeat(40), baseSha: 'b'.repeat(40), createdAt: '', submittedAt: null })), submissions: [], outdatedThreads: [] },
-    'GET api/reviews/r-1/rounds/1': { readOnly: true, round: { n: 1, headSha: '1'.repeat(40), baseSha: 'b'.repeat(40), createdAt: '', submittedAt: null }, files: [fileState({ verdicts: null })], counts: { open: 0, resolved: 0, outdated: 0 }, outdatedThreads: [], unplacedThreads: [] },
+    'GET api/reviews/r-1/rounds/1': { readOnly: true, round: { n: 1, headSha: '1'.repeat(40), baseSha: 'b'.repeat(40), createdAt: '', submittedAt: null }, files: [fileState({ verdicts: null })], counts: { open: 0, resolved: 0, outdated: 0 }, outdatedThreads: [] },
     'GET api/reviews/r-1/commits': { commits: [] },
     'GET api/sessions': { sessions: [] },
   });

@@ -32,7 +32,6 @@ export function ThreadPanel() {
           <TabsTrigger value="file">This file</TabsTrigger>
           <TabsTrigger value="all">All <Badge variant="secondary">{counts.open + counts.resolved}</Badge></TabsTrigger>
           <TabsTrigger value="outdated">Outdated <Badge variant="secondary">{ctx.outdatedThreads.length}</Badge></TabsTrigger>
-          {ctx.unplacedThreads.length > 0 && <TabsTrigger value="unplaced">Position unknown <Badge variant="secondary">{ctx.unplacedThreads.length}</Badge></TabsTrigger>}
           {dropped.length > 0 && <TabsTrigger value="dropped">Dropped <Badge variant="secondary">{dropped.length}</Badge></TabsTrigger>}
         </TabsList>
         <div className="min-h-0 flex-1 overflow-y-auto">
@@ -54,7 +53,6 @@ export function ThreadPanel() {
           <TabsContent value="outdated">
             {ctx.outdatedThreads.length ? list(ctx.outdatedThreads, { showLocation: false }) : <Empty title="No outdated threads" />}
           </TabsContent>
-          <TabsContent value="unplaced">{list(ctx.unplacedThreads, { showLocation: false })}</TabsContent>
           <TabsContent value="dropped">{list(dropped, { dropped: true })}</TabsContent>
         </div>
       </Tabs>

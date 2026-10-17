@@ -19,8 +19,8 @@ export interface Thread {
   id: string; kind: ThreadKind; severity: Severity | null; status: 'open' | 'resolved' | 'outdated';
   disposition: 'fixed' | 'dismissed' | null; resolveProposed: boolean; anchor: Anchor;
   openedBy: Author; unread: number; messages: Message[];
-  /** Round views only: messages written after that round (not shown), and whether its position then was never recorded. */
-  laterMessages?: number; positionUnknown?: boolean;
+  /** Round views only: messages written after that round (not shown). */
+  laterMessages?: number;
 }
 
 export interface ThreadCounts { open: number; resolved: number; outdated: number }

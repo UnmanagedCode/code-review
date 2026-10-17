@@ -5,7 +5,6 @@ import { makeRepo, lines } from './_git.js';
 import * as reviews from '../src/reviews.js';
 import * as threads from '../src/threads.js';
 import * as store from '../src/store.js';
-import { SCHEMA } from '../src/migrate.js';
 
 let w;
 beforeEach(async () => { w = await world(); });
@@ -59,12 +58,9 @@ const rosterA = () => {
   w.session('s-cond', { project: '.conduct' });
 };
 
-test('an agent opener is always the recipient: a recipient argument is refused, even before reuse', async () => {
+test('an agent opener is the recipient', async () => {
   rosterA();
   assert.equal(ok(await open({}, agent('s-b'))).review.recipient, 's-b');
-  const count = store.list().length;
-  for (const recipient of ['s-a', 's-b', null]) assert.equal(codeOf(await open({ recipient }, agent('s-b'))), 'INVALID_ARGUMENT');
-  assert.equal(store.list().length, count);
 });
 
 test('the human recipient chain: explicit, else the single live attached session, else none', async () => {
@@ -464,12 +460,6 @@ test('uncommitted: sweeps record no earlier positions, within a round or after a
   ok(await reviews.diff(review.id, { file: 'a.js' }));
   assert.equal(stored().anchor.round, 2, 'the sweep did move the thread into round 2');
   assert.deepEqual(stored().pastAnchors, []);
-});
-
-test('a new review is stored at the current schema', async () => {
-  w.addWorktree().commit({ 'f.js': 'x\n' });
-  const { review } = ok(await open());
-  assert.equal(store.read(review.id).schema, SCHEMA);
 });
 
 test('drift is not sticky: it is counted each time it happens and cleared once the exact lines are found again', async () => {

@@ -13,4 +13,4 @@
   - [recipient-and-roles.md](gotchas/recipient-and-roles.md) — agent opener = recipient, conductor `author`, `roleOf`/`recipientRole`, reuse.
 - architecture/
   - [serving.md](architecture/serving.md) — `server.js` middleware order and exports.
-  - [store.md](architecture/store.md) — review files, locking, `seq`, schema and the startup migration (bad files skipped and logged).
+  - [store.md](architecture/store.md) — review files, locking, `seq` (bad files skipped and logged).

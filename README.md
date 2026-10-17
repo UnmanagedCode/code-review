@@ -78,7 +78,6 @@ Then Settings → Plugins → Rescan, and enable.
 - Local projects only; remote (`system`) projects are refused.
 - The commit-filter view of a range review is read-only.
 - Past-round views are read-only; open/resolved there is the thread's current status (unless it went outdated later), and they show no verdicts.
-- Threads anchored before the store recorded positions (schema 1) have no position in rounds before their latest re-anchor; past-round views list them as "position unknown".
 - Uncommitted edits are not pushed: the UI re-fetches on focus or an interval.
 - A branch `base` follows its branch at each refresh; a sha base is fixed.
 - Renaming a file resets the verdicts of its hunks.

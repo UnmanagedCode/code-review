@@ -15,12 +15,12 @@ const thread = (over = {}) => ({
   ...over,
 });
 const at = (threads, n) => threadsAt({ threads }, n);
-const only = (res) => { assert.equal(res.threads.length + res.unplaced.length, 1); return res.threads[0] ?? res.unplaced[0]; };
+const only = (res) => { assert.equal(res.length, 1); return res[0]; };
 
 test('a thread opened in a later round is absent from earlier rounds and present from its own', () => {
   const t = thread({ messages: [msg(2)], anchor: stored(2, 7) });
-  assert.deepEqual(at([t], 1), { threads: [], unplaced: [] });
-  assert.equal(at([t], 2).threads.length, 1);
+  assert.deepEqual(at([t], 1), []);
+  assert.equal(at([t], 2).length, 1);
 });
 
 test('messages of later rounds are cut and counted in laterMessages', () => {
@@ -77,26 +77,6 @@ test('a thread not outdated keeps its current status in every round', () => {
   assert.equal(only(at([t], 1)).status, 'resolved');
 });
 
-test('a thread with no recorded position for round n is unplaced, at its earliest known anchor, flagged positionUnknown', () => {
-  // Anchored before positions were kept: only its latest anchor (round 3) is known, but it was opened in round 1.
-  const legacy = thread({ messages: [msg(1), msg(3)], pastAnchors: [], anchor: stored(3, 8) });
-  for (const n of [1, 2]) {
-    const res = at([legacy], n);
-    assert.equal(res.threads.length, 0);
-    assert.equal(res.unplaced[0].positionUnknown, true);
-    assert.deepEqual(res.unplaced[0].anchor, pos(3, 8));
-  }
-  const placed = at([legacy], 3);
-  assert.equal(placed.unplaced.length, 0);
-  assert.equal(placed.threads[0].positionUnknown, false);
-});
-
-test('an unplaced legacy thread that is outdated now shows its status before outdating', () => {
-  const legacy = thread({ status: 'outdated', resolution: null, messages: [msg(1)], anchor: stored(2, 8) });
-  assert.equal(at([legacy], 1).unplaced[0].status, 'open');
-  assert.equal(at([legacy], 3).threads[0].status, 'outdated');
-});
-
 test('a round view has no unread messages and no proposed resolution, and the stored thread is not modified', () => {
   const t = thread({ resolveProposed: true, humanReadSeq: 0, messages: [msg(1), msg(1)] });
   const before = structuredClone(t);
@@ -104,7 +84,6 @@ test('a round view has no unread messages and no proposed resolution, and the st
   assert.equal(view.unread, 0);
   assert.equal(view.resolveProposed, false);
   assert.equal(view.laterMessages, 0);
-  assert.equal(view.positionUnknown, false);
   assert.deepEqual(t, before);
 });
 

@@ -13,8 +13,7 @@ export interface ReviewCtx extends Omit<ReviewDetail, 'review'> {
   /** The past round's loading state (undefined outside a round view): its error replaces the file tree. */
   roundLoad: { loading: boolean; error: unknown; reload: () => void } | undefined;
   /** Threads whose position in the viewed round was never recorded (round views only; else empty). */
-  unplacedThreads: Thread[];
-  /** Thread counts of what is shown: the viewed round's placed threads, else the review's. */
+  /** Thread counts of what is shown: the viewed round's threads, else the review's. */
   threadCounts: ThreadCounts;
   /** True when writes are off: closed review, commit-filter view or past-round view. */
   readOnly: boolean;

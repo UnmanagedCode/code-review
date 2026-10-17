@@ -12,7 +12,7 @@ let base;
 let bootStore;
 
 before(async () => {
-  bootStore = tempStore(); // start() migrates the store: never let it reach a real one
+  bootStore = tempStore(); // keep the API off a real store
   dist = fs.mkdtempSync(path.join(os.tmpdir(), 'code-review-dist-'));
   fs.writeFileSync(path.join(dist, 'index.html'), '<!doctype html><title>Code Review</title><!-- app-shell -->');
   server = await start({ port: 0, distDir: dist });

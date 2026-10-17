@@ -163,19 +163,6 @@ test('a past round stays readable through the main checkout once the worktree is
   assert.deepEqual(ok(await reviews.fileLines(review.id, { path: 'a.js', start: 2, end: 2, round: '1' })).lines.map((l) => l.text), ['top-edit']);
 });
 
-test('threads anchored before positions were kept are unplaced in earlier rounds, at their earliest known anchor', async () => {
-  const { review, t1, t2, t3 } = await threeRounds();
-  await store.mutate(review.id, (r) => { for (const t of r.threads) t.pastAnchors = []; });
-  const r1 = ok(await rounds.roundView(review.id, '1'));
-  assert.deepEqual(r1.unplacedThreads.map((t) => [t.id, t.positionUnknown, t.anchor.round]), [[t1.id, true, 3], [t2.id, true, 2]]);
-  assert.deepEqual(r1.counts, { open: 0, resolved: 0, outdated: 0 }, 'counts cover placed threads; unplaced ones are listed apart');
-  assert.deepEqual((await fileAt(review.id, 1)).threads, []);
-  // Round 2: t2 was last located in round 2, so that position is known; t1 and t3 were re-anchored in round 3.
-  const r2 = ok(await rounds.roundView(review.id, '2'));
-  assert.deepEqual(r2.unplacedThreads.map((t) => t.id), [t1.id, t3.id]);
-  assert.deepEqual(where(await fileAt(review.id, 2)), { [t2.id]: 4 });
-});
-
 // A round recorded by an earlier server process: its snapshot is not in this process's cache, so reading it runs git.
 async function coldRounds(checkout, review) {
   const heads = [checkout.commit({ 'a.js': editLines({ 2: 'top-edit', 9: 'cold-1' }) }), checkout.commit({ 'a.js': editLines({ 2: 'top-edit', 9: 'cold-2' }) })];
@@ -219,12 +206,10 @@ const POSITIONAL = ['drifted', 'endLine', 'file', 'hunkId', 'linesHash', 'round'
 
 test('every served thread anchor is positional only: no stored lines or context hashes leak to the API', async () => {
   const { review, t1 } = await threeRounds();
-  await store.mutate(review.id, (r) => { r.threads.find((t) => t.id === t1.id).pastAnchors = []; }); // one unplaced thread
   const served = [
     ...ok(await reviews.diff(review.id, {})).files.flatMap((f) => f.threads),
     ...ok(await reviews.getReview(review.id)).outdatedThreads,
     ...(await fileAt(review.id, 1)).threads,
-    ...ok(await rounds.roundView(review.id, '1')).unplacedThreads,
     ...ok(await rounds.roundView(review.id, '3')).outdatedThreads,
     ok(await threads.annotate(review.id, HUMAN, { anchor: { file: 'a.js', side: 'new', startLine: 21 }, kind: 'comment', body: 'y' })).thread,
   ];

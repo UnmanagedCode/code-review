@@ -148,7 +148,6 @@ export function ReviewView({ id, chrome }: { id: string; chrome?: ReactNode }) {
       files: treeFiles, reload: rv.reload, applyReview: rv.applyReview,
       round, roundLoad: round !== undefined ? { loading: roundView.loading && !then, error: roundView.error, reload: roundView.reload } : undefined,
       outdatedThreads: then?.outdatedThreads ?? (round !== undefined ? [] : detail.outdatedThreads),
-      unplacedThreads: then?.unplacedThreads ?? [],
       threadCounts: then?.counts ?? (round !== undefined ? { open: 0, resolved: 0, outdated: 0 } : detail.review.counts.threads),
     }}>
       {chrome}

@@ -47,7 +47,6 @@ A **review** is a persisted discussion about one checkout (a project's main chec
   - messages written in later rounds are hidden and counted (`laterMessages`);
   - threads opened in a later round are absent;
   - a thread outdated in a later round shows the status it had before it went outdated; one outdated by then is outdated, at its last located anchor;
-  - a thread whose position in that round was never recorded (anchored before positions were kept) is listed apart as "position unknown", at its earliest known anchor;
   - open/resolved is otherwise the thread's current status, and there are no verdicts, no unread counts and no proposed resolutions.
 - **Uncommitted anchors are volatile.** Every read and write re-locates threads in the live working tree. A pure line shift moves the thread with its lines; changed or vanished lines delete the thread, and a later reply gets `THREAD_DROPPED`. Edits elsewhere in the same hunk never touch it.
 
@@ -76,14 +75,14 @@ The plugin page. Wire calls are in [protocol.md](protocol.md); module layout in 
 - **File verdict.** The file header shows "a/n accepted" ("· r rejected" when any) and **Accept file**: disabled when nothing is pending or the review is closed, replaced by "All accepted" once every hunk is accepted, absent on uncommitted reviews and in the commit-filter view. Optimistic like per-hunk verdicts.
 - **Selecting lines.** Mouse: drag over one side's gutter, shift+click to extend, a plain click restarts. Touch: tap a line, tap another to extend, tap an endpoint to clear. Keyboard: the diff is one tab stop; arrows move, ←/→ switch side, Shift+↑/↓ extend, Space/Enter select, `c` comments, Esc clears. A selection covers one side's numbers only and stops at collapsed context; expanding the gap lets it span two hunks. The toolbar under the selection ("L10–L14 (new)") appears when the pointer is released. No selection on binary or too-large files, closed reviews or the commit-filter view.
 - **Threads.** Shown under their end line; several stack in id order. Each card has kind and severity badges, status, disposition, a "re-anchored by context" chip for drifted anchors, a "proposes resolution" chip and banner, author badges ("You", or the role plus the session title), a reply box and resolve controls (a finding resolves "as fixed" or "as dismissed"). Outdated threads appear only in the panel's Outdated tab, labelled with their old lines and round, with a reply box and no status controls.
-- **Thread panel tabs.** This file; All (open/resolved filter, "Next unread"); Outdated; Position unknown (past-round views, only when there are such threads); Dropped (uncommitted only). The All list is rebuilt whenever the review reloads (an SSE event, a write or the uncommitted poll), whether or not a file is open.
+- **Thread panel tabs.** This file; All (open/resolved filter, "Next unread"); Outdated; Dropped (uncommitted only). The All list is rebuilt whenever the review reloads (an SSE event, a write or the uncommitted poll), whether or not a file is open.
 - **Message text.** Plain text. `path#L10-L20` citations become in-app links that open the file with the lines highlighted (a cited file outside the diff opens a read-only excerpt); `http(s)` URLs open in a new tab; nothing else is linked.
 - **Commit filter.** Range reviews: choose one commit of the round to see its diff, read-only. Hidden in a past-round view.
 - **Round picker.** Range reviews with more than one round: "Round n (current)", then each past round (newest first, with its head's short sha). Picking a past round (`round=` in the URL) closes the open file and the commit filter and shows that round read-only (see [Past rounds](#rounds-and-refresh)):
   - a banner "Viewing round k of n — read-only…" with **Back to current round**; the file header shows a "round k · read-only" badge;
   - no verdict bar, no Accept file, no line selection, no composer, no reply box, no resolve controls; context expansion and cited excerpts read that round;
   - no review-level writes either: no Submit round or Re-send, no Refresh, no Reopen, no recipient picker (the recipient is shown as text), and the actions menu holds only Open agent (absent without a bridge and a recipient). The commit-filter view keeps them;
-  - thread cards say how many later replies are hidden, and a "position unknown" note where that applies;
+  - thread cards say how many later replies are hidden;
   - a refused round view shows the refusal in place of the file tree, with the picker still there.
   - `round=` naming the current round (or a later one) is dropped from the URL.
 - **Rounds.** A range review whose HEAD moved shows "HEAD moved — Refresh available"; uncommitted reviews have a Refresh button; commit reviews have none. A refresh reports hunks kept/reset/new and threads moved/drifted/outdated/dropped, or "No changes; still round n".

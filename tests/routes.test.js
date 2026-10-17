@@ -16,7 +16,7 @@ let base;
 let w;
 let bootStore;
 before(async () => {
-  bootStore = tempStore(); // start() migrates the store: never let it reach a real one
+  bootStore = tempStore(); // keep the API off a real store
   dist = fs.mkdtempSync(path.join(os.tmpdir(), 'cr-routes-dist-'));
   fs.writeFileSync(path.join(dist, 'index.html'), '<!doctype html>');
   server = await start({ port: 0, distDir: dist });
@@ -87,7 +87,7 @@ test('GET /reviews/:id/rounds/:n is a past round\'s view; diff and file take ?ro
   assert.equal((await req('POST', `/reviews/${id}/refresh`)).body.round, 2);
   const view = await req('GET', `/reviews/${id}/rounds/1`);
   assert.equal(view.status, 200);
-  assert.deepEqual(Object.keys(view.body).sort(), ['counts', 'files', 'ok', 'outdatedThreads', 'readOnly', 'round', 'unplacedThreads']);
+  assert.deepEqual(Object.keys(view.body).sort(), ['counts', 'files', 'ok', 'outdatedThreads', 'readOnly', 'round']);
   assert.equal(view.body.round.n, 1);
   const diff = (await req('GET', `/reviews/${id}/diff?file=a.js&round=1`)).body;
   assert.deepEqual([diff.readOnly, diff.round.n, diff.files[0].threads.map((x) => [x.id, x.anchor.startLine])], [true, 1, [[t.id, 18]]]);

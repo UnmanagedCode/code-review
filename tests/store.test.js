@@ -14,7 +14,7 @@ const fresh = () => { ts = tempStore(); return ts; };
 test('a review round-trips through the store unchanged apart from rev', async () => {
   fresh();
   const id = store.newId();
-  const r = { schema: 1, id, rev: 0, title: 'x', nested: { a: [1, 2] } };
+  const r = { id, rev: 0, title: 'x', nested: { a: [1, 2] } };
   store.write(r);
   const back = store.read(id);
   assert.deepEqual(back, { ...r, rev: 1 });
@@ -24,7 +24,7 @@ test('a review round-trips through the store unchanged apart from rev', async ()
 test('an atomic write leaves no temp file behind', () => {
   const { dir } = fresh();
   const id = store.newId();
-  store.write({ schema: 1, id, rev: 0 });
+  store.write({ id, rev: 0 });
   store.write(store.read(id));
   assert.deepEqual(fs.readdirSync(path.join(dir, 'reviews')), [`${id}.json`]);
 });
@@ -36,7 +36,7 @@ test('every write bumps rev and emits a change; remove emits deleted', () => {
   store.changes.on('change', on);
   try {
     const id = store.newId();
-    store.write({ schema: 1, id, rev: 0 });
+    store.write({ id, rev: 0 });
     store.write(store.read(id));
     store.remove(id);
     assert.deepEqual(events, [{ id, rev: 1 }, { id, rev: 2 }, { id, deleted: true }]);
@@ -49,7 +49,7 @@ test('every write bumps rev and emits a change; remove emits deleted', () => {
 test('20 concurrent locked appends lose nothing', async () => {
   fresh();
   const id = store.newId();
-  store.write({ schema: 1, id, rev: 0, items: [] });
+  store.write({ id, rev: 0, items: [] });
   await Promise.all(Array.from({ length: 20 }, (_, i) => store.mutate(id, async (r) => {
     const snapshot = r.items.length;
     await new Promise((res) => setImmediate(res));
@@ -63,7 +63,7 @@ test('20 concurrent locked appends lose nothing', async () => {
 test('mutate returns a refusal without writing, and REVIEW_UNKNOWN for a missing review', async () => {
   fresh();
   const id = store.newId();
-  store.write({ schema: 1, id, rev: 0, n: 0 });
+  store.write({ id, rev: 0, n: 0 });
   const res = await store.mutate(id, (r) => { r.n = 9; return { ok: false, code: 'NOPE', reason: 'x' }; });
   assert.equal(res.code, 'NOPE');
   assert.equal(store.read(id).n, 0);
@@ -73,7 +73,7 @@ test('mutate returns a refusal without writing, and REVIEW_UNKNOWN for a missing
 test('a mutation that changes nothing writes nothing and does not bump rev', async () => {
   fresh();
   const id = store.newId();
-  store.write({ schema: 1, id, rev: 0, n: 0 });
+  store.write({ id, rev: 0, n: 0 });
   await store.mutate(id, () => ({}));
   assert.equal(store.read(id).rev, 1);
   await store.mutate(id, (r) => { r.n = 1; });
@@ -130,7 +130,7 @@ test('the change emitter has no listener cap, since every open SSE client is a l
 test('ids lists id-named .json files without parsing them', () => {
   const { dir } = fresh();
   const good = store.newId();
-  store.write({ schema: 1, id: good, rev: 0 });
+  store.write({ id: good, rev: 0 });
   const bad = store.newId();
   fs.writeFileSync(path.join(dir, 'reviews', `${bad}.json`), '{ not json');
   fs.writeFileSync(path.join(dir, 'reviews', 'notes.txt'), 'x');
@@ -142,11 +142,11 @@ test('list skips and logs an unparsable file and a misfiled one, returning the r
   const { dir } = fresh();
   const errors = t.mock.method(console, 'error', () => {});
   const good = store.newId();
-  store.write({ schema: 1, id: good, rev: 0 });
+  store.write({ id: good, rev: 0 });
   const bad = store.newId();
   fs.writeFileSync(path.join(dir, 'reviews', `${bad}.json`), '{ not json');
   const misfiled = store.newId();
-  fs.writeFileSync(path.join(dir, 'reviews', `${misfiled}.json`), JSON.stringify({ schema: 1, id: good, rev: 3 }));
+  fs.writeFileSync(path.join(dir, 'reviews', `${misfiled}.json`), JSON.stringify({ id: good, rev: 3 }));
   assert.deepEqual(store.list().map((r) => r.id), [good]);
   const logged = errors.mock.calls.map((c) => c.arguments[0]);
   assert.equal(logged.length, 2);
@@ -169,9 +169,9 @@ test('reading a file whose content names another review, or no review, throws Mi
 test('mutating a misfiled review writes nothing anywhere', async () => {
   const { dir } = fresh();
   const victim = store.newId();
-  store.write({ schema: 1, id: victim, rev: 0, title: 'victim' });
+  store.write({ id: victim, rev: 0, title: 'victim' });
   const copy = store.newId();
-  fs.writeFileSync(path.join(dir, 'reviews', `${copy}.json`), JSON.stringify({ schema: 1, id: victim, rev: 0, title: 'copy' }));
+  fs.writeFileSync(path.join(dir, 'reviews', `${copy}.json`), JSON.stringify({ id: victim, rev: 0, title: 'copy' }));
   const before = fs.readdirSync(path.join(dir, 'reviews')).map((n) => [n, fs.readFileSync(path.join(dir, 'reviews', n), 'utf8')]);
   await assert.rejects(store.mutate(copy, (r) => { r.title = 'changed'; }), { name: 'MisfiledReview' });
   assert.deepEqual(fs.readdirSync(path.join(dir, 'reviews')).map((n) => [n, fs.readFileSync(path.join(dir, 'reviews', n), 'utf8')]), before);

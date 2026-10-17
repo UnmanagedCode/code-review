@@ -15,8 +15,8 @@ const json = (method: string, body?: unknown): RequestInit => ({ method, ...(bod
 const r = (id: string) => `api/reviews/${encodeURIComponent(id)}`;
 
 export interface ReviewDetail { review: ReviewSummary; files: FileState[]; rounds: Round[]; submissions: Submission[]; outdatedThreads: Thread[] }
-/** A past round of a range review, read-only: its files, the counts of its placed threads, its outdated and unplaced threads. */
-export interface RoundView { readOnly: true; round: Round; files: FileState[]; counts: ThreadCounts; outdatedThreads: Thread[]; unplacedThreads: Thread[] }
+/** A past round of a range review, read-only: its files, the counts of its threads, and its outdated threads. */
+export interface RoundView { readOnly: true; round: Round; files: FileState[]; counts: ThreadCounts; outdatedThreads: Thread[] }
 export interface FileLines { path: string; side: 'old' | 'new'; total: number; lines: { n: number; text: string }[] }
 
 export const projects = () => api<{ projects: { name: string }[] }>('api/projects');

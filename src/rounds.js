@@ -18,21 +18,19 @@ export function pickRound(review, raw) {
 async function asOf(review, env, raw) {
   const round = pickRound(review, raw);
   const snap = await env.snapshot(round.n);
-  const { threads, unplaced } = threadsAt(review, round.n);
-  return { round, snap, then: { ...review, threads }, unplaced };
+  return { round, snap, then: { ...review, threads: threadsAt(review, round.n) } };
 }
 
 const noVerdicts = (states) => states.map((s) => ({ ...s, verdicts: null }));
 
-/** Read-only view of one round of a range review: its files, the counts of its placed threads, its outdated and unplaced threads. */
+/** Read-only view of one round of a range review: its files, the counts of its threads, and its outdated threads. */
 export const roundView = (id, raw) => attempt(() => viewReview(id, async (review, env) => {
-  const { round, snap, then, unplaced } = await asOf(review, env, raw);
+  const { round, snap, then } = await asOf(review, env, raw);
   return {
     ok: true, readOnly: true, round,
     files: noVerdicts(fileStates(then, snap.files)),
     counts: tally(then.threads),
     outdatedThreads: then.threads.filter((t) => t.status === 'outdated').map(roundThreadView),
-    unplacedThreads: unplaced.map(roundThreadView),
   };
 }));
 

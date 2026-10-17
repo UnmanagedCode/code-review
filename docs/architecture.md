@@ -4,7 +4,7 @@ Backend internals. Behaviour: [features.md](features.md); wire formats: [protoco
 
 ## Modules (`src/`)
 
-Services return a plain object or a refusal `{ok:false, code, reason}`. Low-level helpers throw `Refusal`; `attempt()` converts it. REST routes and MCP tools call the same service functions; neither surface has logic of its own. `server.js` mounts `apiRouter()` under `/api`; `start()` runs `migrateStore()` before it listens.
+Services return a plain object or a refusal `{ok:false, code, reason}`. Low-level helpers throw `Refusal`; `attempt()` converts it. REST routes and MCP tools call the same service functions; neither surface has logic of its own. `server.js` mounts `apiRouter()` under `/api`.
 
 | Module | Responsibility |
 |---|---|
@@ -12,7 +12,6 @@ Services return a plain object or a refusal `{ok:false, code, reason}`. Low-leve
 | `mutex.js` | `withLock(key, fn)`: per-key promise chain |
 | `refusals.js` | `Refusal`, `refuse`, `attempt`, `HTTP_STATUS` (single source of codes) |
 | `store.js` | one JSON file per review: `read`, atomic `write` (bumps `rev`), `ids` (id-shaped file names only, nothing parsed), `list`, `remove`, `mutate`, `logSkipped`, and the `changes` emitter |
-| `migrate.js` | `SCHEMA` (the review-file format, single source), `migrateReview`, `migrateStore` (startup upgrade) |
 | `cc.js` | cc REST client (`projects`, `worktrees`, `instances`) |
 | `checkouts.js` | resolve a checkout, fork-point chain, sessions, picker data |
 | `git.js` | git wrapper: ref safety, pinned diff flags, plumbing calls, private index |
@@ -40,8 +39,7 @@ Services return a plain object or a refusal `{ok:false, code, reason}`. Low-leve
 - `read(id)` throws `MisfiledReview` when the file's content has another `id` (or none): `write` persists under the content's id, so reading such a file as `id` would let any mutation copy it over another review, or create one. Nothing reads or writes through it.
 - `list()` (the review list, `openReview`'s reuse check) skips and logs any file it cannot read, so one bad file hides only itself; opening that review by id still fails (500). Skip logs go through `logSkipped`: one line, the id cleaned and the error as `errorLine` (its name and message with whitespace collapsed and control characters removed; a parse error quotes the file's bytes). A route's unexpected error (500) logs the same single header line, `code-review: <METHOD> <url> failed: <Name>: <message>`, followed by the stack's frame lines only (`stackFrames`: the `    at …` lines after V8's `name: message` header, skipped by line count, so no message text follows the header).
 - Writes are atomic (tmp file in the same dir, then `rename`); every write bumps `rev` and emits `change`. `mutate(id, fn)` runs under `withLock(id)` and writes only if `fn` changed the review; creation runs under `withLock('create')`.
-- `schema` is `SCHEMA` (`src/migrate.js`). `start()` runs `migrateStore()` before listening: every stored review below `SCHEMA` is upgraded in place through `mutate` (a review already current is not written, so a second run writes nothing); an unconfigured store is skipped. A review that cannot be read or migrated (unparsable JSON, `MisfiledReview`, an unexpected shape) is logged (`code-review: review <id> left unmigrated: <ErrorName>: <message>`) and left untouched, so it still fails loudly when read; the others migrate and the server starts. Only failing to list the store dir fails startup. Application code reads the current format only.
-  - 1 → 2: every thread gets `pastAnchors: []` (an existing value is kept).
+- A review that cannot be read (unparsable JSON, `MisfiledReview`) is skipped and logged by `list()` (`code-review: review <id> skipped: <ErrorName>: <message>`) and still fails loudly when opened by id.
 - Review fields: `id, project, worktree, branch, kind, target, baseLabel, title, status, createdAt, createdBy, recipient, author (session id; absent or `null` = none, so the recipient is the author), seenByHuman, rev, seq, humanSeq, nextThread, nextSubmission, rounds, verdicts, threads, droppedThreads, submissions`.
 - `seq` is a review-wide counter bumped by every message, verdict and status change; `humanSeq` is the `seq` of the last human one. Unread counts and "since last delivery" compare `seq`s; logic never reads the wall clock (`at`/`createdAt` are display-only).
 - Thread fields: `id, kind, severity, status, disposition, resolution:{by, seq}|null, resolveProposed, statusSeq, openedBy, anchor, pastAnchors, humanReadSeq, createdAt, messages`.
@@ -67,7 +65,7 @@ Services return a plain object or a refusal `{ok:false, code, reason}`. Low-leve
 - File-level hunk id: hash of path, status, oldPath, blob ids and modes.
 - `linesHash`: sha256 (first 16 hex) of the lines with trailing `[ \t\r]` stripped, indentation kept.
 - Anchor: `round` (the snapshot its `lines`/`linesHash` were read from; `followThreads` sets it to the new round on every re-anchor), selected `lines`, `ctxBefore`/`ctxAfter` (hash and count of up to `CONTEXT_LINES` neighbours), `hunkId` from `hunkFor` (the hunk containing `endLine`, else the last one overlapped, else null), `drifted`.
-- `pastAnchors`: on range reviews, the thread's anchor in each round before `anchor.round` that it was re-anchored out of since schema 2, oldest first, positional fields only (`anchorView`). A thread from before schema 2 starts with `[]`, so it has no entry for the rounds it passed through before the migration. `followThreads` appends the old anchor on every range refresh that relocates the thread. Uncommitted reviews never append (they have no past-round views); their threads keep `[]`. Outdated threads are never followed, so their last chain entry is the last round they were located in.
+- `pastAnchors`: on range reviews, the thread's anchor in each round before `anchor.round` that it was re-anchored out of, oldest first, positional fields only (`anchorView`). `followThreads` appends the old anchor on every range refresh that relocates the thread. Uncommitted reviews never append (they have no past-round views); their threads keep `[]`. Outdated threads are never followed, so their last chain entry is the last round they were located in.
 - Derived, not stored: a thread's creation round (`messages[0].round`); the round it went outdated (its last chain entry's round + 1); its status just before (`resolution` set → `resolved`, else `open`: going outdated changes only `status`).
 - Not derivable: open/resolved as of an earlier round. Only the latest status change is stored (`statusSeq`, `resolution`), and rounds carry no `seq`, so past-round views show the current status (see the [protocol](protocol.md#shapes)).
 - `locate(anchor, lines, mode)`: windows whose `linesHash` matches, ranked by context matches, then distance to the old start, then earliest. An exact match always reports `drifted: false`. Mode `reanchor` additionally accepts a unique `ctxBefore` followed by a unique `ctxAfter` with a gap of 1 to `2·len + 10` lines (`drifted`); mode `volatile` never does.
@@ -87,8 +85,7 @@ Services return a plain object or a refusal `{ok:false, code, reason}`. Low-leve
 - `tests/_fakeCc.js`: HTTP fake of the three cc routes on port 0, set via `CONDUCTOR_URL`; modes `ok|error|hang` (hang tests set `CODE_REVIEW_CC_TIMEOUT_MS` low).
 - `tests/_store.js`: per-test `CODE_REVIEW_STORE` temp dir.
 - `tests/_world.js`: project `app` + worktrees + fake cc + store in one call, with `HUMAN` and `agent()` actors.
-- `start()` migrates the store, so every test that boots the server points `CODE_REVIEW_STORE` at a temp dir first.
-- `tests/history.test.js` (pure `threadsAt`), `tests/migrate.test.js`, `tests/rounds.test.js` (past-round views over real git; a round recorded by "another process" is pushed into the store so its snapshot is not cached and reading it runs git).
+- `tests/history.test.js` (pure `threadsAt`), `tests/rounds.test.js` (past-round views over real git; a round recorded by "another process" is pushed into the store so its snapshot is not cached and reading it runs git).
 - `tests/manifest.test.js` and `tests/surfaces.test.js` pin the manifest against the handlers, the flat-schema subset and the skill/convention tool names.
 
 ## Frontend
@@ -106,7 +103,7 @@ Services return a plain object or a refusal `{ok:false, code, reason}`. Low-leve
 - **Refetch, never trust events.** An SSE event `{id, rev}` for the open review schedules a debounced refetch only if `rev` exceeds `knownRev`; every write response's review summary raises `knownRev`, so the echo of the UI's own write is ignored. An SSE reconnect refetches what is visible. The open file's diff refetches whenever the review reloads.
 - **Uncommitted reviews** emit no events for working-tree edits: `usePolling` reloads on focus, `visibilitychange` and every `POLL_MS` while visible.
 - **Diff rows.** `buildRows` produces hunk, line and gap rows from hunks plus per-gap expansion counts (`top`, `bottom`) and fetched line texts. The total line count (needed for the trailing gap) comes from a one-line `GET …/file`. Without a diff-wide list endpoint, the thread index fetches the diff of each file whose counts show threads.
-- **Past-round view.** `ReviewView` derives `round` from the route (range reviews, no `commit`, below the current round) and puts it in the review context with `readOnly: true`. `files`, `outdatedThreads`, `unplacedThreads` and `threadCounts` then come from `useRoundView`; `useFileDiff`, `useThreadIndex` and `CitedExcerpt` pass `round` to `diff`/`file`. Until the review loads, a `round=` URL holds the open file's fetch, since the live and past views cannot be told apart yet.
+- **Past-round view.** `ReviewView` derives `round` from the route (range reviews, no `commit`, below the current round) and puts it in the review context with `readOnly: true`. `files`, `outdatedThreads` and `threadCounts` then come from `useRoundView`; `useFileDiff`, `useThreadIndex` and `CitedExcerpt` pass `round` to `diff`/`file`. Until the review loads, a `round=` URL holds the open file's fetch, since the live and past views cannot be told apart yet.
 - **Selection.** `useLineSelection` drives a `role="grid"` with roving `tabIndex`; the selection model lives in `lib/selection.ts`.
 - **Submission machine.** `state/submit.ts`: compose → bridge send within `SEND_DEADLINE_MS` → record result; states `idle`, `composing`, `sending`, `delivered`, `failed`, `timedOut`, `manual`.
 - **Theme.** Colours only through tokens (`bg-success/10`, `text-muted-foreground`); a guard test bans literal colours and palette classes.

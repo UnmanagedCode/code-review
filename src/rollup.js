@@ -60,7 +60,7 @@ export function summarize(review, files, live) {
   return {
     id: review.id, project: review.project, worktree: review.worktree, branch: review.branch,
     kind: review.kind, target: review.target, label: targetLabel(review), title: review.title, status: review.status,
-    recipient: review.recipient, author: review.author ?? null, recipientRole: recipientRole(review),
+    recipient: review.recipient, author: review.author, recipientRole: recipientRole(review),
     round: round.n, headSha: round.headSha, baseSha: round.baseSha,
     headMoved: live.headMoved, dirty: live.dirty, checkoutGone: live.checkoutGone,
     ...(live.snapshotError ? { snapshotError: live.snapshotError } : {}),

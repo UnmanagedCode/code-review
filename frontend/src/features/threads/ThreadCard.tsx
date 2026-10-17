@@ -17,7 +17,7 @@ const place = (t: Thread) => `L${formatLines(t.anchor.startLine, t.anchor.endLin
 
 /** One thread. `dropped`: a session-local tombstone of an uncommitted thread whose lines changed. */
 export function ThreadCard({ thread, dropped = false, showLocation = false }: { thread: Thread; dropped?: boolean; showLocation?: boolean }) {
-  const { readOnly, round } = useReviewCtx();
+  const { readOnly } = useReviewCtx();
   const actions = useReviewActions();
   const route = useRoute();
   const ref = useRef<HTMLElement>(null);
@@ -52,9 +52,6 @@ export function ThreadCard({ thread, dropped = false, showLocation = false }: { 
       </header>
       {dropped && <p className="text-xs text-muted-foreground">dropped: its lines changed</p>}
       {outdated && <p className="text-xs text-muted-foreground">outdated · was {place(thread)} at round {thread.anchor.round}</p>}
-      {thread.positionUnknown && (
-        <p className="text-xs text-muted-foreground">position in round {round} unknown · first recorded at {place(thread)} in round {thread.anchor.round}</p>
-      )}
       {thread.resolveProposed && thread.status === 'open' && (
         <Alert variant="info"><AlertDescription>An agent proposes resolving this thread.</AlertDescription></Alert>
       )}

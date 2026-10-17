@@ -3,7 +3,6 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { apiRouter } from './src/routes.js';
-import { migrateStore } from './src/migrate.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const dist = path.join(here, 'frontend', 'dist');
@@ -27,9 +26,8 @@ export function createApp({ distDir = dist } = {}) {
   return app;
 }
 
-/** Migrates the store, then listens on loopback only; resolves to the http.Server once bound. */
+/** Listens on loopback only; resolves to the http.Server once bound. */
 export async function start({ port = Number(process.env.PORT) || DEFAULT_PORT, ...opts } = {}) {
-  await migrateStore();
   return new Promise((resolve, reject) => {
     const server = createApp(opts).listen(port, '127.0.0.1', () => resolve(server));
     server.once('error', reject);

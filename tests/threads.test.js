@@ -106,17 +106,6 @@ test('a stored author is author, the conductor recipient is conductor, others ar
   assert.deepEqual(msgs.map((m) => m.author.role), ['reviewer', 'author', 'conductor']);
 });
 
-test('a review stored without an author field reads its recipient as author', async () => {
-  roster();
-  const { review } = await rangeReview(undefined, {}, author);
-  const stored = store.read(review.id);
-  delete stored.author;
-  store.write(stored);
-  const t = ok(await say(review.id, at('a.js', 2), {}, reviewer)).thread;
-  const msgs = ok(await threads.reply(review.id, author, t.id, { body: 'a' })).thread.messages;
-  assert.equal(msgs[1].author.role, 'author');
-});
-
 test('on an uncommitted review every non-conductor agent is a reviewer, even the recipient', async () => {
   roster();
   const wt = w.addWorktree();

@@ -176,3 +176,12 @@ test('mutating a misfiled review writes nothing anywhere', async () => {
   await assert.rejects(store.mutate(copy, (r) => { r.title = 'changed'; }), { name: 'MisfiledReview' });
   assert.deepEqual(fs.readdirSync(path.join(dir, 'reviews')).map((n) => [n, fs.readFileSync(path.join(dir, 'reviews', n), 'utf8')]), before);
 });
+
+test('logSkipped writes one line even when the id and the error carry newlines and control characters', (t) => {
+  const errors = t.mock.method(console, 'error', () => {});
+  store.logSkipped('r-1\nforged\u001b', 'skipped', new Error('bad\r\nline'));
+  assert.equal(errors.mock.callCount(), 1);
+  const line = errors.mock.calls[0].arguments[0];
+  assert.doesNotMatch(line, /[\u0000-\u001f\u007f-\u009f]/);
+  assert.equal(line, 'code-review: review r-1 forged skipped: Error: bad line');
+});

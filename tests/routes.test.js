@@ -115,6 +115,23 @@ test('with an unparsable and a misfiled review file present, the list still answ
   assert.ok(errors.mock.callCount() >= 2, 'each skipped file is logged');
 });
 
+test('a 500 is logged on one line: a misfiled review whose inner id holds a newline forges no log line', async (t) => {
+  const errors = t.mock.method(console, 'error', () => {});
+  const id = store.newId();
+  fs.mkdirSync(path.join(w.store.dir, 'reviews'), { recursive: true });
+  fs.writeFileSync(path.join(w.store.dir, 'reviews', `${id}.json`), JSON.stringify({ id: 'r-x\ncode-review: forged\u001b[31m' }));
+  for (const [method, url] of [['GET', `/reviews/${id}`], ['GET', `/reviews/${id}/diff`], ['DELETE', `/reviews/${id}`]]) {
+    errors.mock.resetCalls();
+    const res = await req(method, url);
+    assert.equal(res.status, 500, url);
+    assert.match(res.body.reason, /\n/, 'precondition: the raw error message carries the newline');
+    assert.equal(errors.mock.callCount(), 1, url);
+    const line = errors.mock.calls[0].arguments.join(' ');
+    assert.doesNotMatch(line, /[\u0000-\u001f\u007f-\u009f]/, url);
+    assert.match(line, new RegExp(`${method} /api${url} failed: MisfiledReview`));
+  }
+});
+
 test('verdicts, threads, messages, status, read, refresh, submissions each return their documented shape', async () => {
   const id = (await openReview()).review.id;
   const hunkId = (await req('GET', `/reviews/${id}/diff`)).body.files[0].hunks[0].id;

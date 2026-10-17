@@ -5,7 +5,7 @@ import path from 'node:path';
 import { storeRoot } from './paths.js';
 import { withLock } from './mutex.js';
 import { refuse, isRefusal } from './refusals.js';
-import { clean } from './text.js';
+import { errorLine, oneLine } from './text.js';
 
 /** Emits 'change' with {id, rev} after a write or {id, deleted:true} after a remove. */
 export const changes = new EventEmitter();
@@ -42,12 +42,9 @@ export function read(id) {
   return review;
 }
 
-/**
- * Logs a review file left aside, on one line: the error's name and its message with whitespace collapsed and control
- * characters removed (a parse error quotes the file's own bytes, which must not forge log lines).
- */
+/** Logs a review file left aside, on one line (`errorLine`); `id` is cleaned too, so no caller can forge log lines. */
 export function logSkipped(id, what, e) {
-  console.error(`code-review: review ${id} ${what}: ${e.name}: ${clean(String(e.message).replace(/\s+/g, ' '))}`);
+  console.error(`code-review: review ${oneLine(id)} ${oneLine(what)}: ${errorLine(e)}`);
 }
 
 /** Atomically writes `review` (tmp file + rename), bumping `rev`. */

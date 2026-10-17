@@ -8,6 +8,7 @@ import * as submissions from './submissions.js';
 import { sessions, checkoutInfo, checkoutCommits } from './checkouts.js';
 import { handle as handleMcp } from './mcp.js';
 import { HTTP_STATUS, attempt, refuse } from './refusals.js';
+import { errorLine, oneLine } from './text.js';
 
 const HUMAN = { kind: 'human' };
 export const HEARTBEAT_MS = 25000;
@@ -22,7 +23,7 @@ const route = (fn) => async (req, res) => {
   try {
     send(res, await attempt(() => fn(req)));
   } catch (e) {
-    console.error(e);
+    console.error(`code-review: ${oneLine(req.method)} ${oneLine(req.originalUrl)} failed: ${errorLine(e)}`);
     res.status(500).json(refuse('INTERNAL', e.message));
   }
 };

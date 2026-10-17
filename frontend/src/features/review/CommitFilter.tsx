@@ -14,7 +14,7 @@ export function CommitFilter() {
     <div className="px-3 pt-3">
       <label className="sr-only" htmlFor="cf-commit">Commit filter</label>
       <NativeSelect className="w-full" size="sm" id="cf-commit" value={route.commit ?? ''}
-        onChange={(e) => navigate({ commit: e.target.value || undefined, file: undefined, lines: undefined, thread: undefined })}>
+        onChange={(e) => navigate({ commit: e.target.value || undefined, round: undefined, file: undefined, lines: undefined, thread: undefined })}>
         <option value="">All commits</option>
         {commits.data.commits.map((c) => <option key={c.sha} value={c.sha}>{c.short} {c.subject}</option>)}
       </NativeSelect>

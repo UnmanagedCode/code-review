@@ -27,7 +27,7 @@ export async function migrateStore() {
     try {
       await store.mutate(id, migrateReview); // writes only a review that changed
     } catch (e) {
-      console.error(`code-review: review ${id} left unmigrated: ${e.message}`);
+      store.logSkipped(id, 'left unmigrated', e);
     }
   }
 }

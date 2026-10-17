@@ -96,6 +96,56 @@ test('an unparsable review is logged and left as it is, still failing loudly whe
   assert.match(errors.mock.calls[0].arguments[0], new RegExp(bad.id));
 });
 
+test('a parse error is logged on one line, without the file\'s newlines or control characters', async (t) => {
+  ts = tempStore();
+  const errors = t.mock.method(console, 'error', () => {});
+  const text = '[1,\n\u001b\rforged\n]';
+  assert.throws(() => JSON.parse(text), (e) => /\n/.test(e.message) && e.message.includes('\u001b'), 'precondition: the raw message quotes the file');
+  corrupt(ts.dir, text);
+  await migrateStore();
+  assert.equal(errors.mock.callCount(), 1);
+  const line = errors.mock.calls[0].arguments[0];
+  assert.match(line, /SyntaxError/);
+  assert.doesNotMatch(line, /[\u0000-\u001f\u007f-\u009f]/);
+});
+
+const filesOf = (dir) => Object.fromEntries(fs.readdirSync(path.join(dir, 'reviews')).map((n) => [n, fs.readFileSync(path.join(dir, 'reviews', n), 'utf8')]));
+
+test('a file whose content names another review is logged and never written over that review, even through start()', async (t) => {
+  ts = tempStore();
+  const errors = t.mock.method(console, 'error', () => {});
+  const victim = legacy([thread('t1')]);
+  store.write(victim);
+  await migrateStore(); // the victim is current; the copy below would have to overwrite it to change it
+  const copyId = store.newId();
+  fs.writeFileSync(path.join(ts.dir, 'reviews', `${copyId}.json`), JSON.stringify({ ...legacy([thread('t9')]), id: victim.id }));
+  const before = filesOf(ts.dir);
+  const dist = fs.mkdtempSync(path.join(os.tmpdir(), 'cr-migrate-dist-'));
+  fs.writeFileSync(path.join(dist, 'index.html'), '<!doctype html>');
+  const server = await start({ port: 0, distDir: dist });
+  try {
+    assert.deepEqual(filesOf(ts.dir), before, 'neither file changed');
+    assert.equal(errors.mock.callCount(), 1);
+    assert.match(errors.mock.calls[0].arguments[0], new RegExp(`${copyId}.*MisfiledReview`));
+  } finally {
+    server.close();
+    fs.rmSync(dist, { recursive: true, force: true });
+  }
+});
+
+test('a file whose content names a review that does not exist creates no review', async (t) => {
+  ts = tempStore();
+  t.mock.method(console, 'error', () => {});
+  const copyId = store.newId();
+  const ghost = store.newId();
+  fs.mkdirSync(path.join(ts.dir, 'reviews'), { recursive: true });
+  fs.writeFileSync(path.join(ts.dir, 'reviews', `${copyId}.json`), JSON.stringify({ ...legacy(), id: ghost }));
+  const before = filesOf(ts.dir);
+  await migrateStore();
+  assert.deepEqual(filesOf(ts.dir), before);
+  assert.equal(fs.existsSync(path.join(ts.dir, 'reviews', `${ghost}.json`)), false);
+});
+
 test('a review whose shape cannot be migrated is logged and left unmigrated', async (t) => {
   ts = tempStore();
   const errors = t.mock.method(console, 'error', () => {});

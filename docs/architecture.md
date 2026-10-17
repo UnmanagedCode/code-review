@@ -11,7 +11,7 @@ Services return a plain object or a refusal `{ok:false, code, reason}`. Low-leve
 | `paths.js` | `storeRoot()`: `$CODE_REVIEW_STORE`, else `$PROJECTS_ROOT/.code-review`, else throws `STORE_UNCONFIGURED` (resolved per call, so the server boots without it) |
 | `mutex.js` | `withLock(key, fn)`: per-key promise chain |
 | `refusals.js` | `Refusal`, `refuse`, `attempt`, `HTTP_STATUS` (single source of codes) |
-| `store.js` | one JSON file per review: `read`, atomic `write` (bumps `rev`), `ids` (file names only, nothing parsed), `list`, `remove`, `mutate`, and the `changes` emitter |
+| `store.js` | one JSON file per review: `read`, atomic `write` (bumps `rev`), `ids` (id-shaped file names only, nothing parsed), `list`, `remove`, `mutate`, `logSkipped`, and the `changes` emitter |
 | `migrate.js` | `SCHEMA` (the review-file format, single source), `migrateReview`, `migrateStore` (startup upgrade) |
 | `cc.js` | cc REST client (`projects`, `worktrees`, `instances`) |
 | `checkouts.js` | resolve a checkout, fork-point chain, sessions, picker data |
@@ -37,8 +37,10 @@ Services return a plain object or a refusal `{ok:false, code, reason}`. Low-leve
 
 - Location: `<root>/reviews/<id>.json`, id `r-<10 hex>`; ids are validated before touching the filesystem. The root is outside every project tree, so it survives plugin updates.
 - The `changes` emitter has no listener cap (one listener per open SSE client). Message bodies are capped at `MAX_BODY_CHARS`.
+- `read(id)` throws `MisfiledReview` when the file's content has another `id` (or none): `write` persists under the content's id, so reading such a file as `id` would let any mutation copy it over another review, or create one. Nothing reads or writes through it.
+- `list()` (the review list, `openReview`'s reuse check) skips and logs any file it cannot read, so one bad file hides only itself; opening that review by id still fails (500). Skip logs go through `logSkipped`: one line, the error's name and its message with whitespace collapsed and control characters removed (a parse error quotes the file's bytes).
 - Writes are atomic (tmp file in the same dir, then `rename`); every write bumps `rev` and emits `change`. `mutate(id, fn)` runs under `withLock(id)` and writes only if `fn` changed the review; creation runs under `withLock('create')`.
-- `schema` is `SCHEMA` (`src/migrate.js`). `start()` runs `migrateStore()` before listening: every stored review below `SCHEMA` is upgraded in place through `mutate` (a review already current is not written, so a second run writes nothing); an unconfigured store is skipped. A review that cannot be read or migrated (unparsable JSON, an unexpected shape) is logged (`code-review: review <id> left unmigrated: …`) and left untouched, so it still fails loudly when read; the others migrate and the server starts. Only failing to list the store dir fails startup. Application code reads the current format only.
+- `schema` is `SCHEMA` (`src/migrate.js`). `start()` runs `migrateStore()` before listening: every stored review below `SCHEMA` is upgraded in place through `mutate` (a review already current is not written, so a second run writes nothing); an unconfigured store is skipped. A review that cannot be read or migrated (unparsable JSON, `MisfiledReview`, an unexpected shape) is logged (`code-review: review <id> left unmigrated: <ErrorName>: <message>`) and left untouched, so it still fails loudly when read; the others migrate and the server starts. Only failing to list the store dir fails startup. Application code reads the current format only.
   - 1 → 2: every thread gets `pastAnchors: []` (an existing value is kept).
 - Review fields: `id, project, worktree, branch, kind, target, baseLabel, title, status, createdAt, createdBy, recipient, seenByHuman, rev, seq, humanSeq, nextThread, nextSubmission, rounds, verdicts, threads, droppedThreads, submissions`.
 - `seq` is a review-wide counter bumped by every message, verdict and status change; `humanSeq` is the `seq` of the last human one. Unread counts and "since last delivery" compare `seq`s; logic never reads the wall clock (`at`/`createdAt` are display-only).

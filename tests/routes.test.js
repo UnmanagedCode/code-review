@@ -100,6 +100,21 @@ test('GET /reviews/:id/rounds/:n is a past round\'s view; diff and file take ?ro
   assert.equal((await req('GET', `/reviews/${id}/rounds/x`)).status, 400);
 });
 
+test('with an unparsable and a misfiled review file present, the list still answers 200 and a review can be opened', async (t) => {
+  const errors = t.mock.method(console, 'error', () => {});
+  const good = (await openReview()).review.id;
+  const dir = path.join(w.store.dir, 'reviews');
+  fs.writeFileSync(path.join(dir, `${store.newId()}.json`), '{ not json');
+  fs.writeFileSync(path.join(dir, `${store.newId()}.json`), JSON.stringify({ ...store.read(good), id: store.newId() }));
+  const listed = await req('GET', '/reviews?project=app');
+  assert.equal(listed.status, 200);
+  assert.deepEqual(listed.body.reviews.map((r) => r.id), [good]);
+  const fresh = await req('POST', '/reviews', { project: 'app', worktree: 'feature', kind: 'uncommitted' });
+  assert.equal(fresh.status, 200);
+  assert.equal(fresh.body.reused, false);
+  assert.ok(errors.mock.callCount() >= 2, 'each skipped file is logged');
+});
+
 test('verdicts, threads, messages, status, read, refresh, submissions each return their documented shape', async () => {
   const id = (await openReview()).review.id;
   const hunkId = (await req('GET', `/reviews/${id}/diff`)).body.files[0].hunks[0].id;

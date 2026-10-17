@@ -68,9 +68,38 @@ test('a citation stays one atom: src/__init__.py#L3 is a cite, not strong', () =
 });
 
 // Invariant: an emphasis opener outside an atom never pairs with a closer inside one.
-test('an emphasis opener never closes inside a citation', () => {
-  const c = cite('a__b.ts#L1', 'a__b.ts', 1);
-  expect(kinds(parseMarkdown('__x a__b.ts#L1', [c]))).toEqual(['p', 'text', 'cite', 'text']);
+// (Each closer below is acceptable on its own: only skipping the atom keeps the opener unpaired.)
+test.each<[string, string, Citation[], Inline[]]>([
+  ['citation', '_x a_.ts#L1', [cite('a_.ts#L1', 'a_.ts', 1)], [t('_x '), { t: 'cite', path: 'a_.ts', start: 1, end: 1, c: [t('a_.ts#L1')] }]],
+  ['bare URL', '*a https://e.com/x*y', [], [t('*a '), { t: 'link', href: 'https://e.com/x*y', c: [t('https://e.com/x*y')] }]],
+])('an emphasis opener never closes inside a %s atom', (_name, src, cites, inlines) => {
+  expect(para(src, cites)).toEqual(inlines);
+});
+
+const link = (href: string, label: string | Inline[]): Inline => ({ t: 'link', href, c: typeof label === 'string' ? [t(label)] : label });
+
+// Invariant: a bare-URL atom inside a link destination never runs past the destination's closing `)`, so emphasis
+// delimiters right after the link still pair (escaped and nested parens counted as the destination counts them).
+test.each<[string, Inline[]]>([
+  ['**[x](https://q.com)**x', [{ t: 'strong', c: [link('https://q.com/', 'x')] }, t('x')]],
+  ['*[x](https://q.com)*:-:)', [{ t: 'em', c: [link('https://q.com/', 'x')] }, t(':-:)')]],
+  ['**[x](https://q.com/(a))**x', [{ t: 'strong', c: [link('https://q.com/(a)', 'x')] }, t('x')]],
+  ['**[x](https://q.com/a\\(b)**x', [{ t: 'strong', c: [link('https://q.com/a(b', 'x')] }, t('x')]],
+])('a URL in a link destination never swallows a delimiter after the link: %s', (src, inlines) => {
+  expect(para(src)).toEqual(inlines);
+});
+
+// Invariant: brackets end a bare URL, so it never swallows a markdown link that follows it.
+test('a bare URL stops at a bracket: a following markdown link stays its own link', () => {
+  expect(para('see https://a.com/[x](https://b.com) end')).toEqual([
+    t('see '), link('https://a.com/', 'https://a.com/'), link('https://b.com/', 'x'), t(' end'),
+  ]);
+});
+
+// Invariant: a bare URL keeps a trailing `)` that closes its own `(` and drops one that closes text outside it (GFM).
+test('a bare URL keeps a balanced trailing paren and drops an unbalanced one', () => {
+  expect(para('see (https://e.com/a_(b)).')).toEqual([t('see ('), link('https://e.com/a_(b)', 'https://e.com/a_(b)'), t(').')]);
+  expect(para('(https://e.com/a_(b)c))')).toEqual([t('('), link('https://e.com/a_(b)c', 'https://e.com/a_(b)c'), t('))')]);
 });
 
 // Invariant: the server's list decides what is a citation; the parser only finds its extent.
@@ -181,6 +210,8 @@ test.each(Object.entries({
   'unlisted citation-like runs': rep('a/b#L1 '),
   'URL then a punctuation tail': `https://a/${'.'.repeat(N)}`,
   'failed URL candidates': rep('http://%'),
+  'URLs in unclosed parens': rep('https://a/('),
+  'URLs cut by unbalanced parens': rep('https://a/)'),
   '<': rep('<'),
   '&#': rep('&#'),
   '|-heavy table rows': `a|b\n-|-\n${rep('|')}\n${rep('|')}`,

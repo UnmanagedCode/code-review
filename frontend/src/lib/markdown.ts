@@ -58,8 +58,10 @@ const WORD_RE = /[\p{L}\p{N}]/u;
 const PATH_RE = /[A-Za-z0-9_./-]/;
 const CITE_PREV_RE = /[A-Za-z0-9_/.:-]/;
 const ALNUM_RE = /[A-Za-z0-9]/;
-const URL_STOP_RE = /[\s<>"`[\]]/;
-const URL_TRAILING = new Set('.,;:!?*_~\'")]}');
+const URL_STOP_RE = /[\s\x00-\x1f<>"`[\]]/;
+// No `)`: a URL never holds an unbalanced one (see urlEnd), so a trailing `)` always closes its own `(` (the GFM
+// rule). No `]`: it stops the scan.
+const URL_TRAILING = new Set('.,;:!?*_~\'"}');
 
 // Deepest block (quote/list) or inline (emphasis) nesting parsed as structure.
 // Past it the remaining content is plain text, so no body can exhaust the stack.
@@ -388,10 +390,21 @@ function citeEnd(S: string, j: number): number {
 // A citation may start at j when nothing that could extend its path precedes it.
 const citeBoundary = (S: string, j: number) => PATH_RE.test(S[j]) && (j === 0 || !CITE_PREV_RE.test(S[j - 1]));
 
-// End of a bare-URL candidate starting at j (trailing punctuation trimmed), and where its scan stopped.
+// End of a bare-URL candidate starting at j (trailing punctuation trimmed), and where its scan stopped. The scan
+// stops at whitespace, a control character, `<>"\`[]`, or a `)` closing a paren the URL did not open, with escapes
+// counted as linkTables counts them: so a URL inside a link destination never runs past the destination's closing
+// `)` and swallows a delimiter outside it (`**[x](https://q.com)**`).
 function urlEnd(S: string, j: number): { end: number; stop: number } {
+  let open = 0;
   let stop = j;
-  while (stop < S.length && !URL_STOP_RE.test(S[stop])) stop++;
+  while (stop < S.length) {
+    const c = S[stop];
+    if (URL_STOP_RE.test(c)) break;
+    if (c === '\\' && stop + 1 < S.length && PUNCT_RE.test(S[stop + 1]) && !URL_STOP_RE.test(S[stop + 1])) { stop += 2; continue; }
+    if (c === '(') open++;
+    else if (c === ')') { if (open === 0) break; open--; }
+    stop++;
+  }
   let end = stop;
   while (end > j && URL_TRAILING.has(S[end - 1])) end--;
   return { end, stop };

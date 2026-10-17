@@ -80,9 +80,9 @@ The plugin page. Wire calls are in [protocol.md](protocol.md); module layout in 
   - **Supported:** paragraphs, ATX headings (`#`–`######`, all shown at body size), `*em*`/`_em_`, `**strong**`, `~~del~~`, inline code, fenced code blocks (scroll sideways inside the card), bullet and numbered lists (nesting, start number), blockquotes, pipe tables with alignment, `---` rules, `[label](url)` and `<scheme:…>` links.
   - **Line breaks:** a single newline inside a paragraph is a line break (GitHub-comment style).
   - **Citations:** `path#L10-L20` becomes an in-app link that opens the file with the lines highlighted (a cited file outside the diff opens a read-only excerpt), in text, inside inline code, and as `[label](path#L10-L20)`. A citation is one token: `_`/`*` inside it are never emphasis. Not linked inside fenced blocks.
-  - **External links:** `http(s)` and `mailto` links, and bare `http(s)` URLs, open in a new tab. Any other target (relative, `#…`, `//host`, `javascript:`, `data:`…) shows its label as text.
+  - **External links:** `http(s)` and `mailto` links, and bare `http(s)` URLs, open in a new tab. A bare URL ends at whitespace, `<`, `>`, `"`, a backtick, `[`, `]`, or a `)` it did not open; trailing punctuation is not part of it. Any other target (relative, `#…`, `//host`, `javascript:`, `data:`…) shows its label as text.
   - **Shown as text:** raw HTML (including `<!-- … -->`). Images show as a link labelled by their alt text; nothing loads.
-  - **Unsupported:** indented code blocks, setext headings, reference links.
+  - **Unsupported:** indented code blocks, setext headings, reference links, GFM task lists (`- [ ] x` shows a literal `[ ]`).
 - **Commit filter.** Range reviews: choose one commit of the round to see its diff, read-only. Hidden in a past-round view.
 - **Round picker.** Range reviews with more than one round: "Round n (current)", then each past round (newest first, with its head's short sha). Picking a past round (`round=` in the URL) closes the open file and the commit filter and shows that round read-only (see [Past rounds](#rounds-and-refresh)):
   - a banner "Viewing round k of n — read-only…" with **Back to current round**; the file header shows a "round k · read-only" badge;

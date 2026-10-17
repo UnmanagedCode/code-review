@@ -9,6 +9,7 @@
   - [git-plumbing.md](gotchas/git-plumbing.md) — index rewrites and the private index, pinned flags, `--no-index`, quoted paths, base re-resolution.
   - [anchoring.md](gotchas/anchoring.md) — hunk ids, `linesHash`, locate modes, cross-hunk rule, `pastAnchors` and what is derived vs not.
   - [ui.md](gotchas/ui.md) — selection clamps, drag/toolbar, SSE echo, optimistic verdicts, accept-file ids, active-verdict tint, bridge timeout, route precedence, `REVIEW_SCOPED` route resets, past-round view vs commit filter, happy-dom limits.
+  - [markdown.md](gotchas/markdown.md) — message-body markdown: citation/URL atoms, the server's citation list, link allowlist, `\n` → `br`, linearity, `MAX_NESTING`.
   - [cc-metadata.md](gotchas/cc-metadata.md) — the cc routes used, liveness, conductor rule, no session role.
   - [recipient-and-roles.md](gotchas/recipient-and-roles.md) — agent opener = recipient, conductor `author`, `roleOf`/`recipientRole`, reuse.
 - architecture/

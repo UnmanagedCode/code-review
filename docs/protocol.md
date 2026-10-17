@@ -130,4 +130,4 @@ The page keeps its state in the query string (`?…`, never the hash) and writes
 | `round` | Range reviews: past-round view (read-only), a positive integer; ignored with `commit`, dropped when it names the current round or a later one. Focusing a thread there marks nothing read |
 | `view` | `new` (New review dialog) or `threads` (thread panel on narrow layouts) |
 
-**Citation links.** A message citation (`path#L10-L20`) renders as `?<route>&file=<path>&side=new&lines=10-20`, built from the route serialiser, never from the message text. Paths that start with `/` or contain a `..` segment are left as text, like the backend's citation resolver.
+**Citation links.** A message citation (`path#L10-L20`) renders as `?<route>&file=<path>&side=new&lines=10-20`, built from the route serialiser, never from the message text. Paths that start with `/` or contain a `..` segment are left as text, like the backend's citation resolver. A markdown link whose destination is a listed citation (`[label](path#L10-L20)`) renders the same route link, labelled by its label.

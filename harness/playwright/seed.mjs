@@ -44,7 +44,14 @@ export async function seed() {
     const id = review.id;
     await call('POST', `reviews/${id}/threads`, { anchor: { file: 'a.js', side: 'new', startLine: 3, endLine: 4 }, kind: 'question', body: 'Why change both lines? See a.js#L3-L4.' });
     const comment = (await call('POST', `reviews/${id}/threads`, { anchor: { file: 'a.js', side: 'new', startLine: 9, endLine: 9 }, kind: 'comment', body: 'Fine, but add a test.' })).thread;
-    await mcp('annotate', { review: id, kind: 'finding', severity: 'major', body: 'The old line 8 had a guard that is now gone.', file: 'a.js', side: 'old', startLine: 8 }, rev);
+    // A markdown body: heading, emphasis, list, a citation in inline code, a fence with one long line, a link.
+    const finding = [
+      '## Missing guard', '', 'The old line 8 had a **guard** that is now gone.', '',
+      '- it ran before `a.js#L3`', '- callers relied on it', '',
+      '```', `if (!ready) return; // ${'a very long line that must scroll inside the card '.repeat(4)}`, '```', '',
+      'See [the docs](https://example.com/guards).',
+    ].join('\n');
+    await mcp('annotate', { review: id, kind: 'finding', severity: 'major', body: finding, file: 'a.js', side: 'old', startLine: 8 }, rev);
     await mcp('reply', { review: id, thread: comment.id, body: 'Test added. Resolving.', resolve: true }, author);
 
     // A third commit rewrites the questioned lines; refreshing turns that thread outdated.

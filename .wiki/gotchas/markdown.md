@@ -1,0 +1,13 @@
+# Markdown message bodies
+
+Bodies are model-written, and the page runs same-origin with cc's unauthenticated API, so the parser (`frontend/src/lib/markdown.ts`) and its one renderer (`frontend/src/features/threads/Markdown.tsx`) are a security boundary. The parser follows the code-karpathy-wiki plugin's `src/markdown.js` (same hardening), without frontmatter, comment skipping, heading ids, wiki links or link bookkeeping.
+
+- **Citations and bare URLs are atoms.** `atoms()` marks their extent before inline parsing; `inl()` consumes an atom whole and `findSeq` jumps over it. A post-pass over text leaves would be too late: `src/__init__.py#L3` would already have become `src/<strong>init</strong>.py#L3`.
+- **The server's `citations` list decides what is a citation;** the parser only finds token boundaries. The boundary rule (`citeBoundary`, `PATH_RE`/`CITE_PREV_RE`) mirrors the lookbehind of `CITATION_RE` in `src/citations.js`; change both together. Unsafe paths (`/…`, `..`) are dropped from the list (`unsafePath`, same rule as `unsafe()` there).
+- **Link destinations, three ways (`target`):** a listed citation → `cite`; else `safeHref` (http, https, mailto on the parsed protocol) → `link`; else the label as plain text. Relative, `#…` and `//host` never link (no base URL), so a body cannot point the iframe at `pluginBridge.js` or an API path. Destinations are never entity-decoded.
+- **Inside a link label, atoms are text** (`noLinks`), so anchors never nest. Inside inline code only citations link (`codeChildren`); fenced blocks link nothing.
+- **A single `\n` in a paragraph is `br`,** not CommonMark's space: agents write line-oriented text and expect its breaks to show.
+- **Linearity.** Delimiter lookups go through per-inline-run tables (`backtickRuns`, `linkTables`, `atoms`) or `memoScan`. A failed URL candidate blocks other URL starts up to where its scan stopped, because `new URL` is O(length) and `http://%http://%…` would otherwise be quadratic. Trailing URL punctuation is trimmed by a loop. Never add a `…+$` or nested-quantifier regex. The pathological-input tests in `markdown.test.ts` use inputs several times `MAX_BODY_CHARS` (`src/threads.js`).
+- **`MAX_NESTING`** caps quote/list and emphasis depth; past it the rest is one text paragraph. Block parsing re-slices lines at each nesting level, so its cost is up to `MAX_NESTING` × the input length.
+- **No heading ids, no `style`, no `src`.** Content can't clobber app ids, inject CSS (the CSP allows inline styles) or load anything; images render as a link labelled by their alt text.
+- **Headings are all body-sized** (`.md` in `frontend/src/index.css`) and `pre`/tables scroll inside the card, so an inline thread never widens the diff.

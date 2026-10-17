@@ -7,13 +7,24 @@ import { Refusal, refuse } from './refusals.js';
 
 export const currentRound = (review) => review.rounds[review.rounds.length - 1];
 
+/** Role of a session on a review: the conductor, the author (stored `author`, else the recipient; never on an uncommitted review), else a reviewer. */
+export function roleOf(review, sessionId, isConductor) {
+  if (isConductor) return 'conductor';
+  if (review.kind !== 'uncommitted' && sessionId === (review.author || review.recipient)) return 'author';
+  return 'reviewer';
+}
+
+/** Role of the review's recipient; it is the conductor exactly when it is the conductor session that opened the review. */
+export function recipientRole(review) {
+  if (!review.recipient) return null;
+  const openedByIt = review.createdBy.role === 'conductor' && review.createdBy.sessionId === review.recipient;
+  return roleOf(review, review.recipient, openedByIt);
+}
+
 /** Author record for an actor; roles are derived per review and frozen on what they write. */
 export function authorFor(review, actor) {
   if (actor.kind === 'human') return { kind: 'human' };
-  let role = 'reviewer';
-  if (isConductorProject(actor.project)) role = 'conductor';
-  else if (review.kind !== 'uncommitted' && actor.sessionId === review.recipient) role = 'author';
-  return { kind: 'session', sessionId: actor.sessionId, role };
+  return { kind: 'session', sessionId: actor.sessionId, role: roleOf(review, actor.sessionId, isConductorProject(actor.project)) };
 }
 
 export function assertOpen(review) {

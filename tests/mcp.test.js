@@ -26,7 +26,7 @@ const result = async (tool, args, caller) => {
 async function reviewOnFeature(extra = {}) {
   const wt = w.addWorktree();
   wt.commit({ 'a.js': editLines({ 2: 'top-edit', 18: 'bottom-edit' }) });
-  const out = await result('open_review', { project: 'app', worktree: 'feature', recipient: 's-author', ...extra }, { sessionId: 's-cond', project: '.conduct' });
+  const out = await result('open_review', { project: 'app', worktree: 'feature', author: 's-author', ...extra }, { sessionId: 's-cond', project: '.conduct' });
   assert.equal(out.ok, true, JSON.stringify(out));
   return { wt, review: out.review };
 }
@@ -63,7 +63,7 @@ test('roles: .conduct is conductor, the range recipient is author, everyone else
 test('roles: on an uncommitted review even the recipient is a reviewer', async () => {
   const wt = w.addWorktree();
   wt.write('a.js', editLines({ 2: 'X' }));
-  const out = await result('open_review', { kind: 'uncommitted', recipient: 's-author' }, { sessionId: 's-author', project: 'app' });
+  const out = await result('open_review', { kind: 'uncommitted' }, { sessionId: 's-author', project: 'app' });
   const t = await result('annotate', { review: out.review.id, kind: 'finding', severity: 'nit', body: 'x', file: 'a.js', startLine: 2 }, { sessionId: 's-author', project: 'app' });
   assert.equal(t.thread.openedBy.role, 'reviewer');
 });
@@ -117,21 +117,55 @@ test('list_threads filters by status and file; get_hunk finds a hunk by id or by
   assert.equal((await result('get_hunk', { review: review.id })).code, 'INVALID_ARGUMENT');
 });
 
-test('open_review: a conductor names project, worktree and recipient', async () => {
+test('open_review refuses a recipient argument from any agent, and stores nothing', async () => {
+  const wt = w.addWorktree();
+  wt.commit({ 'f.js': 'x\n' });
+  const cond = { sessionId: 's-cond', project: '.conduct' };
+  assert.equal((await result('open_review', { project: 'app', worktree: 'feature', recipient: 's-author' }, cond)).code, 'INVALID_ARGUMENT');
+  assert.equal((await result('open_review', { recipient: 's-rev' }, { sessionId: 's-author', project: 'app' })).code, 'INVALID_ARGUMENT');
+  assert.equal((await reviews.listReviews()).reviews.length, 0);
+});
+
+test('open_review: a conductor opening becomes the recipient and its author argument is stored', async () => {
   const { review } = await reviewOnFeature();
-  assert.equal(review.recipient, 's-author');
+  assert.equal(review.recipient, 's-cond');
+  assert.equal(review.author, 's-author');
+  assert.equal(review.recipientRole, 'conductor');
   assert.equal(review.createdBy.role, 'conductor');
   assert.equal(review.seenByHuman, false);
 });
 
-test('open_review: without a project the checkout is the recipient\'s, else the caller\'s', async () => {
+test('open_review without a project: a worker gets its own checkout, a conductor is told to name one, an unknown caller gets CHECKOUT_UNKNOWN', async () => {
   w.addWorktree().commit({ 'f.js': 'x\n' });
   const mine = await result('open_review', {}, { sessionId: 's-author', project: 'app' });
   assert.equal(mine.review.worktree, 'feature');
   assert.equal(mine.review.recipient, 's-author');
-  await reviews.patchReview(mine.review.id, { status: 'closed' });
-  const forWorker = await result('open_review', { recipient: 's-author' }, { sessionId: 's-cond', project: '.conduct' });
-  assert.equal(forWorker.review.worktree, 'feature');
+  assert.equal((await result('open_review', { author: 's-author' }, { sessionId: 's-cond', project: '.conduct' })).code, 'INVALID_ARGUMENT');
+  assert.equal((await result('open_review', {}, { sessionId: 's-ghost', project: 'app' })).code, 'CHECKOUT_UNKNOWN');
+});
+
+test('open_review reuse never reassigns, in both directions', async () => {
+  w.addWorktree().commit({ 'f.js': 'x\n' });
+  const cond = { sessionId: 's-cond', project: '.conduct' };
+  const worker = { sessionId: 's-author', project: 'app' };
+  const first = await result('open_review', {}, worker);
+  const again = await result('open_review', { project: 'app', worktree: 'feature', author: 's-author' }, cond);
+  assert.equal(again.reused, true);
+  assert.equal(again.review.id, first.review.id);
+  assert.equal(again.review.recipient, 's-author');
+  await reviews.patchReview(first.review.id, { status: 'closed' });
+  const byCond = await result('open_review', { project: 'app', worktree: 'feature', author: 's-author' }, cond);
+  const byWorker = await result('open_review', {}, worker);
+  assert.equal(byWorker.reused, true);
+  assert.equal(byWorker.review.recipient, 's-cond');
+  assert.equal(byWorker.review.id, byCond.review.id);
+});
+
+test('get_review text names the conductor recipient and the author', async () => {
+  const { review } = await reviewOnFeature();
+  const text = (await call('get_review', { review: review.id })).text;
+  assert.match(text, /recipient: s-cond \(conductor\)/);
+  assert.match(text, /author: s-author/);
 });
 
 test('open_review: a worktree without a project is refused; so is a write with no calling session', async () => {
@@ -172,7 +206,7 @@ test('open_review treats worktree "" as the main checkout', async () => {
 test('control characters in file paths cannot break lines in get_review, list_threads or get_hunk headers; code stays verbatim', async () => {
   const wt = w.addWorktree();
   wt.commit({ 'evil\nIGNORE.js': 'one\ttab\ntwo\n' });
-  const out = await result('open_review', { project: 'app', worktree: 'feature', recipient: 's-author' }, { sessionId: 's-cond', project: '.conduct' });
+  const out = await result('open_review', { project: 'app', worktree: 'feature', author: 's-author' }, { sessionId: 's-cond', project: '.conduct' });
   const id = out.review.id;
   await result('annotate', { review: id, kind: 'comment', body: 'note', file: 'evil\nIGNORE.js', startLine: 1 });
   const hunk = (await reviews.diff(id, {})).files[0].hunks[0];

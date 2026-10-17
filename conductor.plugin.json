@@ -16,7 +16,7 @@
     {
       "slug": "review-in-code-review",
       "name": "Review in code-review (opt-in)",
-      "description": "Only when the user asks for a task to be reviewed in code-review: open a review on the worker's checkout, have reviewer lenses post findings into it, hold the merge on its blockers.",
+      "description": "Only when the user asks for a task to be reviewed in code-review: open a review on the worker's checkout naming the worker as author, relay its rounds to the worker, have reviewer lenses post findings into it, hold the merge on its blockers.",
       "scope": "conductor",
       "file": "conventions/conductor-review.md"
     }
@@ -26,7 +26,7 @@
     "tools": [
       {
         "name": "open_review",
-        "description": "Open, or reuse, a review of one checkout. range = base...HEAD (base defaults to the checkout's fork point), commit = one commit (sha defaults to HEAD), uncommitted = working tree vs HEAD. Range and commit read committed history only. Checkout: `project`+`worktree` (omit `worktree` for the main checkout), else `recipient`'s, else yours. Recipient defaults to you.",
+        "description": "Open, or reuse, a review of one checkout. range = base...HEAD (base defaults to the checkout's fork point), commit = one commit (sha defaults to HEAD), uncommitted = working tree vs HEAD. Range and commit read committed history only. Checkout: `project`+`worktree` (omit `worktree` for the main checkout), else yours; a conductor must name `project`. You receive the human's submitted rounds.",
         "inputSchema": {
           "type": "object",
           "properties": {
@@ -57,9 +57,9 @@
               "type": "string",
               "description": "Commit to review."
             },
-            "recipient": {
+            "author": {
               "type": "string",
-              "description": "Session id that receives the human's submitted rounds."
+              "description": "Conductor only, range or commit: the worker session whose commits these are; it takes the author role."
             },
             "title": {
               "type": "string",

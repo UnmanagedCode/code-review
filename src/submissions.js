@@ -1,5 +1,5 @@
 import { attempt, Refusal } from './refusals.js';
-import { assertOpen, currentRound, inReview } from './context.js';
+import { assertOpen, currentRound, inReview, recipientRole } from './context.js';
 import { renderPrompt } from './prompt.js';
 import { verdictOf } from './rollup.js';
 
@@ -59,7 +59,7 @@ export const composeSubmission = (id) => attempt(() => inReview(id, async (revie
   const text = renderPrompt({
     id: review.id, round: round.n, project: review.project, worktree: review.worktree,
     label: `${review.kind === 'range' ? `${review.baseLabel}...${review.branch}` : review.kind === 'commit' ? `commit ${review.target.sha.slice(0, 7)}` : 'uncommitted changes'}`,
-    role: uncommitted ? 'reviewer' : 'author', tally,
+    role: recipientRole(review), uncommitted, author: review.author ?? null, tally,
     rejected: uncommitted ? [] : await rejectedHunks(review, env, since),
     threads: activeThreads(review, since), files,
   });

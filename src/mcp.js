@@ -1,6 +1,6 @@
 import * as reviews from './reviews.js';
 import * as threads from './threads.js';
-import { sessionCheckout } from './checkouts.js';
+import { sessionCheckout, isConductorProject } from './checkouts.js';
 import { Refusal, attempt } from './refusals.js';
 import { renderRollup, renderThreads, renderHunk } from './render.js';
 
@@ -16,11 +16,12 @@ const handlers = {
     let { project, worktree } = a;
     if (!project) {
       if (worktree) throw new Refusal('INVALID_ARGUMENT', 'worktree needs project');
-      const co = await sessionCheckout(a.recipient ?? actor.sessionId);
-      if (!co) throw new Refusal('CHECKOUT_UNKNOWN', `code-conductor does not know session ${a.recipient ?? actor.sessionId}`);
+      if (isConductorProject(actor.project)) throw new Refusal('INVALID_ARGUMENT', 'a conductor has no checkout of its own: name project and worktree');
+      const co = await sessionCheckout(actor.sessionId);
+      if (!co) throw new Refusal('CHECKOUT_UNKNOWN', `code-conductor does not know session ${actor.sessionId}`);
       ({ project, worktree } = co);
     }
-    return reviews.openReview({ project, worktree: worktree || null, kind: a.kind, base: a.base, sha: a.sha, recipient: a.recipient, title: a.title }, actor);
+    return reviews.openReview({ project, worktree: worktree || null, kind: a.kind, base: a.base, sha: a.sha, recipient: a.recipient, author: a.author, title: a.title }, actor);
   }),
 
   get_review: async (a) => {

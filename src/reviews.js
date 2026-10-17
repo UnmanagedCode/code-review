@@ -2,7 +2,7 @@ import * as store from './store.js';
 import * as git from './git.js';
 import { withLock } from './mutex.js';
 import { attempt, refuse, Refusal } from './refusals.js';
-import { resolveCheckout, forkPoints, sessions, sessionCheckout } from './checkouts.js';
+import { resolveCheckout, forkPoints, sessions, sessionCheckout, isConductorProject } from './checkouts.js';
 import { resolveTarget, buildSnapshot, isBinaryFile } from './snapshot.js';
 import { followThreads } from './follow.js';
 import { currentRound, authorFor, assertOpen, inReview, viewReview } from './context.js';
@@ -51,20 +51,26 @@ export async function summaryOf(review, env) {
 /** Fresh summary of a stored review (re-read, so `rev` is current). */
 export const summaryById = (id) => viewReview(id, async (review, env) => ({ ok: true, review: await summaryOf(review, env) }));
 
-async function resolveRecipient(explicit, actor, checkout) {
+/** Recipient of a human-created review: the explicit session, else the single live attached one, else none. */
+async function resolveRecipient(explicit, checkout) {
   if (explicit) {
     if (!(await sessionCheckout(explicit))) throw new Refusal('RECIPIENT_UNKNOWN', `unknown session: ${explicit}`);
     return explicit;
   }
-  if (actor.kind === 'agent') return actor.sessionId;
   const attached = (await sessions(checkout)).filter((s) => s.attached);
   return attached.length === 1 ? attached[0].sessionId : null;
 }
 
-/** Opens a review, or returns the open one with the same target. */
+/** Opens a review, or returns the open one with the same target. An agent opener is the recipient; only a conductor names an `author`. */
 export const openReview = (args, actor) => attempt(() => withLock('create', async () => {
   const kind = args.kind ?? 'range';
   if (!KINDS.includes(kind)) throw invalid(`kind must be one of ${KINDS.join(', ')}`);
+  if (actor.kind === 'agent' && args.recipient !== undefined) throw invalid('the agent that opens a review is its recipient: do not pass recipient');
+  if (args.author !== undefined) {
+    if (actor.kind !== 'agent' || !isConductorProject(actor.project)) throw invalid('only a conductor names an author');
+    if (kind === 'uncommitted') throw invalid('an uncommitted review has no author: the human is the author');
+    if (!(await sessionCheckout(args.author))) throw new Refusal('AUTHOR_UNKNOWN', `unknown session: ${args.author}`);
+  }
   const worktree = args.worktree || null;
   const co = await resolveCheckout({ project: args.project, worktree });
   if (!co.exists) throw new Refusal('CHECKOUT_GONE', `${co.path} does not exist`);
@@ -82,12 +88,12 @@ export const openReview = (args, actor) => attempt(() => withLock('create', asyn
   if (existing) return { ok: true, review: (await summaryById(existing.id)).review, reused: true };
 
   const snap = await buildSnapshot({ kind, repo: co.path, checkout: co.path, ...shas });
-  const recipient = await resolveRecipient(args.recipient, actor, { project: args.project, worktree });
+  const recipient = actor.kind === 'agent' ? actor.sessionId : await resolveRecipient(args.recipient, { project: args.project, worktree });
   const branch = co.branch ?? (await git.currentBranch(co.path));
   const review = {
     schema: SCHEMA, id: store.newId(), project: args.project, worktree, branch, kind, target,
     baseLabel: kind === 'range' ? target.base : null, title: '', status: 'open', createdAt: now(), createdBy: null,
-    recipient, seenByHuman: actor.kind === 'human', rev: 0, seq: 0, humanSeq: 0, nextThread: 1, nextSubmission: 1,
+    recipient, author: args.author ?? null, seenByHuman: actor.kind === 'human', rev: 0, seq: 0, humanSeq: 0, nextThread: 1, nextSubmission: 1,
     rounds: [{ n: 1, ...shas, fingerprint: snap.fingerprint, createdAt: now(), submittedAt: null }],
     verdicts: {}, threads: [], droppedThreads: [], submissions: [],
   };

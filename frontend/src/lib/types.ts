@@ -47,7 +47,7 @@ export interface Submission extends SubmissionRef { recipient: string; text: str
 
 export interface ReviewSummary {
   id: string; project: string; worktree: string | null; branch: string | null; kind: Kind; target: unknown;
-  label: string; title: string | null; status: 'open' | 'closed'; recipient: string | null; recipientRole: Role | null;
+  label: string; title: string | null; status: 'open' | 'closed'; recipient: string | null; author: string | null; recipientRole: Role | null;
   round: number; headSha: string; baseSha: string; headMoved: boolean; dirty: boolean; checkoutGone: boolean;
   counts: { files: number | null; hunks: ({ pending: number; accepted: number; rejected: number } | { total: number }) | null; threads: ThreadCounts };
   mergeBlockers: number; unread: number; seenByHuman: boolean; rev: number; createdAt: string; createdBy: Author;

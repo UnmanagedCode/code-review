@@ -4,7 +4,7 @@ What the UI and agents can do through the backend. Wire formats are in [protocol
 
 ## Reviews and targets
 
-A **review** is a persisted discussion about one checkout (a project's main checkout or one of its worktrees). Opening the same open target again returns the existing review (`reused: true`).
+A **review** is a persisted discussion about one checkout (a project's main checkout or one of its worktrees). Opening the same open target again returns the existing review unchanged (`reused: true`): its recipient and author stay.
 
 | Kind | Reviews | Old side | New side | Verdicts | Refresh |
 |---|---|---|---|---|---|
@@ -34,7 +34,7 @@ A **review** is a persisted discussion about one checkout (a project's main chec
 - **Limits.** A message body is capped (`BODY_TOO_LARGE`). Prompts carry file paths with control characters removed.
 - **Citations.** `path#L10-L20` in a message body (relative to the checkout root) is parsed; agents see the cited lines inlined at the message's round.
 - **Unread.** A thread's unread count is the agent messages the human has not read; a review opened by an agent starts unseen. The human replying or marking read clears it.
-- **Roles** are derived per review and frozen on each message: a caller from project `.conduct` is `conductor`; the recipient of a range/commit review is `author`; every other agent is `reviewer`. On an uncommitted review the human is the author, so every agent is a reviewer.
+- **Roles** are derived per review and frozen on each message: a caller from project `.conduct` is `conductor`; the review's stored `author`, else its recipient, is `author` on a range/commit review; every other agent is `reviewer`. The summary's `recipientRole` is `conductor` when the recipient is the conductor session that opened the review. On an uncommitted review the human is the author, so no agent is: a non-conductor agent is a `reviewer`.
 - **`mergeBlockers`** = rejected hunks + open `question` threads (open questions only on uncommitted reviews).
 
 ## Rounds and refresh
@@ -53,21 +53,23 @@ A **review** is a persisted discussion about one checkout (a project's main chec
 
 ## Submitting a round
 
-- The human's activity since the last delivered submission is composed into a prompt for the **recipient** session (`POST …/submissions`): verdict tally, rejected hunks, threads with new human messages or status changes. Uncommitted reviews ask the recipient to review the changed files instead.
+- The human's activity since the last delivered submission is composed into a prompt for the **recipient** session (`POST …/submissions`): verdict tally, rejected hunks, threads with new human messages or status changes. Uncommitted reviews ask the recipient to review the changed files instead. A conductor recipient is asked to relay the round to the author (range/commit) or to brief a reviewer (uncommitted).
 - The prompt is stored `pending`; the UI sends it through the cc bridge and reports the outcome. `delivered` stamps the round's `submittedAt`; a failure keeps it re-sendable; composing again supersedes undelivered ones. A first submission is always allowed; later ones need new human activity (`NOTHING_TO_SUBMIT`).
-- **Recipient** defaults, first match: the explicit session, the calling session (MCP), the single live session attached to the checkout, none (`NO_RECIPIENT` on submit until set).
+- **Recipient.** An agent-opened review: the opening session, always (a `recipient` argument is refused). A human-opened one: the explicit session, else the single live session attached to the checkout, else none (`NO_RECIPIENT` on submit until set).
+- **Author.** A conductor opening a range/commit review names the worker with `author`; the stored session takes the author role while the conductor stays recipient and relays the rounds.
 
 ## Agent surface
 
 - **MCP tools** (`code-review__<tool>`): `open_review`, `get_review`, `list_threads`, `get_hunk`, `annotate`, `reply`, `refresh_review`. Schemas and results: [protocol.md](protocol.md#mcp).
 - **Skill** `review-dialog` (`skills/review-dialog/SKILL.md`): how an author or reviewer session works a review.
-- **Conductor convention** `review-in-code-review` (`conventions/conductor-review.md`, scope `conductor`, opt-in per task): open a review on the worker's checkout, have reviewer lenses post findings, hold `merge_worktree` while `mergeBlockers` is above 0.
+- **Conductor convention** `review-in-code-review` (`conventions/conductor-review.md`, scope `conductor`, opt-in per task): open a review on the worker's checkout naming the worker as author, relay its rounds to the worker, have reviewer lenses post findings, hold `merge_worktree` while `mergeBlockers` is above 0.
 
 ## Review UI
 
 The plugin page. Wire calls are in [protocol.md](protocol.md); module layout in [architecture.md](architecture.md#frontend).
 
 - **Screens.** Pick a project and worktree (CheckoutBar), list its reviews (this checkout or every checkout of the project; open, closed or all), start one (New review: range with a fork-point shortcut or any ancestor commit, one commit, or uncommitted), then work a review: header, file tree, one file's diff, thread panel.
+- **Review header.** Shows the recipient (a button opening the picker) and, when the review names one, a plain `Author: <session title>` text.
 - **Layouts.** Wide: left column (checkout and list, or the review header and file tree), the diff in the centre, the thread panel as a right column from `xl`; between `md` and `xl` the panel opens as a right sheet from a Threads button. Narrow (phone or a narrow docked pane): one pane per route (list → file tree → diff), the panel as a bottom sheet. The page follows cc's theme and has no theme control.
 - **Diff.** Unified view only, with both line-number gutters; no syntax highlighting. Context outside the hunks is collapsed; a gap expands 20 lines at a time or fully, and a thread inside a gap opens it. The first 1 500 rows render, then "Show next …". Binary and too-large files show a placeholder with their verdict bar.
 - **Per-hunk bar.** Accept / Reject / Pending (Pending clears) and "Comment on hunk" (anchors the whole hunk). The active verdict carries the primary (coral/orange) accent tint, same for every verdict. Uncommitted reviews have no verdict controls; file-level hunks (binary, rename, mode) take a verdict but no comment; the commit-filter view has no bar.

@@ -58,12 +58,9 @@ const rosterA = () => {
   w.session('s-cond', { project: '.conduct' });
 };
 
-test('an agent opener is always the recipient: a recipient argument is refused, even before reuse', async () => {
+test('an agent opener is the recipient', async () => {
   rosterA();
   assert.equal(ok(await open({}, agent('s-b'))).review.recipient, 's-b');
-  const count = store.list().length;
-  for (const recipient of ['s-a', 's-b', null]) assert.equal(codeOf(await open({ recipient }, agent('s-b'))), 'INVALID_ARGUMENT');
-  assert.equal(store.list().length, count);
 });
 
 test('the human recipient chain: explicit, else the single live attached session, else none', async () => {

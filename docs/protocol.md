@@ -91,7 +91,7 @@ REST under `/api` (JSON), an SSE stream, and the cc MCP endpoint. Behaviour behi
 
 | Tool | Required | Result |
 |---|---|---|
-| `open_review` | | `{result:{ok, review:ReviewSummary, reused}}`. Checkout: `project`+`worktree`; without `project`, `worktree` must be absent and the checkout is the caller's (`CHECKOUT_UNKNOWN` if cc does not know the caller); a conductor caller must name `project` (`INVALID_ARGUMENT`). Recipient: always the caller; a `recipient` argument is refused `INVALID_ARGUMENT`. `author`: conductor callers only, range/commit only (else `INVALID_ARGUMENT`); `AUTHOR_UNKNOWN` if cc does not know the session. A reused review is returned unchanged. The creator is the caller; `seenByHuman:false`. |
+| `open_review` | | `{result:{ok, review:ReviewSummary, reused}}`. Checkout: `project`+`worktree`; without `project`, `worktree` must be absent and the checkout is the caller's (`CHECKOUT_UNKNOWN` if cc does not know the caller); a conductor caller must name `project` (`INVALID_ARGUMENT`). Recipient: the caller. `author`: conductor callers only, range/commit only (else `INVALID_ARGUMENT`); `AUTHOR_UNKNOWN` if cc does not know the session. A reused review is returned unchanged. The creator is the caller; `seenByHuman:false`. |
 | `get_review` | `review` | `{text: per-file table, meta: ReviewSummary}` |
 | `list_threads` | `review` | `{text, meta:{review, count, counts}}`; `status` default `open`; cited code inlined as `path#L… @<short sha | working tree>`, ≤ 80 lines then `… (truncated)`, unresolvable ones `(unresolved: …)` |
 | `get_hunk` | `review` + `hunk` or `file` | `{text: hunk with old/new line gutters, meta:{file, hunks:[{id, verdict, threadIds}]}}`; `file`+`line` picks the hunk covering that new-side line |

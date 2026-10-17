@@ -54,7 +54,7 @@ A **review** is a persisted discussion about one checkout (a project's main chec
 
 - The human's activity since the last delivered submission is composed into a prompt for the **recipient** session (`POST …/submissions`): verdict tally, rejected hunks, threads with new human messages or status changes. Uncommitted reviews ask the recipient to review the changed files instead. A conductor recipient is asked to relay the round to the author (range/commit) or to brief a reviewer (uncommitted).
 - The prompt is stored `pending`; the UI sends it through the cc bridge and reports the outcome. `delivered` stamps the round's `submittedAt`; a failure keeps it re-sendable; composing again supersedes undelivered ones. A first submission is always allowed; later ones need new human activity (`NOTHING_TO_SUBMIT`).
-- **Recipient.** An agent-opened review: the opening session, always (a `recipient` argument is refused). A human-opened one: the explicit session, else the single live session attached to the checkout, else none (`NO_RECIPIENT` on submit until set).
+- **Recipient.** An agent-opened review: the opening session. A human-opened one: the explicit session, else the single live session attached to the checkout, else none (`NO_RECIPIENT` on submit until set).
 - **Author.** A conductor opening a range/commit review names the worker with `author`; the stored session takes the author role while the conductor stays recipient and relays the rounds.
 
 ## Agent surface

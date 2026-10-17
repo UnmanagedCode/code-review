@@ -1,6 +1,6 @@
 # Recipient and roles
 
-- **An agent opener is always the recipient.** `openReview` (`src/reviews.js`) sets it from the actor; an agent-supplied `recipient` is refused `INVALID_ARGUMENT` before checkout lookup and reuse, so a stale caller fails loudly.
+- **An agent opener is always the recipient.** `openReview` (`src/reviews.js`) sets it from the actor; only the human path (`POST /reviews`) takes a `recipient`.
 - **Only the human path resolves a recipient** (explicit, else the single live attached session, else none).
 - **Reuse never reassigns.** A reused review comes back as stored, whatever the second caller passes.
 - **A conductor-opened review carries `author`** (range/commit only, conductor callers only). `null` means recipient = author.

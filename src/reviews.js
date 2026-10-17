@@ -64,7 +64,6 @@ async function resolveRecipient(explicit, checkout) {
 export const openReview = (args, actor) => attempt(() => withLock('create', async () => {
   const kind = args.kind ?? 'range';
   if (!KINDS.includes(kind)) throw invalid(`kind must be one of ${KINDS.join(', ')}`);
-  if (actor.kind === 'agent' && args.recipient !== undefined) throw invalid('the agent that opens a review is its recipient: do not pass recipient');
   if (args.author !== undefined) {
     if (actor.kind !== 'agent' || !isConductorProject(actor.project)) throw invalid('only a conductor names an author');
     if (kind === 'uncommitted') throw invalid('an uncommitted review has no author: the human is the author');

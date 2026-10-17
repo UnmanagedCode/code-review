@@ -8,7 +8,7 @@ import { NativeSelect } from '@/components/ui/native-select';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import * as ep from '@/lib/endpoints';
 import { errorText } from '@/lib/refusals';
-import { navigate } from '@/lib/route';
+import { navigate, REVIEW_SCOPED } from '@/lib/route';
 import type { Kind } from '@/lib/types';
 import { useCheckout, useCheckoutCommits, useSessions } from '@/state/checkout';
 import { Empty, Spinner } from '@/features/common/States';
@@ -51,7 +51,7 @@ export function NewReviewDialog({ project, worktree, onClose }: { project: strin
       });
       if (reused) toast.info('Opened the existing review');
       onClose();
-      navigate({ review: review.id, view: undefined, file: undefined });
+      navigate({ review: review.id, ...REVIEW_SCOPED });
     } catch (e) {
       toast.error(errorText(e));
     } finally {

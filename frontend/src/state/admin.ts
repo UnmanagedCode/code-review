@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { toast } from 'sonner';
 import * as ep from '@/lib/endpoints';
 import { errorText } from '@/lib/refusals';
-import { navigate } from '@/lib/route';
+import { navigate, REVIEW_SCOPED } from '@/lib/route';
 import type { RefreshReport } from '@/lib/types';
 import { useReviewCtx } from './reviewContext';
 
@@ -17,7 +17,7 @@ export function useReviewAdmin() {
   return {
     report, refreshing, dismissReport: () => setReport(null),
     patch: (patch: Parameters<typeof ep.patchReview>[1]) => attempt(async () => { applyReview((await ep.patchReview(id, patch)).review); reload(); }),
-    remove: () => attempt(async () => { await ep.deleteReview(id); navigate({ review: undefined, file: undefined, thread: undefined, lines: undefined, commit: undefined }); }),
+    remove: () => attempt(async () => { await ep.deleteReview(id); navigate({ review: undefined, ...REVIEW_SCOPED }); }),
     refresh: () => attempt(async () => {
       setRefreshing(true);
       try { setReport(await ep.refresh(id)); reload(); } finally { setRefreshing(false); }

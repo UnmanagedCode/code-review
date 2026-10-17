@@ -126,3 +126,14 @@ test('CODE_REVIEW_STORE takes precedence over $PROJECTS_ROOT', () => {
 test('the change emitter has no listener cap, since every open SSE client is a listener', () => {
   assert.equal(store.changes.getMaxListeners(), 0);
 });
+
+test('ids lists stored reviews from file names without parsing them; list parses', () => {
+  const { dir } = fresh();
+  const good = store.newId();
+  store.write({ schema: 1, id: good, rev: 0 });
+  const bad = store.newId();
+  fs.writeFileSync(path.join(dir, 'reviews', `${bad}.json`), '{ not json');
+  fs.writeFileSync(path.join(dir, 'reviews', 'notes.txt'), 'x');
+  assert.deepEqual(store.ids().sort(), [good, bad].sort());
+  assert.throws(() => store.list(), SyntaxError);
+});

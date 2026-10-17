@@ -37,11 +37,14 @@ export function write(review) {
   changes.emit('change', { id: review.id, rev: review.rev });
 }
 
-export function list() {
+/** Ids of the stored reviews, from file names only (no file is parsed). */
+export function ids() {
   let names;
   try { names = fs.readdirSync(dirOf()); } catch (e) { if (e.code === 'ENOENT') return []; throw e; }
-  return names.filter((n) => n.endsWith('.json')).map((n) => read(n.slice(0, -5))).filter(Boolean);
+  return names.filter((n) => n.endsWith('.json')).map((n) => n.slice(0, -5));
 }
+
+export const list = () => ids().map(read).filter(Boolean);
 
 export function remove(id) {
   if (!ID_RE.test(id)) return;

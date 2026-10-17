@@ -1,5 +1,6 @@
 import { RouteLink } from '@/components/RouteLink';
 import { Badge } from '@/components/ui/badge';
+import { REVIEW_SCOPED } from '@/lib/route';
 import type { ReviewSummary } from '@/lib/types';
 
 export function ReviewRow({ review: r, showWorktree }: { review: ReviewSummary; showWorktree: boolean }) {
@@ -7,7 +8,7 @@ export function ReviewRow({ review: r, showWorktree }: { review: ReviewSummary; 
   return (
     <li>
       <RouteLink
-        to={{ project: r.project, worktree: r.worktree ?? undefined, review: r.id, file: undefined, lines: undefined, side: undefined, thread: undefined, commit: undefined, view: undefined }}
+        to={{ project: r.project, worktree: r.worktree ?? undefined, review: r.id, ...REVIEW_SCOPED }}
         className="flex flex-col gap-1 border-b px-3 py-2.5 hover:bg-accent focus-visible:bg-accent focus-visible:outline-none"
       >
         <span className="flex items-center gap-2">

@@ -108,3 +108,16 @@ test('a refused round view shows its error in place of the file tree, with the r
   expect(await screen.findByRole('button', { name: /retry/i })).toBeTruthy();
   expect(screen.getByRole('combobox', { name: 'Round' })).toBeTruthy();
 });
+
+test('a closed review in a past-round view says it is closed but offers no Reopen', async () => {
+  stubFetch({
+    'GET api/reviews/r-1': { review: review({ round: 2, status: 'closed' }), files: [fileState()], rounds: [1, 2].map((n) => ({ n, headSha: `${n}`.repeat(40), baseSha: 'b'.repeat(40), createdAt: '', submittedAt: null })), submissions: [], outdatedThreads: [] },
+    'GET api/reviews/r-1/rounds/1': { readOnly: true, round: { n: 1, headSha: '1'.repeat(40), baseSha: 'b'.repeat(40), createdAt: '', submittedAt: null }, files: [fileState({ verdicts: null })], counts: { open: 0, resolved: 0, outdated: 0 }, outdatedThreads: [], unplacedThreads: [] },
+    'GET api/reviews/r-1/commits': { commits: [] },
+    'GET api/sessions': { sessions: [] },
+  });
+  history.replaceState(null, '', '?review=r-1&round=1');
+  render(<ReviewView id="r-1" />);
+  await screen.findByText('This review is closed.');
+  expect(screen.queryByRole('button', { name: 'Reopen' })).toBeNull();
+});

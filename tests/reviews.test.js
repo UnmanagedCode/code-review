@@ -374,7 +374,7 @@ test('an outdated thread records no further positions: its last one is its curre
   assert.equal(stored.anchor.round, 1);
 });
 
-test('uncommitted: the sweep within one round records no position; the first sweep after a refresh records one', async () => {
+test('uncommitted: sweeps record no earlier positions, within a round or after a refresh', async () => {
   const wt = w.addWorktree();
   wt.write('a.js', editLines({ 10: 'X10' }));
   const { review } = ok(await open({ kind: 'uncommitted' }));
@@ -385,10 +385,10 @@ test('uncommitted: the sweep within one round records no position; the first swe
   ok(await reviews.diff(review.id, { file: 'a.js' }));
   assert.equal(stored().anchor.startLine, 11);
   assert.deepEqual(stored().pastAnchors, []);
-  ok(await reviews.refreshReview(review.id));
+  assert.equal(ok(await reviews.refreshReview(review.id)).round, 2);
   ok(await reviews.diff(review.id, { file: 'a.js' }));
-  assert.deepEqual(stored().pastAnchors.map((a) => [a.round, a.startLine]), [[1, 11]]);
-  assert.equal(stored().anchor.round, 2);
+  assert.equal(stored().anchor.round, 2, 'the sweep did move the thread into round 2');
+  assert.deepEqual(stored().pastAnchors, []);
 });
 
 test('a new review is stored at the current schema', async () => {

@@ -5,12 +5,12 @@ import { useReviewAdmin } from '@/state/admin';
 import { useReviewCtx } from '@/state/reviewContext';
 import { Spinner } from '@/features/common/States';
 
-/** The refresh cue (range: HEAD-moved banner; uncommitted: a button) and the last refresh's outcome. Commit reviews have no refresh. */
+/** The refresh cue (range: HEAD-moved banner; uncommitted: a button) and the last refresh's outcome. Commit reviews and past-round views have no refresh. */
 export function RefreshControls() {
-  const { review } = useReviewCtx();
+  const { review, round } = useReviewCtx();
   const admin = useReviewAdmin();
   const r = admin.report;
-  const canRefresh = review.status === 'open' && !review.checkoutGone;
+  const canRefresh = review.status === 'open' && !review.checkoutGone && round === undefined;
   const button = (
     <Button size="sm" variant="outline" disabled={admin.refreshing} onClick={admin.refresh}>
       {admin.refreshing ? <Spinner /> : <RefreshCwIcon />}Refresh

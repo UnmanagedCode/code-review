@@ -202,13 +202,32 @@ test('reading a past round leaves the main checkout\'s .git byte-identical', asy
   assert.deepEqual(gitDirSig(w.repo.dir), before);
 });
 
-test('reading a past round leaves a linked worktree\'s git dirs byte-identical (common dir with its worktrees/ entry, and its .git file)', async () => {
+// A linked worktree's own `.git` is a pointer file; its index, HEAD and the shared objects live in the common git dir
+// (`<main>/.git`, including `worktrees/<name>/`), so that is what must stay untouched.
+test('reading a past round of a linked worktree leaves the common git dir, its worktrees/ entry included, byte-identical', async () => {
   const wt = w.addWorktree();
   wt.commit({ 'a.js': editLines({ 2: 'top-edit' }) });
   const review = await open();
   await coldRounds(wt, review);
-  const before = { common: gitDirSig(w.repo.dir), own: gitDirSig(wt.dir) };
-  assert.ok(before.common.some((e) => e.startsWith('.git/worktrees/')), 'the common dir holds the worktree\'s admin dir');
+  const before = gitDirSig(w.repo.dir);
+  assert.ok(before.some((e) => /^\.git\/worktrees\/[^/]+\/index /.test(e)), 'the signature covers the worktree\'s own index');
   await readRound2(review.id);
-  assert.deepEqual({ common: gitDirSig(w.repo.dir), own: gitDirSig(wt.dir) }, before);
+  assert.deepEqual(gitDirSig(w.repo.dir), before);
+});
+
+const POSITIONAL = ['drifted', 'endLine', 'file', 'hunkId', 'linesHash', 'round', 'side', 'startLine'];
+
+test('every served thread anchor is positional only: no stored lines or context hashes leak to the API', async () => {
+  const { review, t1 } = await threeRounds();
+  await store.mutate(review.id, (r) => { r.threads.find((t) => t.id === t1.id).pastAnchors = []; }); // one unplaced thread
+  const served = [
+    ...ok(await reviews.diff(review.id, {})).files.flatMap((f) => f.threads),
+    ...ok(await reviews.getReview(review.id)).outdatedThreads,
+    ...(await fileAt(review.id, 1)).threads,
+    ...ok(await rounds.roundView(review.id, '1')).unplacedThreads,
+    ...ok(await rounds.roundView(review.id, '3')).outdatedThreads,
+    ok(await threads.annotate(review.id, HUMAN, { anchor: { file: 'a.js', side: 'new', startLine: 21 }, kind: 'comment', body: 'y' })).thread,
+  ];
+  assert.ok(served.length >= 6);
+  for (const t of served) assert.deepEqual(Object.keys(t.anchor).sort(), POSITIONAL, t.id);
 });

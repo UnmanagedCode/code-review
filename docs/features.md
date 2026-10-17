@@ -42,7 +42,7 @@ A **review** is a persisted discussion about one checkout (a project's main chec
 - A **round** is one snapshot epoch; messages record the round they were written in.
 - `refresh` on a range review pins the new HEAD (and merge-base) as round n+1: verdicts of surviving hunks are kept, the rest reset to pending; threads follow their lines (`moved`), re-anchor by surrounding context (`drifted`), or go `outdated`. An unchanged HEAD reports `unchanged` and adds no round.
 - `headMoved` on a range review means the checkout's HEAD differs from the pinned one: the UI's "refresh available" cue.
-- **Past rounds** (range reviews only) are viewable read-only, rebuilt from the round's pinned base and head:
+- **Past rounds** (range reviews only) are viewable read-only, rebuilt from the round's pinned base and head. A range refresh records each thread's previous anchor (uncommitted reviews record none):
   - each thread sits at the anchor it had in that round (its file path then, its drift flag then);
   - messages written in later rounds are hidden and counted (`laterMessages`);
   - threads opened in a later round are absent;
@@ -80,6 +80,7 @@ The plugin page. Wire calls are in [protocol.md](protocol.md); module layout in 
 - **Round picker.** Range reviews with more than one round: "Round n (current)", then each past round (newest first, with its head's short sha). Picking a past round (`round=` in the URL) closes the open file and the commit filter and shows that round read-only (see [Past rounds](#rounds-and-refresh)):
   - a banner "Viewing round k of n — read-only…" with **Back to current round**; the file header shows a "round k · read-only" badge;
   - no verdict bar, no Accept file, no line selection, no composer, no reply box, no resolve controls; context expansion and cited excerpts read that round;
+  - no review-level writes either: no Submit round or Re-send, no Refresh, no Reopen, no recipient picker (the recipient is shown as text), and the actions menu holds only Open agent (absent without a bridge and a recipient). The commit-filter view keeps them;
   - thread cards say how many later replies are hidden, and a "position unknown" note where that applies;
   - a refused round view shows the refusal in place of the file tree, with the picker still there.
   - `round=` naming the current round (or a later one) is dropped from the URL.

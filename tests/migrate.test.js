@@ -75,11 +75,55 @@ test('an unconfigured store is skipped without throwing', async () => {
   }
 });
 
-test('an unreadable review file fails the migration loudly', async () => {
+const corrupt = (dir, text = '{ not json') => {
+  const id = store.newId();
+  fs.mkdirSync(path.join(dir, 'reviews'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'reviews', `${id}.json`), text);
+  return { id, file: path.join(dir, 'reviews', `${id}.json`), text };
+};
+
+test('an unparsable review is logged and left as it is, still failing loudly when read; the others migrate', async (t) => {
   ts = tempStore();
-  fs.mkdirSync(path.join(ts.dir, 'reviews'), { recursive: true });
-  fs.writeFileSync(path.join(ts.dir, 'reviews', `${store.newId()}.json`), '{ not json');
-  await assert.rejects(migrateStore(), SyntaxError);
+  const errors = t.mock.method(console, 'error', () => {});
+  const bad = corrupt(ts.dir);
+  const good = legacy();
+  store.write(good);
+  await migrateStore();
+  assert.equal(store.read(good.id).schema, SCHEMA);
+  assert.equal(fs.readFileSync(bad.file, 'utf8'), bad.text, 'the unreadable file is not touched');
+  assert.throws(() => store.read(bad.id), SyntaxError);
+  assert.equal(errors.mock.callCount(), 1);
+  assert.match(errors.mock.calls[0].arguments[0], new RegExp(bad.id));
+});
+
+test('a review whose shape cannot be migrated is logged and left unmigrated', async (t) => {
+  ts = tempStore();
+  const errors = t.mock.method(console, 'error', () => {});
+  const odd = { schema: 1, id: store.newId(), rev: 0, threads: null };
+  store.write(odd);
+  const before = fs.readFileSync(path.join(ts.dir, 'reviews', `${odd.id}.json`), 'utf8');
+  await migrateStore();
+  assert.equal(fs.readFileSync(path.join(ts.dir, 'reviews', `${odd.id}.json`), 'utf8'), before);
+  assert.equal(errors.mock.callCount(), 1);
+  assert.match(errors.mock.calls[0].arguments[0], new RegExp(odd.id));
+});
+
+test('start() still serves when one review cannot be migrated', async (t) => {
+  ts = tempStore();
+  t.mock.method(console, 'error', () => {});
+  corrupt(ts.dir);
+  const good = legacy();
+  store.write(good);
+  const dist = fs.mkdtempSync(path.join(os.tmpdir(), 'cr-migrate-dist-'));
+  fs.writeFileSync(path.join(dist, 'index.html'), '<!doctype html>');
+  const server = await start({ port: 0, distDir: dist });
+  try {
+    assert.equal((await fetch(`http://127.0.0.1:${server.address().port}/health`)).status, 200);
+    assert.equal(store.read(good.id).schema, SCHEMA);
+  } finally {
+    server.close();
+    fs.rmSync(dist, { recursive: true, force: true });
+  }
 });
 
 test('start() migrates the store before it serves', async () => {

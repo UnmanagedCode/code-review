@@ -6,7 +6,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from '@/components/ui/sheet';
 import * as ep from '@/lib/endpoints';
-import { navigate, useRoute } from '@/lib/route';
+import { navigate, REVIEW_SCOPED, useRoute } from '@/lib/route';
 import type { FileState } from '@/lib/types';
 import { useMediaQuery, WIDE_QUERY } from '@/lib/useMediaQuery';
 import { useSessions } from '@/state/checkout';
@@ -27,7 +27,7 @@ import { RoundPicker } from './RoundPicker';
 import { ReviewHeader } from './ReviewHeader';
 
 const XL_QUERY = '(min-width: 80rem)';
-const CLEAR = { review: undefined, file: undefined, lines: undefined, side: undefined, thread: undefined, commit: undefined, round: undefined, view: undefined };
+const CLEAR = { review: undefined, ...REVIEW_SCOPED };
 
 const asFileState = (f: { path: string; oldPath: string | null; status: FileState['status']; binary: boolean; tooLarge: boolean; additions: number; deletions: number; hunks: unknown[] }): FileState => ({
   ...f, hunks: f.hunks.length, verdicts: null, threads: { open: 0, resolved: 0, outdated: 0 }, unread: 0,
@@ -47,7 +47,7 @@ function Banners() {
         </Alert>
       )}
       {review.status === 'closed' && (
-        <Alert><AlertDescription className="flex-row items-center"><span className="flex-1">This review is closed.</span><Button size="sm" variant="outline" onClick={() => admin.patch({ status: 'open' })}>Reopen</Button></AlertDescription></Alert>
+        <Alert><AlertDescription className="flex-row items-center"><span className="flex-1">This review is closed.</span>{round === undefined && <Button size="sm" variant="outline" onClick={() => admin.patch({ status: 'open' })}>Reopen</Button>}</AlertDescription></Alert>
       )}
       {review.checkoutGone && <Alert variant="warning"><AlertDescription>The checkout was removed; the review stays readable but can’t refresh.</AlertDescription></Alert>}
     </div>

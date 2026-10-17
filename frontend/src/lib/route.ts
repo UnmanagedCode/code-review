@@ -6,6 +6,14 @@ export interface Route {
 }
 const KEYS = ['project', 'worktree', 'review', 'file', 'side', 'lines', 'thread', 'commit', 'round', 'view'] as const;
 
+/**
+ * Every key that belongs to the open review (its file position, filters, views). Spread it into any patch that opens,
+ * leaves or deletes a review, so nothing of one review leaks into the next: `navigate` merges into the current route.
+ */
+export const REVIEW_SCOPED = {
+  file: undefined, side: undefined, lines: undefined, thread: undefined, commit: undefined, round: undefined, view: undefined,
+} as const satisfies Route;
+
 export function parseRoute(search: string): Route {
   const p = new URLSearchParams(search);
   const route: Route = {};

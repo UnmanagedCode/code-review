@@ -43,3 +43,8 @@ test('an unchanged refresh says so and names the round', async () => {
   await userEvent.setup().click(screen.getByRole('button', { name: 'Refresh' }));
   expect((await screen.findByLabelText('Refresh result')).textContent).toContain('No changes; still round 1');
 });
+
+test('a past-round view has no refresh control, even with HEAD moved', () => {
+  renderInReview(<RefreshControls />, { review: review({ headMoved: true }), round: 1, readOnly: true });
+  expect(screen.queryByRole('button', { name: 'Refresh' })).toBeNull();
+});

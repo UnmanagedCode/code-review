@@ -11,7 +11,7 @@ Services return a plain object or a refusal `{ok:false, code, reason}`. Low-leve
 | `paths.js` | `storeRoot()`: `$CODE_REVIEW_STORE`, else `$PROJECTS_ROOT/.code-review`, else throws `STORE_UNCONFIGURED` (resolved per call, so the server boots without it) |
 | `mutex.js` | `withLock(key, fn)`: per-key promise chain |
 | `refusals.js` | `Refusal`, `refuse`, `attempt`, `HTTP_STATUS` (single source of codes) |
-| `store.js` | one JSON file per review: `read`, atomic `write` (bumps `rev`), `list`, `remove`, `mutate`, and the `changes` emitter |
+| `store.js` | one JSON file per review: `read`, atomic `write` (bumps `rev`), `ids` (file names only, nothing parsed), `list`, `remove`, `mutate`, and the `changes` emitter |
 | `migrate.js` | `SCHEMA` (the review-file format, single source), `migrateReview`, `migrateStore` (startup upgrade) |
 | `cc.js` | cc REST client (`projects`, `worktrees`, `instances`) |
 | `checkouts.js` | resolve a checkout, fork-point chain, sessions, picker data |
@@ -20,7 +20,7 @@ Services return a plain object or a refusal `{ok:false, code, reason}`. Low-leve
 | `diff.js` | parse unified diff into files/hunks; hunk ids; file-level hunks (pure) |
 | `snapshot.js` | `resolveTarget` (kind → `{headSha, baseSha}`) and `buildSnapshot` (`{files, fingerprint, lines(side, path)}`) |
 | `anchor.js` | `linesHash`, `makeAnchor`, `anchorView` (positional fields), `locate`, `hunkFor` (pure) |
-| `follow.js` | moves threads to where their lines now are (refresh and the uncommitted sweep), keeping each earlier round's anchor in `pastAnchors` |
+| `follow.js` | moves threads to where their lines now are (refresh and the uncommitted sweep), keeping each earlier round's anchor in `pastAnchors` (range reviews) |
 | `history.js` | `threadsAt(review, n)`: threads as of round n (pure); `anchorChain`, `roundThreadView` |
 | `rounds.js` | past-round views of range reviews: `pickRound`, `roundView`, `roundDiff` (`reviews.diff` delegates `?round=`) |
 | `context.js` | per-request view of a review: `makeEnv`, `inReview` (locked write path), `viewReview` (read path), `authorFor` |
@@ -38,7 +38,7 @@ Services return a plain object or a refusal `{ok:false, code, reason}`. Low-leve
 - Location: `<root>/reviews/<id>.json`, id `r-<10 hex>`; ids are validated before touching the filesystem. The root is outside every project tree, so it survives plugin updates.
 - The `changes` emitter has no listener cap (one listener per open SSE client). Message bodies are capped at `MAX_BODY_CHARS`.
 - Writes are atomic (tmp file in the same dir, then `rename`); every write bumps `rev` and emits `change`. `mutate(id, fn)` runs under `withLock(id)` and writes only if `fn` changed the review; creation runs under `withLock('create')`.
-- `schema` is `SCHEMA` (`src/migrate.js`). `start()` runs `migrateStore()` before listening: every stored review below `SCHEMA` is upgraded in place through `mutate` (a review already current is not written, so a second run writes nothing); an unconfigured store is skipped; any other error (e.g. an unparsable file) fails startup. Application code reads the current format only.
+- `schema` is `SCHEMA` (`src/migrate.js`). `start()` runs `migrateStore()` before listening: every stored review below `SCHEMA` is upgraded in place through `mutate` (a review already current is not written, so a second run writes nothing); an unconfigured store is skipped. A review that cannot be read or migrated (unparsable JSON, an unexpected shape) is logged (`code-review: review <id> left unmigrated: …`) and left untouched, so it still fails loudly when read; the others migrate and the server starts. Only failing to list the store dir fails startup. Application code reads the current format only.
   - 1 → 2: every thread gets `pastAnchors: []` (an existing value is kept).
 - Review fields: `id, project, worktree, branch, kind, target, baseLabel, title, status, createdAt, createdBy, recipient, seenByHuman, rev, seq, humanSeq, nextThread, nextSubmission, rounds, verdicts, threads, droppedThreads, submissions`.
 - `seq` is a review-wide counter bumped by every message, verdict and status change; `humanSeq` is the `seq` of the last human one. Unread counts and "since last delivery" compare `seq`s; logic never reads the wall clock (`at`/`createdAt` are display-only).
@@ -65,7 +65,7 @@ Services return a plain object or a refusal `{ok:false, code, reason}`. Low-leve
 - File-level hunk id: hash of path, status, oldPath, blob ids and modes.
 - `linesHash`: sha256 (first 16 hex) of the lines with trailing `[ \t\r]` stripped, indentation kept.
 - Anchor: `round` (the snapshot its `lines`/`linesHash` were read from; `followThreads` sets it to the new round on every re-anchor), selected `lines`, `ctxBefore`/`ctxAfter` (hash and count of up to `CONTEXT_LINES` neighbours), `hunkId` from `hunkFor` (the hunk containing `endLine`, else the last one overlapped, else null), `drifted`.
-- `pastAnchors`: the thread's anchor in each round before `anchor.round`, oldest first, positional fields only (`anchorView`). `followThreads` appends the old anchor whenever it re-anchors a thread into a different round: once per range refresh, and on the first uncommitted sweep after an uncommitted refresh (sweeps within a round add nothing). Outdated threads are never followed, so their last chain entry is the last round they were located in.
+- `pastAnchors`: on range reviews, the thread's anchor in each round before `anchor.round` that it was re-anchored out of since schema 2, oldest first, positional fields only (`anchorView`). A thread from before schema 2 starts with `[]`, so it has no entry for the rounds it passed through before the migration. `followThreads` appends the old anchor on every range refresh that relocates the thread. Uncommitted reviews never append (they have no past-round views); their threads keep `[]`. Outdated threads are never followed, so their last chain entry is the last round they were located in.
 - Derived, not stored: a thread's creation round (`messages[0].round`); the round it went outdated (its last chain entry's round + 1); its status just before (`resolution` set → `resolved`, else `open`: going outdated changes only `status`).
 - Not derivable: open/resolved as of an earlier round. Only the latest status change is stored (`statusSeq`, `resolution`), and rounds carry no `seq`, so past-round views show the current status (see the [protocol](protocol.md#shapes)).
 - `locate(anchor, lines, mode)`: windows whose `linesHash` matches, ranked by context matches, then distance to the old start, then earliest. An exact match always reports `drifted: false`. Mode `reanchor` additionally accepts a unique `ctxBefore` followed by a unique `ctxAfter` with a gap of 1 to `2·len + 10` lines (`drifted`); mode `volatile` never does.

@@ -115,20 +115,29 @@ test('with an unparsable and a misfiled review file present, the list still answ
   assert.ok(errors.mock.callCount() >= 2, 'each skipped file is logged');
 });
 
-test('a 500 is logged on one line: a misfiled review whose inner id holds a newline forges no log line', async (t) => {
+test('a 500 logs one cleaned header line, then only the stack\'s frames: a misfiled review\'s multi-line inner id forges no line', async (t) => {
   const errors = t.mock.method(console, 'error', () => {});
   const id = store.newId();
   fs.mkdirSync(path.join(w.store.dir, 'reviews'), { recursive: true });
-  fs.writeFileSync(path.join(w.store.dir, 'reviews', `${id}.json`), JSON.stringify({ id: 'r-x\ncode-review: forged\u001b[31m' }));
+  // Lines shaped like a log header, like a stack frame, and like plain text, plus an escape sequence.
+  const inner = 'r-x\ncode-review: forged\u001b[31m\n    at forged (evil.js:1:1)\nplain forged';
+  fs.writeFileSync(path.join(w.store.dir, 'reviews', `${id}.json`), JSON.stringify({ id: inner }));
   for (const [method, url] of [['GET', `/reviews/${id}`], ['GET', `/reviews/${id}/diff`], ['DELETE', `/reviews/${id}`]]) {
     errors.mock.resetCalls();
     const res = await req(method, url);
     assert.equal(res.status, 500, url);
     assert.match(res.body.reason, /\n/, 'precondition: the raw error message carries the newline');
     assert.equal(errors.mock.callCount(), 1, url);
-    const line = errors.mock.calls[0].arguments.join(' ');
-    assert.doesNotMatch(line, /[\u0000-\u001f\u007f-\u009f]/, url);
-    assert.match(line, new RegExp(`${method} /api${url} failed: MisfiledReview`));
+    assert.equal(errors.mock.calls[0].arguments.length, 1, url);
+    const [header, ...rest] = errors.mock.calls[0].arguments[0].split('\n');
+    assert.doesNotMatch(header, /[\u0000-\u001f\u007f-\u009f]/, url);
+    assert.match(header, new RegExp(`^code-review: ${method} /api${url} failed: MisfiledReview: `));
+    assert.ok(rest.length > 0, `${url}: the stack's frames follow the header`);
+    for (const l of rest) {
+      assert.match(l, /^ {4}at \S/, `${url}: every line after the header is a frame`);
+      assert.doesNotMatch(l, /forged|evil\.js|[\u0000-\u001f\u007f-\u009f]/, `${url}: no message text in the frames`);
+    }
+    assert.ok(rest.some((l) => l.includes('src/store.js')), `${url}: the frames locate the throw`);
   }
 });
 

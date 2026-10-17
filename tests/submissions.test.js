@@ -126,6 +126,31 @@ test('a conductor recipient of an uncommitted review is asked to brief a reviewe
   assert.ok(submission.text.includes(`review=${review.id}`));
 });
 
+const AUTHOR_LINE = /fix rejected hunks, commit, refresh_review/;
+const REVIEWER_LINE = /annotate findings, list_threads and reply/;
+const CONDUCTOR_LINES = /Relay this round|Brief a reviewer/;
+
+test('an author recipient is told to reply, fix rejected hunks, commit and refresh, and gets neither the reviewer nor the conductor instruction', async () => {
+  const { review } = await twoHunks();
+  const { submission } = ok(await submissions.composeSubmission(review.id));
+  assert.match(submission.text, /you are the author/);
+  assert.match(submission.text, AUTHOR_LINE);
+  assert.doesNotMatch(submission.text, REVIEWER_LINE);
+  assert.doesNotMatch(submission.text, CONDUCTOR_LINES);
+});
+
+test('a reviewer recipient of an uncommitted review is told to annotate findings, not to brief a reviewer or to fix and commit', async () => {
+  const wt = w.addWorktree();
+  wt.write('a.js', editLines({ 2: 'X' }));
+  const { review } = ok(await reviews.openReview({ project: 'app', worktree: 'feature', kind: 'uncommitted', recipient: 's-author' }, HUMAN));
+  const { submission } = ok(await submissions.composeSubmission(review.id));
+  assert.match(submission.text, /you are the reviewer/);
+  assert.match(submission.text, REVIEWER_LINE);
+  assert.ok(submission.text.includes(`review=${review.id}`));
+  assert.doesNotMatch(submission.text, CONDUCTOR_LINES);
+  assert.doesNotMatch(submission.text, AUTHOR_LINE);
+});
+
 test('the prompt body follows the review kind, not the recipient role', async () => {
   const { review } = await conductorReview({ author: 's-author' });
   w.session('s-rev', { worktree: 'feature' });

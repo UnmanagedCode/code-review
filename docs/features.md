@@ -34,7 +34,7 @@ A **review** is a persisted discussion about one checkout (a project's main chec
 - **Limits.** A message body is capped (`BODY_TOO_LARGE`). Prompts carry file paths with control characters removed.
 - **Citations.** `path#L10-L20` in a message body (relative to the checkout root) is parsed; agents see the cited lines inlined at the message's round.
 - **Unread.** A thread's unread count is the agent messages the human has not read; a review opened by an agent starts unseen. The human replying or marking read clears it.
-- **Roles** are derived per review and frozen on each message: a caller from project `.conduct` is `conductor`; the review's stored `author`, else its recipient, is `author` on a range/commit review; every other agent is `reviewer`. The summary's `recipientRole` is `conductor` when the recipient is the conductor session that opened the review. On an uncommitted review the human is the author, so every agent is a reviewer.
+- **Roles** are derived per review and frozen on each message: a caller from project `.conduct` is `conductor`; the review's stored `author`, else its recipient, is `author` on a range/commit review; every other agent is `reviewer`. The summary's `recipientRole` is `conductor` when the recipient is the conductor session that opened the review. On an uncommitted review the human is the author, so no agent is: a non-conductor agent is a `reviewer`.
 - **`mergeBlockers`** = rejected hunks + open `question` threads (open questions only on uncommitted reviews).
 
 ## Rounds and refresh

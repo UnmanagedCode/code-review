@@ -10,8 +10,9 @@ export function useLineSelection(rows: Row[], enabled: boolean, resetKey: string
   const [selection, setSelection] = useState<Selection | null>(null);
   const [composing, setComposing] = useState(false);
   const [focus, setFocus] = useState<Cell | null>(null);
+  // Armed by a mouse/pen press on a gutter (touch never sets it); its release opens the composer.
   const dragging = useRef(false);
-  // The toolbar is held back while dragging: inserting it would shift the rows under the pointer.
+  // Nothing (toolbar or composer) renders under the selection mid-drag: inserting it would shift the rows under the pointer.
   const [dragActive, setDragActive] = useState(false);
   const grid = useRef<HTMLDivElement>(null);
   const moveFocus = useRef(false);
@@ -19,9 +20,17 @@ export function useLineSelection(rows: Row[], enabled: boolean, resetKey: string
   const clear = useCallback(() => { setSelection(null); setComposing(false); }, []);
   useEffect(() => { if (!enabled) clear(); }, [enabled, clear]);
   useEffect(() => {
-    const up = () => { dragging.current = false; setDragActive(false); };
+    const end = (open: boolean) => () => {
+      if (!dragging.current) return;
+      dragging.current = false;
+      setDragActive(false);
+      if (open) setComposing(true);
+    };
+    // A cancel disarms without opening, or the next unrelated pointerup would open a composer.
+    const up = end(true), cancel = end(false);
     window.addEventListener('pointerup', up);
-    return () => window.removeEventListener('pointerup', up);
+    window.addEventListener('pointercancel', cancel);
+    return () => { window.removeEventListener('pointerup', up); window.removeEventListener('pointercancel', cancel); };
   }, []);
   // Another file (or review) invalidates the selection; expanding context does not.
   useEffect(() => { clear(); setFocus(null); }, [resetKey, clear]);

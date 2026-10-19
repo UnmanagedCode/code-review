@@ -71,12 +71,7 @@ export function ThreadCard({ thread, dropped = false, showLocation = false }: { 
           {thread.laterMessages} later {thread.laterMessages === 1 ? 'reply' : 'replies'} — see the current round
         </p>
       )}
-      {!readOnly && (
-        <>
-          <ReplyBox threadId={thread.id} />
-          {!dropped && <div className="flex justify-end"><ResolveControls thread={thread} /></div>}
-        </>
-      )}
+      {!readOnly && <ReplyBox threadId={thread.id} actions={!dropped && <ResolveControls thread={thread} />} />}
     </article>
   );
 }

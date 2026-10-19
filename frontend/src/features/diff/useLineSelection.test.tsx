@@ -13,35 +13,68 @@ const show = (over = {}) => { history.replaceState(null, '', '?file=src%2Fa.ts')
 const cell = (side: string, n: number) => document.querySelector<HTMLElement>(`[data-cell="${side}:${n}"]`)!;
 const label = () => screen.queryByRole('toolbar', { name: 'Selection' })?.textContent ?? null;
 
-test('mouse: pointerdown then pointerenter with the button held selects the dragged lines', () => {
+const composer = () => screen.queryByRole('form', { name: /^Comment on / });
+const composerName = () => composer()?.getAttribute('aria-label') ?? null;
+const down = (side: string, n: number, over = {}) => fireEvent.pointerDown(cell(side, n), { button: 0, buttons: 1, pointerType: 'mouse', ...over });
+
+// Invariant: a mouse gutter drag opens the composer for the dragged range on release, with no toolbar step and the message focused.
+test('mouse: releasing a gutter drag opens the composer for that range with no intermediate menu', async () => {
+  const net = stubFetch({ 'POST api/reviews/r-1/threads': { thread: thread() } });
+  const user = userEvent.setup();
   show();
-  fireEvent.pointerDown(cell('new', 2), { button: 0, buttons: 1, pointerType: 'mouse' });
+  down('new', 2);
   fireEvent.pointerEnter(cell('new', 4), { buttons: 1, pointerType: 'mouse' });
-  expect(label()).toBeNull(); // held back while dragging, so the rows under the pointer do not move
+  expect(label()).toBeNull(); // nothing renders under the selection mid-drag, so the rows under the pointer do not move
+  expect(composer()).toBeNull();
   fireEvent.pointerUp(window);
-  expect(label()).toContain('L2–L4 (new)');
+  expect(composerName()).toBe('Comment on L2–L4 (new)');
+  expect(label()).toBeNull();
+  expect(document.activeElement).toBe(screen.getByLabelText('Message'));
   fireEvent.pointerEnter(cell('new', 1), { buttons: 1 });
-  expect(label()).toContain('L2–L4 (new)');
+  expect(composerName()).toBe('Comment on L2–L4 (new)');
+  await user.type(screen.getByLabelText('Message'), 'note');
+  await user.click(screen.getByRole('button', { name: 'Post' }));
+  await waitFor(() => expect(net.calls[0].body).toMatchObject({ anchor: { file: 'src/a.ts', side: 'new', startLine: 2, endLine: 4 } }));
+});
+
+// Invariant: only a released primary press on a line number opens the composer; code text, stray releases, other buttons and cancelled presses never do.
+test('mouse: only a released press on a line number opens the composer', () => {
+  show();
+  const code = screen.getByText('c2');
+  fireEvent.pointerDown(code, { button: 0, buttons: 1, pointerType: 'mouse' });
+  fireEvent.pointerUp(code);
+  expect(composer()).toBeNull();
+  fireEvent.pointerUp(window);
+  expect(composer()).toBeNull();
+  down('new', 2, { button: 2, buttons: 2 });
+  fireEvent.pointerUp(window);
+  expect(composer()).toBeNull();
+  down('new', 3);
+  fireEvent.pointerCancel(window);
+  expect(label()).toContain('L3 (new)');
+  fireEvent.pointerUp(window);
+  expect(composer()).toBeNull();
+  expect(label()).toContain('L3 (new)');
 });
 
 test('mouse: a drag onto the other side’s gutter does not extend; a plain click elsewhere restarts', () => {
   show();
-  fireEvent.pointerDown(cell('new', 2), { button: 0, buttons: 1, pointerType: 'mouse' });
+  down('new', 2);
   fireEvent.pointerEnter(cell('old', 3), { buttons: 1 });
   fireEvent.pointerUp(window);
-  expect(label()).toContain('L2 (new)');
-  fireEvent.pointerDown(cell('old', 4), { button: 0, buttons: 1, pointerType: 'mouse' });
+  expect(composerName()).toBe('Comment on L2 (new)');
+  down('old', 4);
   fireEvent.pointerUp(window);
-  expect(label()).toContain('L4 (old)');
+  expect(composerName()).toBe('Comment on L4 (old)');
 });
 
 test('mouse: shift+click extends from the anchor', () => {
   show();
-  fireEvent.pointerDown(cell('new', 1), { button: 0, pointerType: 'mouse' });
+  down('new', 1);
   fireEvent.pointerUp(window);
-  fireEvent.pointerDown(cell('new', 3), { button: 0, shiftKey: true, pointerType: 'mouse' });
+  down('new', 3, { shiftKey: true });
   fireEvent.pointerUp(window);
-  expect(label()).toContain('L1–L3 (new)');
+  expect(composerName()).toBe('Comment on L1–L3 (new)');
 });
 
 test('touch: tap selects one line, a second tap extends, tapping an endpoint clears', () => {
@@ -50,6 +83,8 @@ test('touch: tap selects one line, a second tap extends, tapping an endpoint cle
   expect(label()).toContain('L1 (new)');
   fireEvent.pointerDown(cell('new', 4), { button: 0, pointerType: 'touch' });
   expect(label()).toContain('L1–L4 (new)');
+  fireEvent.pointerUp(window);
+  expect(composer()).toBeNull(); // touch keeps the toolbar: a composer would pop the soft keyboard mid-extension
   fireEvent.pointerDown(cell('new', 4), { button: 0, pointerType: 'touch' });
   expect(label()).toBeNull();
 });
@@ -77,6 +112,7 @@ test('keyboard: Space selects the focused line, ArrowLeft switches side, Esc cle
   expect(document.activeElement).toBe(cell('old', 2));
   await user.keyboard(' ');
   expect(label()).toContain('L2 (old)');
+  expect(composer()).toBeNull();
   await user.keyboard('{Escape}');
   expect(label()).toBeNull();
 });

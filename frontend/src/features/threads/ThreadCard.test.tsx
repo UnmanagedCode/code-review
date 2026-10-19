@@ -106,3 +106,27 @@ test('a message body renders as markdown', () => {
   expect(within(card).getByText('bold').tagName).toBe('STRONG');
   expect(within(card).getByText('x').tagName).toBe('CODE');
 });
+
+// Invariant: Reply and the thread's status controls render together in one action group, for every status variant.
+test.each([
+  ['an open comment', thread(), ['Resolve']],
+  ['an open finding', thread({ kind: 'finding', severity: 'major' }), ['Resolve as fixed', 'Resolve as dismissed']],
+  ['a resolved thread', thread({ status: 'resolved' }), ['Reopen']],
+  ['an outdated thread', thread({ status: 'outdated' }), []],
+])('Reply and the status controls share one Thread actions group: %s', (_name, t, controls) => {
+  renderInReview(<ThreadCard thread={t} />);
+  const group = screen.getByRole('group', { name: 'Thread actions' });
+  expect(within(group).getAllByRole('button').map((b) => b.textContent)).toEqual([...controls, 'Reply']);
+});
+
+// Invariant: a status control inside the reply form never submits it, so a typed draft is neither posted nor cleared.
+test('Resolve inside the reply form does not submit the draft', async () => {
+  const net = stubFetch({ 'PATCH api/reviews/r-1/threads/t-1': { thread: thread() }, 'POST api/reviews/r-1/threads/t-1/messages': { thread: thread() } });
+  const user = userEvent.setup();
+  renderInReview(<ThreadCard thread={thread()} />);
+  await user.type(screen.getByLabelText('Reply'), 'wip');
+  await user.click(screen.getByRole('button', { name: 'Resolve' }));
+  await waitFor(() => expect(patchBody(net)).toEqual({ status: 'resolved' }));
+  expect(net.calls.map((c) => `${c.method} ${c.url.pathname}`)).toEqual(['PATCH /api/reviews/r-1/threads/t-1']);
+  expect(screen.getByLabelText<HTMLTextAreaElement>('Reply').value).toBe('wip');
+});

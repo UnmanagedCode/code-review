@@ -1,7 +1,9 @@
 # UI gotchas
 
 - **The selection clamps at a collapsed gap.** `extendSelection` stops before a gap row; once the gap is expanded the range may span both hunks (the backend accepts it). `frontend/src/lib/selection.ts`.
-- **Hold the selection toolbar back while dragging.** Inserting it under the first row shifts the rows below it, so the pointer ends up over the toolbar and the drag never extends. It appears on pointer release.
+- **Render nothing under the selection while dragging.** Inserting the toolbar or composer under the first row shifts the rows below it, so the pointer ends up over it and the drag never extends. A mouse/pen release opens the composer directly; touch and keyboard get the toolbar, since a focused composer would pop the soft keyboard and end a tap-to-extend.
+- **`pointercancel` must disarm the gutter press.** The armed flag (`dragging` in `useLineSelection`) otherwise survives a cancel, and the next unrelated pointerup anywhere opens a composer. A cancelled press keeps its selection and shows the toolbar.
+- **The resolve controls sit inside the reply `<form>`, so they stay `type="button"`.** A default button submits the form and posts the draft. `ResolveControls`, rendered through `ReplyBox`'s `actions`.
 - **The SSE echo of our own write is ignored.** Write responses carry the review summary; `applyReview` raises `knownRev`, so the following event has `rev <= knownRev` and triggers no refetch. Anything that bypasses `applyReview` causes one redundant refetch (harmless).
 - **Verdicts are the only optimistic write** (per hunk and Accept file). Everything else waits for the server; a refused verdict reverts and toasts.
 - **Accept file sends the hunk ids the UI shows as pending, never just the path.** A path alone would let the server accept hunks added by a refresh the UI hasn't loaded, or flip a reject another tab set. The server also skips any hunk that already has a verdict. A refused Accept file reverts its hunks to pending and always reloads, since the revert can clobber a per-hunk verdict set while it was in flight. `acceptFile` in `src/reviews.js`, `FileVerdict` in `frontend/src/features/diff/FileVerdict.tsx`.

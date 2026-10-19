@@ -46,7 +46,7 @@ REST under `/api` (JSON), an SSE stream, and the cc MCP endpoint. Behaviour behi
 | `GET /checkout` | `?project&worktree` (omit `worktree` for main) | `{checkout:{project, worktree, path, branch, headSha, dirty, exists}, forkPoints:[{ref,label,forkSha}], worktrees:[{worktreeName,branch}]}` | `INVALID_ARGUMENT`, `PROJECT_*`, `CHECKOUT_UNKNOWN` |
 | `GET /checkout/commits` | `?project&worktree&limit` (default 50, max 500) | `{commits:[{sha, short, author, date, subject, merge}]}` | as above, `CHECKOUT_GONE` |
 | `GET /sessions` | `?project&worktree` | `{sessions:[Session]}` (all cc sessions; `attached` is relative to the checkout) | `INVALID_ARGUMENT`, `CONDUCTOR_UNAVAILABLE` |
-| `GET /reviews` | `?project&worktree&status`; no `worktree` = every checkout, empty `worktree=` = main | `{reviews:[ReviewSummary]}` newest first | |
+| `GET /reviews` | `?project&worktree&status` (`open`, `closed` or `all`; `all` or no `status` = every status); no `worktree` = every checkout, empty `worktree=` = main | `{reviews:[ReviewSummary]}` newest first | |
 | `POST /reviews` | `{project, worktree|null, kind?, base?, sha?, recipient?, title?}` (`author` is refused `INVALID_ARGUMENT`: the human path takes none) | `{review, reused}` | `INVALID_ARGUMENT` `BAD_REF` `REF_UNKNOWN` `BASE_REQUIRED` `NO_COMMON_ANCESTOR` `UNBORN_HEAD` `PROJECT_*` `CHECKOUT_*` `RECIPIENT_UNKNOWN` |
 | `GET /reviews/:id` | | `{review, files:[FileState], rounds, submissions, outdatedThreads:[Thread]}` | `REVIEW_UNKNOWN` |
 | `PATCH /reviews/:id` | `{recipient? (null clears), title?, status?: open|closed}` | `{review}` | `RECIPIENT_UNKNOWN` |

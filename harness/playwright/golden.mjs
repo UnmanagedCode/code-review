@@ -38,7 +38,7 @@ try {
     const errors = watchErrors(page);
     const shot = shotter(page);
 
-    // 1. Drag-select lines in the gutter, post a question, and see it under the last selected line.
+    // 1. Drag-select lines in the gutter: the release opens the composer directly. Post a question and see it under the last selected line.
     await page.goto(q({ review: range, file: 'a.js' }));
     const cell = (n) => page.locator(`[data-cell="new:${n}"]`);
     await cell(10).scrollIntoViewIfNeeded();
@@ -47,9 +47,9 @@ try {
     await page.mouse.down();
     await page.mouse.move(to.x + to.width / 2, to.y + to.height / 2, { steps: 6 });
     await page.mouse.up();
-    await page.getByRole('toolbar', { name: 'Selection' }).getByText('L10–L11 (new)').waitFor();
-    await shot('1-selected');
-    await page.getByRole('button', { name: 'Comment', exact: true }).click();
+    await page.getByRole('form', { name: 'Comment on L10–L11 (new)' }).waitFor();
+    assert.ok(await page.getByLabel('Message').evaluate((el) => el === document.activeElement), 'the release focuses the message');
+    assert.equal(await page.getByRole('toolbar', { name: 'Selection' }).count(), 0, 'a mouse release shows no selection toolbar');
     await page.getByLabel('Kind').selectOption('question');
     await page.getByLabel('Message').fill('Is this loop bound right?');
     await shot('1-composer');

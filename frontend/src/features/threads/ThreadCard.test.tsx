@@ -1,4 +1,4 @@
-import { screen, waitFor } from '@testing-library/react';
+import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { toast } from 'sonner';
 import { expect, test, vi } from 'vitest';
@@ -97,4 +97,12 @@ test('focusing a thread in a round view posts no read mark and offers no reply',
   await waitFor(() => expect(screen.getByRole('article')).toBeTruthy());
   expect(net.calls).toEqual([]);
   expect(screen.queryByLabelText('Reply')).toBeNull();
+});
+
+// Invariant: thread cards render message bodies through the markdown renderer.
+test('a message body renders as markdown', () => {
+  renderInReview(<ThreadCard thread={thread({ messages: [message({ body: '**bold** and `x`' })] })} />);
+  const card = screen.getByRole('article');
+  expect(within(card).getByText('bold').tagName).toBe('STRONG');
+  expect(within(card).getByText('x').tagName).toBe('CODE');
 });

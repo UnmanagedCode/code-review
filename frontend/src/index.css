@@ -54,3 +54,64 @@
     @apply bg-background text-foreground antialiased;
   }
 }
+
+/* Rendered message bodies (features/threads/Markdown.tsx). Compact: headings stay body-sized and
+   wide code or tables scroll inside the card, so an inline thread never widens the diff. */
+@layer components {
+  .md {
+    @apply text-sm break-words;
+  }
+  .md > * + *,
+  .md li > * + *,
+  .md blockquote > * + * {
+    @apply mt-2;
+  }
+  .md :is(h1, h2, h3, h4, h5, h6) {
+    @apply text-sm font-semibold;
+  }
+  .md :is(h1, h2) {
+    @apply border-b pb-0.5;
+  }
+  .md code {
+    @apply rounded bg-muted px-1 font-mono text-[0.92em];
+  }
+  .md pre {
+    @apply max-w-full overflow-x-auto rounded-md border bg-muted p-2 text-xs;
+  }
+  .md pre code {
+    @apply bg-transparent p-0 whitespace-pre break-normal;
+  }
+  .md blockquote {
+    @apply border-l-2 pl-2 text-muted-foreground;
+  }
+  .md ul {
+    @apply list-disc pl-5;
+  }
+  .md ol {
+    @apply list-decimal pl-5;
+  }
+  .md-table {
+    @apply overflow-x-auto;
+  }
+  .md :is(th, td) {
+    @apply border px-2 py-0.5 align-top;
+  }
+  .md th {
+    @apply font-semibold;
+  }
+  .md .md-align-left {
+    @apply text-left;
+  }
+  .md .md-align-center {
+    @apply text-center;
+  }
+  .md .md-align-right {
+    @apply text-right;
+  }
+  .md hr {
+    @apply border-border;
+  }
+  .md a {
+    @apply text-primary underline underline-offset-2;
+  }
+}

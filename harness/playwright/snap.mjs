@@ -61,7 +61,7 @@ try {
 
         if (vp === 'desktop') {
           await page.getByRole('tab', { name: /^All/ }).click();
-          await page.getByRole('article').first().waitFor();
+          await page.getByRole('tabpanel').getByRole('article').first().waitFor();
           await shot('threads-all');
           await page.getByRole('tab', { name: /Outdated/ }).click();
           await page.getByText(/outdated · was/).first().waitFor();
@@ -69,7 +69,7 @@ try {
         } else {
           await open(q({ review: range, file: 'a.js', view: 'threads' }), page.getByRole('tab', { name: /Outdated/ }));
           await page.getByRole('tab', { name: /^All/ }).click();
-          await page.getByRole('article').first().waitFor();
+          await page.getByRole('tabpanel').getByRole('article').first().waitFor();
           await shot('threads-all');
           await page.getByRole('tab', { name: /Outdated/ }).click();
           await page.getByText(/outdated · was/).first().waitFor();

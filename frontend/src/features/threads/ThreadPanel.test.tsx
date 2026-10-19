@@ -1,7 +1,7 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { expect, test } from 'vitest';
-import { diffFile, fileState, review, thread } from '@/test/fixtures';
+import { diffFile, fileState, message, review, thread } from '@/test/fixtures';
 import { ctxValue } from '@/test/renderCtx';
 import { stubFetch } from '@/test/stubFetch';
 import { ReviewProvider } from '@/state/reviewContext';
@@ -52,4 +52,15 @@ test('in a round view the All list reads each file\'s threads from that round', 
   await userEvent.setup().click(screen.getByRole('tab', { name: /^All/ }));
   expect(await screen.findAllByRole('article')).toHaveLength(1);
   expect(net.calls[0].url.searchParams.get('round')).toBe('1');
+});
+
+// Invariant: the thread panel's cards go through the markdown renderer.
+test('thread panel cards render bodies as markdown', async () => {
+  const t = thread({ id: 't-1', messages: [message({ body: 'a **bold** claim' })] });
+  stubFetch({ 'GET api/reviews/r-1/diff': { review: review(), files: [diffFile({ threads: [t] })] } });
+  const files = [fileState({ threads: { open: 1, resolved: 0, outdated: 0 } })];
+  render(<ReviewProvider value={ctxValue({ files, fileDiff: { file: undefined } as never })}><ThreadPanel /></ReviewProvider>);
+  await userEvent.setup().click(screen.getByRole('tab', { name: /^All/ }));
+  const [article] = await screen.findAllByRole('article');
+  expect(within(article).getByText('bold').tagName).toBe('STRONG');
 });

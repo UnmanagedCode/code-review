@@ -95,7 +95,7 @@ Services return a plain object or a refusal `{ok:false, code, reason}`. Low-leve
 | Dir | Responsibility |
 |---|---|
 | `lib/` | `api.ts` (`ApiError {status, code, reason}`), `endpoints.ts` (the only place `api/…` paths are built), `types.ts` (wire shapes), `refusals.ts` (`messageFor` for backend codes, `bridgeMessage` for bridge codes), `route.ts`, `bridge.ts` (`window.ccBridge`, read per call), `sse.ts` (one shared EventSource), `storage.ts` (the only `localStorage` user, `code-review:` keys) |
-| `lib/` (pure) | `messageText.ts` (segments), `diffRows.ts` (rows and collapsible gaps), `selection.ts` (selection model), `fileTree.ts` |
+| `lib/` (pure) | `markdown.ts` (body → AST; citations and URLs as atoms), `diffRows.ts` (rows and collapsible gaps), `selection.ts` (selection model), `fileTree.ts` |
 | `state/` | Hooks that fetch and write: `useFetch`, `live` (SSE reload, polling), `checkout`, `reviewList`, `review`, `round` (past-round view), `fileDiff`, `threads` (write actions), `threadIndex`, `submit` (delivery state machine), `admin`, `dropped`, `reviewContext` |
 | `features/` | Components by area: `checkout`, `picker`, `reviews`, `review`, `files`, `diff`, `threads`, `submit`, `layout`, `common` |
 
@@ -106,6 +106,7 @@ Services return a plain object or a refusal `{ok:false, code, reason}`. Low-leve
 - **Past-round view.** `ReviewView` derives `round` from the route (range reviews, no `commit`, below the current round) and puts it in the review context with `readOnly: true`. `files`, `outdatedThreads` and `threadCounts` then come from `useRoundView`; `useFileDiff`, `useThreadIndex` and `CitedExcerpt` pass `round` to `diff`/`file`. Until the review loads, a `round=` URL holds the open file's fetch, since the live and past views cannot be told apart yet.
 - **Selection.** `useLineSelection` drives a `role="grid"` with roving `tabIndex`; the selection model lives in `lib/selection.ts`.
 - **Submission machine.** `state/submit.ts`: compose → bridge send within `SEND_DEADLINE_MS` → record result; states `idle`, `composing`, `sending`, `delivered`, `failed`, `timedOut`, `manual`.
+- **Message bodies** render only through `features/threads/Markdown.tsx`: `parseMarkdown` (`lib/markdown.ts`) AST → React elements from a fixed tag map, no HTML strings, links only via `safeHref` or a citation in the message's server-parsed `citations`. Styles: the `.md` block in `index.css`.
 - **Theme.** Colours only through tokens (`bg-success/10`, `text-muted-foreground`); a guard test bans literal colours and palette classes.
 
 ### UI tests

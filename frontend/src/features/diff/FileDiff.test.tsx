@@ -1,6 +1,6 @@
 import { screen, within } from '@testing-library/react';
 import { expect, test } from 'vitest';
-import { diffFile, hunk, thread } from '@/test/fixtures';
+import { diffFile, hunk, message, thread } from '@/test/fixtures';
 import { renderDiff } from '@/test/renderCtx';
 import { FileDiff } from './FileDiff';
 
@@ -42,4 +42,17 @@ test('a past round\'s file says which round it shows, so a phone without the sid
   withRoute('src/a.ts');
   renderDiff(<FileDiff />, diffFile(), { round: 1, readOnly: true });
   expect(screen.getByText(/round 1/)).toBeTruthy();
+});
+
+// Invariant: inline-in-diff annotations go through the same markdown renderer, raw HTML included as text.
+test('inline thread bodies in the diff render as markdown', () => {
+  withRoute('src/a.ts');
+  const body = '# Title\n\n- item\n\n```\ncode\n```\n\n<script>alert(1)</script>';
+  const { container } = renderDiff(<FileDiff />, diffFile({ threads: [thread({ messages: [message({ body })] })] }));
+  const card = screen.getByRole('article', { name: 'comment thread' });
+  expect(within(card).getByRole('heading', { level: 1, name: 'Title' })).toBeTruthy();
+  expect(within(card).getByText('item').tagName).toBe('LI');
+  expect(card.querySelector('pre')?.textContent).toBe('code');
+  expect(container.querySelector('script')).toBeNull();
+  expect(within(card).getByText('<script>alert(1)</script>')).toBeTruthy();
 });

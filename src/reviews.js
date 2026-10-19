@@ -104,7 +104,7 @@ export const openReview = (args, actor) => attempt(() => withLock('create', asyn
 /** Summaries, newest first. `worktree` undefined = every checkout of the project; null = the main one. */
 export const listReviews = ({ project, worktree, status } = {}) => attempt(async () => {
   const stored = store.list()
-    .filter((r) => (!project || r.project === project) && (worktree === undefined || r.worktree === worktree) && (!status || r.status === status))
+    .filter((r) => (!project || r.project === project) && (worktree === undefined || r.worktree === worktree) && (!status || status === 'all' || r.status === status))
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id));
   const out = [];
   for (const r of stored) out.push((await summaryById(r.id)).review);

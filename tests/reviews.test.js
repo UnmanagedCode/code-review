@@ -376,6 +376,28 @@ test('list filters by project, worktree and status and returns newest first; del
   assert.equal(codeOf(await reviews.getReview(r1.id)), 'REVIEW_UNKNOWN');
 });
 
+const openAndClosed = async () => {
+  w.addWorktree('one').commit({ 'f.js': 'x\n' });
+  w.addWorktree('two').commit({ 'g.js': 'y\n' });
+  const r1 = ok(await open({ worktree: 'one' })).review;
+  const r2 = ok(await open({ worktree: 'two' })).review;
+  ok(await reviews.patchReview(r1.id, { status: 'closed' }));
+  return { r1, r2 };
+};
+const listIds = async (filter) => ok(await reviews.listReviews({ project: 'app', ...filter })).reviews.map((r) => r.id);
+
+test('list status "all" returns reviews of every status, the same as no status filter', async () => {
+  const { r1, r2 } = await openAndClosed();
+  assert.deepEqual(await listIds({ status: 'all' }), [r2.id, r1.id]);
+  assert.deepEqual(await listIds({ status: 'all' }), await listIds({}));
+});
+
+test('list status open or closed returns only reviews in that status', async () => {
+  const { r1, r2 } = await openAndClosed();
+  assert.deepEqual(await listIds({ status: 'open' }), [r2.id]);
+  assert.deepEqual(await listIds({ status: 'closed' }), [r1.id]);
+});
+
 test('the commit filter shows one commit read-only; a commit outside the range is refused', async () => {
   const wt = w.addWorktree();
   const c1 = wt.commit({ 'f.js': 'x\n' }, 'first');

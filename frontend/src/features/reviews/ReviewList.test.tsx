@@ -56,3 +56,23 @@ test('opening a review from the list drops every review-scoped key of the one le
   await userEvent.setup().click(await screen.findByRole('link', { name: /Other/ }));
   expect(parseRoute(location.search)).toEqual({ project: 'app', worktree: 'feature', review: 'r-2' });
 });
+
+test('New review follows the reviews, outside the list, and opens the New review dialog route', async () => {
+  history.replaceState(null, '', '?project=app&worktree=feature');
+  stubFetch({ 'GET api/reviews': { reviews: [review({ id: 'r-1', title: 'One' }), review({ id: 'r-2', title: 'Two' })] } });
+  render(<ReviewList project="app" worktree="feature" />);
+  await screen.findByText('Two');
+  const button = within(screen.getByRole('region', { name: 'Reviews' })).getByRole('button', { name: 'New review' });
+  expect(screen.getAllByRole('listitem').at(-1)!.compareDocumentPosition(button) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(screen.getByRole('list').contains(button)).toBe(false);
+  expect(screen.queryByRole('heading', { name: 'Reviews' })).toBeNull();
+  await userEvent.setup().click(button);
+  expect(parseRoute(location.search)).toMatchObject({ project: 'app', worktree: 'feature', view: 'new' });
+});
+
+test('New review follows the empty state', async () => {
+  stubFetch({ 'GET api/reviews': { reviews: [] } });
+  render(<ReviewList project="app" worktree="feature" />);
+  await screen.findByText('No reviews yet');
+  expect(screen.getByText('No reviews yet').compareDocumentPosition(screen.getByRole('button', { name: 'New review' })) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+});

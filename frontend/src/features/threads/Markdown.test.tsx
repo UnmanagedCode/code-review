@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { expect, test, vi } from 'vitest';
-import { Markdown } from './Markdown';
+import { Markdown, MarkdownBlocks } from './Markdown';
 
 const cite = { raw: 'src/a.ts#L10-L20', path: 'src/a.ts', startLine: 10, endLine: 20 };
 
@@ -11,6 +11,7 @@ const HOSTILE = [
   '[e](javascript&#58;alert(1))', '[f](&#106;avascript:alert(1))', '[g](data:text/html,<script>alert(1)</script>)', '[h](vbscript:x)',
   '[i](file:///etc/passwd)', '[j](//evil.com/x)', '[k](/pluginBridge.js)', '[l](foo/bar)', '[m](#frag)', '[n](?x=1)',
   '<javascript:alert(1)>', '<vbscript:x>', '<data:text/html,x>', '![img](https://e.com/y.png)', '![bad](javascript:x)',
+  `[\`${cite.raw}\`](https://e.com/c)`,
 ].join('\n\n');
 const CONSTRUCTS = [
   '# h1', '## h2', '### h3', '#### h4', '##### h5', '###### h6', 'para *em* **strong** ~~del~~ `code src/a.ts#L10-L20`\nline two',
@@ -19,7 +20,7 @@ const CONSTRUCTS = [
 ].join('\n\n');
 
 // Invariant (DOM-level security boundary): a body yields only the renderer's tag set, no event-handler, style or src
-// attribute, and every href is either an in-app route or an allowlisted scheme.
+// attribute, every href is either an in-app route or an allowlisted scheme, and no anchor nests in another.
 test('emits only allowlisted tags and attributes', () => {
   const { container } = render(<Markdown body={`${CONSTRUCTS}\n\n${HOSTILE}`} citations={[cite]} />);
   const all = [...container.querySelectorAll('*')];
@@ -34,9 +35,18 @@ test('emits only allowlisted tags and attributes', () => {
     if (href !== null) expect(href.startsWith('?') || /^(https?:|mailto:)/.test(href)).toBe(true);
   }
   expect(container.querySelector('img, script, iframe')).toBeNull();
+  expect(container.querySelector('a a')).toBeNull();
   expect(all.filter((el) => el.tagName === 'A').map((a) => a.getAttribute('href'))).toEqual([
-    expect.stringMatching(/^\?/), expect.stringMatching(/^\?/), expect.stringMatching(/^\?/), 'https://e.com/x', 'mailto:a@b.c', 'https://e.com/', 'https://e.com/y.png',
+    expect.stringMatching(/^\?/), expect.stringMatching(/^\?/), expect.stringMatching(/^\?/), 'https://e.com/x', 'mailto:a@b.c', 'https://e.com/', 'https://e.com/y.png', 'https://e.com/c',
   ]);
+});
+
+// Invariant: the renderer re-checks every link href itself, so an AST link with a refused href (from any producer)
+// renders no anchor and keeps its label as text.
+test('a link node with an unsafe href renders its label as text, no anchor', () => {
+  const { container } = render(<MarkdownBlocks ast={[{ t: 'p', c: [{ t: 'link', href: 'javascript:alert(1)', c: [{ t: 'text', v: 'click' }] }] }]} />);
+  expect(container.querySelector('a')).toBeNull();
+  expect(container.textContent).toBe('click');
 });
 
 // Invariant: external links never get an opener handle or a referrer.

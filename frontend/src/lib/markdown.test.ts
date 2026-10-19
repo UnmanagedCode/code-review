@@ -148,6 +148,13 @@ test('a bare https URL is a link with trailing punctuation trimmed; underscores/
   expect(para('_https://e.com/a_b_')).toEqual([{ t: 'em', c: [{ t: 'link', href: 'https://e.com/a_b', c: [t('https://e.com/a_b')] }] }]);
 });
 
+// Invariant: anchors never nest: a citation in a code span inside a link label is plain code text, not a cite.
+test('a citation in inline code inside a link label is text, not a nested cite', () => {
+  expect(para('[`a.ts#L1`](https://e.com)', [cite('a.ts#L1', 'a.ts', 1)])).toEqual([
+    { t: 'link', href: 'https://e.com/', c: [{ t: 'code', c: [t('a.ts#L1')] }] },
+  ]);
+});
+
 // Invariant: anchors never nest: a URL or citation inside a link label is text.
 test('a URL inside a link label is text, not a nested link', () => {
   const c = [cite('a.ts#L1', 'a.ts', 1)];

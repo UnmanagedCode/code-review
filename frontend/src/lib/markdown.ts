@@ -598,7 +598,8 @@ function inl(from: number, to: number, cx: Cx, noLinks: boolean, depth: number):
         flush();
         let v = S.slice(i + n, cl).replace(/\n/g, ' ');
         if (v.length >= 2 && v[0] === ' ' && v[v.length - 1] === ' ' && v.trim() !== '') v = v.slice(1, -1);
-        out.push({ t: 'code', c: codeChildren(v, cx.cites) });
+        // Inside a link label the span is plain text, so no citation anchor nests in the label's anchor.
+        out.push({ t: 'code', c: noLinks ? (v ? [{ t: 'text', v }] : []) : codeChildren(v, cx.cites) });
         i = cl + n;
       } else {
         buf += S.slice(i, i + n);

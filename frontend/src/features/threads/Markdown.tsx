@@ -66,8 +66,13 @@ function blocks(nodes: Block[], tight = false): ReactNode[] {
   });
 }
 
+/** A parsed body. Renders any AST through the same fixed tag map and link checks. */
+export function MarkdownBlocks({ ast }: { ast: Block[] }) {
+  return <div className="md">{blocks(ast)}</div>;
+}
+
 /** A message body rendered as markdown. Only `citations` (the server's list for this body) become in-app citation links. */
 export function Markdown({ body, citations }: { body: string; citations: Citation[] }) {
   const ast = useMemo(() => parseMarkdown(body, citations), [body, citations]);
-  return <div className="md">{blocks(ast)}</div>;
+  return <MarkdownBlocks ast={ast} />;
 }

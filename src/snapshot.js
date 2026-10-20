@@ -1,12 +1,11 @@
 import { createHash } from 'node:crypto';
-import fs from 'node:fs';
-import path from 'node:path';
 import { parseDiff, fileLevelHunk } from './diff.js';
 import { Refusal } from './refusals.js';
+import { placeKey } from './exec.js';
 import * as git from './git.js';
 
 const CACHE_MAX = 32;
-const cache = new Map(); // committed snapshots are immutable: `${repo}\0${base}\0${head}` -> {files, fingerprint}
+const cache = new Map(); // committed snapshots are immutable: `${placeKey(repo)}\0${base}\0${head}` -> {files, fingerprint}
 
 /** Splits file content into lines; a trailing newline does not add an empty line. */
 export function splitLines(content) {
@@ -63,12 +62,11 @@ async function readUncommitted(repo, headSha, limits, opts) {
   const restage = files.filter((f) => f.status === 'deleted' && rels.includes(f.path)).map((f) => f.path);
   const survivors = [];
   const oversize = [];
-  for (const rel of restage) {
-    rels = rels.filter((p) => p !== rel);
-    let size;
-    try { size = fs.lstatSync(path.join(repo, rel)).size; } catch { continue; } // vanished: it stays deleted
-    if (size > limits.maxFileBytes) oversize.push(rel);
-    else survivors.push(rel);
+  rels = rels.filter((p) => !restage.includes(p));
+  for (const [i, size] of (await git.sizes(repo, restage)).entries()) {
+    if (size === null) continue; // vanished: it stays deleted
+    if (size > limits.maxFileBytes) oversize.push(restage[i]);
+    else survivors.push(restage[i]);
   }
   let staged = survivors;
   if (survivors.length) {
@@ -87,28 +85,29 @@ async function readUncommitted(repo, headSha, limits, opts) {
   }
   if (staged.length) files = parseDiff(await git.diffWorktree(repo, headSha, opts));
   files = files.filter((f) => !oversize.includes(f.path));
-  let text = '';
+  // Past the count cap a path is tooLarge whatever its size, so only the first `maxUntracked` are measured.
+  const measured = await git.sizes(repo, rels.slice(0, limits.maxUntracked));
+  const shown = [];
   const extra = [];
   for (const [i, rel] of rels.entries()) {
-    let size = Infinity;
-    try { size = fs.lstatSync(path.join(repo, rel)).size; } catch { /* vanished mid-read: treat as too large to show */ }
+    const size = measured[i] ?? Infinity; // vanished mid-read: treat as too large to show
     if (i >= limits.maxUntracked || size > limits.maxFileBytes) extra.push(tooLargeFile(rel));
-    else text += await git.diffUntracked(repo, rel, opts);
+    else shown.push({ rel, size });
   }
+  const text = await git.diffUntrackedBatch(repo, shown, opts);
   files.push(...parseDiff(text), ...extra, ...oversize.map((rel) => tooLargeFile(rel, 'modified')));
   return files;
 }
 
 /**
  * Builds the snapshot for one round: {files, fingerprint, lines(side, path)}.
- * `repo` supplies git objects; `checkout` supplies the working tree (uncommitted only).
+ * `repo` (a place) supplies git objects; `checkout` (a place) supplies the working tree (uncommitted only).
  */
 export async function buildSnapshot({ kind, repo, checkout, baseSha, headSha, limits: given = {} }) {
   const limits = { maxFileBytes: git.MAX_FILE_BYTES, maxUntracked: git.MAX_UNTRACKED_FILES, maxDiffBytes: git.MAX_DIFF_BYTES, ...given };
-  for (const sha of [baseSha, headSha]) {
-    if (!(await git.objectExists(repo, sha))) throw new Refusal('SNAPSHOT_GONE', `commit ${sha.slice(0, 8)} is no longer in the repository`);
-  }
-  const key = `${repo}\0${baseSha}\0${headSha}\0${kind}`;
+  const missing = await git.objectsExist(repo, [baseSha, headSha]);
+  if (missing) throw new Refusal('SNAPSHOT_GONE', `commit ${missing.slice(0, 8)} is no longer in the repository`);
+  const key = `${placeKey(repo)}\0${baseSha}\0${headSha}\0${kind}`;
   let entry = kind !== 'uncommitted' && cache.get(key);
   if (entry) entry = structuredClone(entry);
   else {
@@ -127,21 +126,12 @@ export async function buildSnapshot({ kind, repo, checkout, baseSha, headSha, li
   }
   const { files, fingerprint } = entry;
 
-  async function readLive(rel) {
-    try {
-      const root = fs.realpathSync(checkout);
-      const real = fs.realpathSync(path.join(checkout, rel));
-      if (!real.startsWith(root + path.sep)) return null;
-      return fs.readFileSync(real, 'utf8');
-    } catch { return null; }
-  }
-
   /** Lines of `rel` on one side, or null when the file is absent there. `rel` is the file's current path. */
   async function lines(side, rel) {
     const f = files.find((x) => x.path === rel);
     let content;
     if (side === 'old') content = await git.show(repo, baseSha, f?.oldPath ?? rel);
-    else content = kind === 'uncommitted' ? await readLive(rel) : await git.show(repo, headSha, rel);
+    else content = kind === 'uncommitted' ? await git.readWorktreeFile(checkout, rel) : await git.show(repo, headSha, rel);
     return content === null ? null : splitLines(content);
   }
 

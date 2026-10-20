@@ -1,5 +1,6 @@
-import fs from 'node:fs';
 import * as store from './store.js';
+import * as git from './git.js';
+import { UNREACHABLE } from './exec.js';
 import { resolveCheckout, isConductorProject } from './checkouts.js';
 import { buildSnapshot, resolveTarget } from './snapshot.js';
 import { followThreads } from './follow.js';
@@ -36,9 +37,8 @@ async function locateCheckout(review) {
     return await resolveCheckout({ project: review.project, worktree: review.worktree });
   } catch (e) {
     if (!(e instanceof Refusal) || !['CHECKOUT_UNKNOWN', 'PROJECT_UNKNOWN'].includes(e.code)) throw e;
-    let mainPath = null;
-    if (e.code === 'CHECKOUT_UNKNOWN') mainPath = (await resolveCheckout({ project: review.project, worktree: null })).path;
-    return { path: null, mainPath, exists: false };
+    const main = e.code === 'CHECKOUT_UNKNOWN' ? await resolveCheckout({ project: review.project, worktree: null }) : null;
+    return { path: null, place: null, mainPath: main?.path ?? null, mainPlace: main?.place ?? null, exists: false };
   }
 }
 
@@ -49,11 +49,11 @@ export function makeEnv(review) {
   const env = {
     sweep: null,
     checkout: () => (co ??= locateCheckout(review)),
-    /** Directory git objects are read from; committed reviews fall back to the main checkout. */
+    /** Place git objects are read from; committed reviews fall back to the main checkout. */
     async repo() {
       const c = await env.checkout();
-      if (c.exists) return c.path;
-      if (review.kind !== 'uncommitted' && c.mainPath && fs.existsSync(c.mainPath)) return c.mainPath;
+      if (c.exists) return c.place;
+      if (review.kind !== 'uncommitted' && c.mainPlace && (await git.exists(c.mainPlace))) return c.mainPlace;
       throw new Refusal('CHECKOUT_GONE', `the checkout of review ${review.id} no longer exists`);
     },
     /** Snapshot of round `n` (default: current); uncommitted reviews are always live. */
@@ -76,7 +76,7 @@ export function makeEnv(review) {
   return env;
 }
 
-const UNREADABLE = ['CHECKOUT_GONE', 'SNAPSHOT_GONE'];
+const UNREADABLE = ['CHECKOUT_GONE', 'SNAPSHOT_GONE', ...UNREACHABLE];
 
 // An uncommitted review's threads follow the live working tree; an unreadable tree leaves them untouched.
 async function sweep(review, env) {

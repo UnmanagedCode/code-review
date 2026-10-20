@@ -41,9 +41,9 @@ const req = async (method, url, body) => {
 };
 const openReview = async (extra = {}) => (await req('POST', '/reviews', { project: 'app', worktree: 'feature', recipient: 's-author', ...extra })).body;
 
-test('GET /projects lists local projects; /checkout, /checkout/commits and /sessions describe a checkout', async () => {
+test('GET /projects lists every project, local or on a system; /checkout, /checkout/commits and /sessions describe a checkout', async () => {
   w.cc.state.projects.push({ name: 'far', path: '/f', system: 'box' });
-  assert.deepEqual((await req('GET', '/projects')).body.projects, [{ name: 'app' }]);
+  assert.deepEqual((await req('GET', '/projects')).body.projects, [{ name: 'app' }, { name: 'far' }]);
   const co = (await req('GET', '/checkout?project=app&worktree=feature')).body;
   assert.equal(co.checkout.branch, 'br-feature');
   assert.equal(co.checkout.exists, true);

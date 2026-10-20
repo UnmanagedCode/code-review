@@ -1,4 +1,3 @@
-import fs from 'node:fs';
 import * as cc from './cc.js';
 import * as git from './git.js';
 import { Refusal } from './refusals.js';
@@ -8,17 +7,24 @@ const DEAD = new Set(['exited', 'crashed']);
 
 export const isConductorProject = (project) => project === CONDUCTOR_PROJECT;
 
-/** Finds a local project's checkout: the main one (`worktree` null) or a named worktree. */
+/**
+ * Finds a project's checkout: the main one (`worktree` null) or a named worktree. `place` addresses it on its
+ * system (a worktree is on its project's); `exists` is asked of that system, and a system that cannot answer refuses.
+ */
 export async function resolveCheckout({ project, worktree }) {
   const row = (await cc.projects()).find((p) => p.name === project);
   if (!row) throw new Refusal('PROJECT_UNKNOWN', `unknown project: ${project}`);
-  if (row.system && row.system !== 'local') throw new Refusal('PROJECT_NOT_LOCAL', `project ${project} lives on ${row.system}`);
-  if (worktree == null) return { project, worktree: null, path: row.path, branch: null, exists: fs.existsSync(row.path), mainPath: row.path };
+  const placeAt = (path) => ({ system: row.system ?? 'local', remoteId: row.remoteId ?? null, path });
+  const mainPlace = placeAt(row.path);
+  if (worktree == null) {
+    return { project, worktree: null, path: row.path, place: mainPlace, branch: null, exists: await git.exists(mainPlace), mainPath: row.path, mainPlace };
+  }
   const wt = (await cc.worktrees(project)).find((w) => w.worktreeName === worktree);
   if (!wt) throw new Refusal('CHECKOUT_UNKNOWN', `unknown worktree ${worktree} of ${project}`);
+  const place = placeAt(wt.worktreePath);
   return {
-    project, worktree, path: wt.worktreePath, branch: wt.branch, baseBranch: wt.baseBranch, baseSha: wt.baseSha,
-    baseWorktree: wt.baseWorktree, exists: fs.existsSync(wt.worktreePath), mainPath: row.path,
+    project, worktree, path: wt.worktreePath, place, branch: wt.branch, baseBranch: wt.baseBranch, baseSha: wt.baseSha,
+    baseWorktree: wt.baseWorktree, exists: await git.exists(place), mainPath: row.path, mainPlace,
   };
 }
 
@@ -59,11 +65,11 @@ export async function sessionCheckout(sessionId) {
 /** Picker data for one checkout: its git state, base shortcuts and the project's worktrees. */
 export async function checkoutInfo({ project, worktree }) {
   const co = await resolveCheckout({ project, worktree });
-  const live = co.exists;
+  const st = co.exists ? await git.statusOf(co.place) : null;
   return {
     checkout: {
-      project, worktree: co.worktree, path: co.path, branch: co.branch ?? (live ? await git.currentBranch(co.path) : null),
-      headSha: live ? await git.headOf(co.path) : null, dirty: live ? await git.isDirty(co.path) : false, exists: live,
+      project, worktree: co.worktree, path: co.path, branch: co.branch ?? st?.branch ?? null,
+      headSha: st?.head ?? null, dirty: st?.dirty ?? false, exists: co.exists,
     },
     forkPoints: await forkPoints(co),
     worktrees: (await cc.worktrees(project)).map((w) => ({ worktreeName: w.worktreeName, branch: w.branch })),
@@ -74,5 +80,5 @@ export async function checkoutInfo({ project, worktree }) {
 export async function checkoutCommits({ project, worktree, limit = 50 }) {
   const co = await resolveCheckout({ project, worktree });
   if (!co.exists) throw new Refusal('CHECKOUT_GONE', `${co.path} does not exist`);
-  return git.commitLog(co.path, { limit: Math.min(Math.max(Number(limit) || 50, 1), 500) });
+  return git.commitLog(co.place, { limit: Math.min(Math.max(Number(limit) || 50, 1), 500) });
 }

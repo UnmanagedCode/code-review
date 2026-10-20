@@ -21,12 +21,13 @@ const q = (o) => `${world.url}/?${new URLSearchParams({ project: 'app', worktree
 try {
   await withPage(async (page) => {
     const errors = [];
+    let systemDown = false; // while the fake system is down, its 502 refusals are the expected answers
     // Chromium words a failed load as a generic "Failed to load resource" line with no URL, so judge failures by response URL.
     page.on('console', (m) => {
       if (m.type() === 'error' && !HOST_URLS.test(m.text()) && !/^Failed to load resource/.test(m.text())) errors.push(m.text());
     });
     page.on('response', (r) => {
-      if (r.status() >= 400 && !HOST_URLS.test(r.url())) errors.push(`${r.status()} ${r.url()}`);
+      if (r.status() >= 400 && !HOST_URLS.test(r.url()) && !(systemDown && r.status() === 502)) errors.push(`${r.status()} ${r.url()}`);
     });
     page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
 
@@ -100,6 +101,19 @@ try {
         await open(q({ review: uncommitted, file: 'a.js' }), page.getByRole('grid'));
         await page.getByRole('article').first().waitFor();
         await shot('uncommitted');
+
+        // The project's System is down: the review still opens, showing why its diff is unavailable.
+        await page.goto('about:blank'); // nothing of the previous page is still loading
+        world.systemDown(true);
+        systemDown = true;
+        try {
+          await open(q({ review: range }), page.getByText(/system is unreachable/));
+          await shot('system-down');
+          await page.goto('about:blank');
+        } finally {
+          world.systemDown(false);
+          systemDown = false;
+        }
       }
     }
     if (errors.length) throw new Error(`unexpected console errors:\n${errors.join('\n')}`);

@@ -12,9 +12,10 @@ Services return a plain object or a refusal `{ok:false, code, reason}`. Low-leve
 | `mutex.js` | `withLock(key, fn)`: per-key promise chain |
 | `refusals.js` | `Refusal`, `refuse`, `attempt`, `HTTP_STATUS` (single source of codes) |
 | `store.js` | one JSON file per review: `read`, atomic `write` (bumps `rev`), `ids` (id-shaped file names only, nothing parsed), `list`, `remove`, `mutate`, `logSkipped`, and the `changes` emitter |
-| `cc.js` | cc REST client (`projects`, `worktrees`, `instances`) |
-| `checkouts.js` | resolve a checkout, fork-point chain, sessions, picker data |
-| `git.js` | git wrapper: ref safety, pinned diff flags, plumbing calls, private index |
+| `cc.js` | cc REST client (`projects`, `worktrees`, `instances`); `conductorUrl()` (the one `CONDUCTOR_URL` check) |
+| `exec.js` | transport to cc's `POST /api/exec`: `exec(place, argv, opts)`, the cc → code-review refusal mapping, `UNREACHABLE` (the codes callers degrade on), `placeKey`. Knows nothing about git |
+| `checkouts.js` | resolve a checkout to its place, fork-point chain, sessions, picker data |
+| `git.js` | git over `exec.js`: ref safety, pinned diff flags, plumbing calls, the batched sh scripts, private index |
 | `text.js` | `clean()`: strips control characters from header fields (prompt and MCP text); `oneLine`/`errorLine`: single-line log text; `stackFrames`: an error's frame lines without its message |
 | `diff.js` | parse unified diff into files/hunks; hunk ids; file-level hunks (pure) |
 | `snapshot.js` | `resolveTarget` (kind → `{headSha, baseSha}`) and `buildSnapshot` (`{files, fingerprint, lines(side, path)}`) |
@@ -45,19 +46,55 @@ Services return a plain object or a refusal `{ok:false, code, reason}`. Low-leve
 - Thread fields: `id, kind, severity, status, disposition, resolution:{by, seq}|null, resolveProposed, statusSeq, openedBy, anchor, pastAnchors, humanReadSeq, createdAt, messages`.
 - A thread's `humanReadSeq` is the `seq` the human has read up to. A human status change takes its own `seq`; opening and agent resolves share the `seq` of their message (how the prompt tells them apart).
 
+## Places and host exec
+
+- **Place:** `{system, remoteId, path}`, the one value that addresses a checkout wherever a path used to be passed to git. `resolveCheckout` builds it from the `/api/projects` row (`system` absent = `local`; a worktree takes its project's `system` and `remoteId`) and returns `place` and `mainPlace` beside `path`/`mainPath` (those stay for messages and the picker). `placeKey(place)` keys caches: one path can exist on two systems.
+- **Every checkout, local ones included, is read through `POST /api/exec`.** No module in `src/` spawns a process, and only `store.js` (code-review's own store) touches the filesystem; `tests/exec.test.js` guards both.
+- **Request shape** (`exec` in `src/exec.js`): always form B with `cwd: "/"` (a vanished checkout is then git's or the script's answer, never an ambiguous spawn failure), always `argv` (no quoting, no login profile), always `encoding: "base64"` (decoded to Buffers; callers wanting text decode UTF-8 exactly as `execFile`/`readFileSync` did, so invalid UTF-8 comes out the same). `stdin` is sent as `stdinB64`; absent = closed stdin. `maxOutputBytes` is clamped to `EXEC_MAX_OUTPUT_BYTES`. The fetch deadline is `timeoutMs + min(10 s, timeoutMs)`, so cc reports `EXEC_TIMEOUT` first; aborting the fetch kills the command.
+- **Refusal mapping:** the table in [protocol.md](protocol.md#cc-routes-consumed). `UNREACHABLE` (`src/exec.js`) is the single list the degradation paths read (`UNREADABLE` in `src/reviews.js` and `src/context.js`).
+- **Existence:** `git.exists(place)` (`[ -e "$1" ]`, symlinks followed). A system that cannot answer refuses (`SYSTEM_UNREACHABLE`); it is never read as `exists: false`. `makeEnv` memoises the checkout (and so the probe) per request; the main-checkout fallback in `context.repo()` probes `mainPlace` only when the worktree is gone.
+- **Degradation when a system is down:** `summaryOf` turns an `UNREACHABLE` refusal from the checkout, snapshot or `statusOf` into `snapshotError` with `checkoutGone: false`, `dirty: false`, so the review list still lists every review; the uncommitted sweep skips (threads untouched). Open, refresh, the picker, `diff`, `fileLines` surface the refusal itself (502/504).
+
+### Scripts (`src/git.js`)
+
+Every script runs as `['sh', '-c', SCRIPT, 'sh', place.path, …args]`, starts with `cd -- "$1" || exit 3; shift` and calls git as `git -c core.fsmonitor=false`. Flags embedded in a script are single-quoted (`shq`).
+
+| Constant | Does | Output |
+|---|---|---|
+| `CREATE_INDEX` | resolves `--git-path index`/`objects` (relative ones made absolute against `$PWD`), `mktemp -d "${TMPDIR:-/tmp}/cr-index-XXXXXX"`, copies the index with `cp` + `touch -r` | `<dir>\0<objects>\0`; removes the dir itself on a failure after `mktemp` |
+| `WRITE_ALTERNATES` | writes `$2` (the C-quoted objects path, quoted in JS) to `$1/objects/info/alternates` | — |
+| `OBJECTS_EXIST` | `cat-file -e "$s^{tree}"` per sha | the first missing sha, else nothing |
+| `SIZES` | `ls -ldn` per path (lstat semantics: a symlink reports its own size) | one line per argument: the size, or `-` when absent; names are never echoed |
+| `DIFF_UNTRACKED` | `diff <DIFF_FLAGS> --no-index -- /dev/null "$f"` per path; exit ≤ 1 is success | the concatenated diffs |
+| `READ_FILE` | `realpath` (sentinel idiom, so a trailing newline in a name survives) must sit under `pwd -P` and be a regular file, then `cat` | the bytes; exit 3 → `null`; 126/127 (a missing tool) throws |
+
+Plain argv calls: every git command (`run`: `git -c core.fsmonitor=false -C <path> …`), `exists`, and the teardown `rm -rf -- <dir>` (`removeTemp`, which refuses any path whose basename is not `cr-index-*`).
+
+### Exec calls per operation
+
+Counted by the fake cc (`execCalls`) on a cold cache; locally each costs roughly an HTTP round trip plus JSON/base64, remotely the provider's latency on top. `harness/bench/open-review.mjs` measures wall time.
+
+| Operation | Exec calls |
+|---|---|
+| `open_review` range on a worktree | 9 |
+| summary of one range review (list row) | 3: `exists`, `OBJECTS_EXIST`, `statusOf` |
+| uncommitted snapshot, U untracked, no restage | 8 + ⌈U / `UNTRACKED_CHUNK`⌉ (headOf, `OBJECTS_EXIST`, create, alternates, diff, `ls-files`, `SIZES` per `SIZE_CHUNK`, teardown) |
+| picker `checkoutInfo` | 2: `exists`, `statusOf` |
+
 ## Git
 
-- Every call: `git -c core.fsmonitor=false -C <repo>` with `LC_ALL=C` and `GIT_OPTIONAL_LOCKS=0` (the environment is read per call); diff flags are pinned (`DIFF_FLAGS` in `git.js`) so user config cannot change the parsed shape.
-- `git diff <commit>` rewrites `.git/index` even with `GIT_OPTIONAL_LOCKS=0`. Uncommitted diffs therefore run against a private copy of the index (`withPrivateIndex`: path from `rev-parse --git-path index`, unique temp copy per call, deleted in `finally`; a missing index is not copied). The same call sets `GIT_OBJECT_DIRECTORY` to a private temp dir whose `info/alternates` file names the real objects dir (from `rev-parse --git-path objects`), so anything staged writes its blobs to the private dir while HEAD's objects still resolve. The entry is C-quoted (git unquotes entries that start with `"`; control, `"`, `\` and non-ASCII bytes are escaped), so a newline, quote, backslash or leading `#` in the path cannot split or comment it out. The alternates file is used instead of `GIT_ALTERNATE_OBJECT_DIRECTORIES` because that variable is colon-separated and would split a checkout path containing `:`; both are deleted in the same `finally`. Git never writes the project's `.git` (index, objects, fsmonitor files); the only writes in a checkout are the reviewed repo's own filter drivers, if any (below).
+- Every git call: `git -c core.fsmonitor=false -C <path>` with the `BASE_ENV` overlay (`LC_ALL=C`, `GIT_OPTIONAL_LOCKS=0`) on the target's own environment, on scripts too; diff flags are pinned (`DIFF_FLAGS` in `git.js`) so user config cannot change the parsed shape. `statusOf` reads head, branch and dirty state from one `git status --porcelain=v2 -z --branch --no-ahead-behind`.
+- `git diff <commit>` rewrites `.git/index` even with `GIT_OPTIONAL_LOCKS=0`. Uncommitted diffs therefore run against a private copy of the index (`withPrivateIndex`), made **on the checkout's system** in three exec calls: `CREATE_INDEX`, `WRITE_ALTERNATES` (a second call because the quoted entry depends on the first call's output), then the caller's commands with `GIT_INDEX_FILE` and `GIT_OBJECT_DIRECTORY` in the exec `env`; the dir is removed afterwards. The copy carries the original's exact times (`touch -r`), so git's racy-clean decisions on it are the original's own. A missing index is not copied. `GIT_OBJECT_DIRECTORY` is the private dir whose `info/alternates` file names the real objects dir, so anything staged writes its blobs to the private dir while HEAD's objects still resolve. The entry is C-quoted (git unquotes entries that start with `"`; control, `"`, `\` and non-ASCII bytes are escaped), so a newline, quote, backslash or leading `#` in the path cannot split or comment it out. The alternates file is used instead of `GIT_ALTERNATE_OBJECT_DIRECTORIES` because that variable is colon-separated and would split a checkout path containing `:`. A teardown that fails after the callback succeeded is a `console.warn` naming the leaked dir (it sits in the target's tmp, never in the tree), and the result is returned; if the callback threw, its error is rethrown. Git never writes the project's `.git` (index, objects, fsmonitor files); the only writes in a checkout are the reviewed repo's own filter drivers, if any (below).
+- Temp files code-review causes on a target: `${TMPDIR:-/tmp}/cr-index-*` (its own, removed after each snapshot) and cc's staged stdin `/tmp/cc-stdin-*` (for `update-index --stdin`; cc removes it before the command starts). Neither is under the checkout.
 - `core.fsmonitor=false` is passed on every call: with `core.fsmonitor=true` even `git status` starts a detached `fsmonitor--daemon` that creates `.git/fsmonitor--daemon*`.
 - **Known limitation:** a clean/smudge filter driver named by the reviewed repo's own `.gitattributes` (e.g. git-lfs) still runs on working-tree paths, because a correct diff needs it.
-- Uncommitted snapshots hold one entry per path. A path HEAD has but the index lacks (`git rm --cached`) is staged into the private index first, so it shows as working tree vs HEAD (nothing if unchanged) instead of deleted plus added. Restaged paths obey `MAX_FILE_BYTES` like untracked ones (over the cap: a `tooLarge` `modified` entry with a file-level hunk); a path that vanished before staging stays deleted. Existence and size are decided without git; the survivors are staged in one `update-index` call, and only if that fails (e.g. a required clean filter exits non-zero) are they staged one by one, where a path git cannot read becomes a `tooLarge` entry instead of failing the snapshot.
+- Uncommitted snapshots hold one entry per path. A path HEAD has but the index lacks (`git rm --cached`) is staged into the private index first, so it shows as working tree vs HEAD (nothing if unchanged) instead of deleted plus added. Restaged paths obey `MAX_FILE_BYTES` like untracked ones (over the cap: a `tooLarge` `modified` entry with a file-level hunk); a path that vanished before staging stays deleted. Existence and size come from one `SIZES` call per chunk (lstat semantics); the survivors are staged in one `update-index` call, and only if that fails (e.g. a required clean filter exits non-zero) are they staged one by one, where a path git cannot read becomes a `tooLarge` entry instead of failing the snapshot.
 - Refs (`base`, `sha`) must match `REF_RE` and not start with `-` (`BAD_REF`), then resolve via `rev-parse --verify --end-of-options` (`REF_UNKNOWN`).
 - Targets resolve to two shas per round: range → `merge-base <base> HEAD` and HEAD; commit → first parent (or the empty tree) and the commit; uncommitted → HEAD (or the empty tree on an unborn branch) for both, new side read live. The empty tree comes from `hash-object -t tree --stdin`.
-- Untracked files: `ls-files --others --exclude-standard -z`, each diffed with `diff --no-index` (exit 1 = success). Caps `MAX_UNTRACKED_FILES` and `MAX_FILE_BYTES` list the excess as `tooLarge`; `MAX_DIFF_BYTES` is the buffer limit (`DIFF_TOO_LARGE`).
-- Committed snapshots are cached in memory by `(repo, baseSha, headSha, kind)`; uncommitted ones are always live.
+- Untracked files: `ls-files --others --exclude-standard -z`; only the first `MAX_UNTRACKED_FILES` are measured (`SIZES`), the rest are `tooLarge` regardless. Those within `MAX_FILE_BYTES` are diffed by `diffUntrackedBatch`: one `DIFF_UNTRACKED` call per chunk of at most `UNTRACKED_CHUNK` paths and a third of the buffer limit in summed size, so a chunk's output stays under the per-call fence. `MAX_DIFF_BYTES` is the buffer limit (`DIFF_TOO_LARGE`) of every call.
+- Committed snapshots are cached in memory by `(placeKey(repo), baseSha, headSha, kind)`; uncommitted ones are always live. Both shas are checked in one `OBJECTS_EXIST` call.
 - Repo used: the checkout when it exists; otherwise, for range/commit reviews, the project's main checkout (worktrees share the object store). A pinned sha missing from the store is `SNAPSHOT_GONE`.
-- Working-tree reads are contained: `realpath(file)` must sit under `realpath(checkout)`.
+- Working-tree reads (`readWorktreeFile`, the uncommitted new side) are contained: `realpath(file)` must sit under the checkout's `pwd -P` and be a regular file. A file over `MAX_DIFF_BYTES` is `DIFF_TOO_LARGE`.
 
 ## Hunk ids and anchors
 
@@ -81,10 +118,12 @@ Services return a plain object or a refusal `{ok:false, code, reason}`. Low-leve
 
 - Binary detection: a file in the diff is binary when the snapshot says so (git honours `.gitattributes`, e.g. `*.bin -diff`); a NUL scan is the fallback only for files outside the diff. `isBinaryFile` in `snapshot.js` is the one predicate, used by line reads and citation excerpts (and matching `annotate`): in the diff → `binary || tooLarge`, decided without reading the file; outside it → NUL scan of the content, which it reads through a callback only then.
 - Mutating routes require a JSON content type (`routes.js` checks the header itself: `req.is` answers null for a body-less request).
-- `tests/_git.js`: temp repos (`makeRepo`, `bindRepo` for worktrees) with pinned identity, dates and no signing; `gitDirSig(dir)` (size and mtime of everything under `dir/.git`) proves a read path leaves git dirs untouched. Each repo lives in its own `mkdtemp` directory, which also holds its worktrees and fixtures; cleanup removes exactly that directory, never anything matched by name.
-- `tests/_fakeCc.js`: HTTP fake of the three cc routes on port 0, set via `CONDUCTOR_URL`; modes `ok|error|hang` (hang tests set `CODE_REVIEW_CC_TIMEOUT_MS` low).
+- `tests/_git.js`: temp repos (`makeRepo`, `bindRepo` for worktrees) with pinned identity, dates and no signing; `gitDirSig(dir)` (content hash, size and mtime of everything under `dir/.git`) proves a read path leaves git dirs untouched; `localPlace(dir)` for tests that call `git.js`/`snapshot.js` directly (they start a fake cc per file). Each repo lives in its own `mkdtemp` directory, which also holds its worktrees and fixtures; cleanup removes exactly that directory, never anything matched by name.
+- `tests/_fakeCc.js`: HTTP fake of the cc routes on port 0, set via `CONDUCTOR_URL`; modes `ok|error|hang` (hang tests set `CODE_REVIEW_CC_TIMEOUT_MS` low). Its `POST /api/exec` validates as strictly as cc (unknown key, form, cwd, encoding, bounds) and runs the command for real: byte fence → `EXEC_OUTPUT_TOO_LARGE`, `timeoutMs` → `EXEC_TIMEOUT`, spawn error → `EXEC_SPAWN_FAILED`. `state.systems` maps a non-local system to a **virtual root** (`/cr-remote-<hex>`) backed by a real dir: argv elements, cwd and env values under the root are rewritten. The root must not exist on this machine, so any leftover host-local access to a remote path fails. `state.execCalls` records every body; `state.execHook(body)` may answer instead (`{status, body}`, `{status, raw}` or `'hang'`); `state.execEnv` overlays the command environment (tests pin `TMPDIR` to count private index dirs).
 - `tests/_store.js`: per-test `CODE_REVIEW_STORE` temp dir.
-- `tests/_world.js`: project `app` + worktrees + fake cc + store in one call, with `HUMAN` and `agent()` actors.
+- `tests/_world.js`: project `app` + worktrees + fake cc + store in one call, with `HUMAN` and `agent()` actors. `world({system, remoteId})` places the project on a fake system: cc rows carry virtual paths (`w.virtual(real)`), `repo.dir` stays real for setup.
+- `tests/exec.test.js` (transport, mapping, byte-exactness, the no-`child_process`/no-`fs` guard), `tests/remote.test.js` (every surface on a project placed on a system, the system-down degradation, `.git` byte-identity over exec with and without `core.fsmonitor`).
+- `harness/bench/open-review.mjs` (not in the test glob): `openReview` wall time and exec call counts on a large range diff and an uncommitted review with many untracked files; `--tree` points it at another checkout's `src/` for a before/after ([README](../harness/bench/README.md)).
 - `tests/history.test.js` (pure `threadsAt`), `tests/rounds.test.js` (past-round views over real git; a round recorded by "another process" is pushed into the store so its snapshot is not cached and reading it runs git).
 - `tests/manifest.test.js` and `tests/surfaces.test.js` pin the manifest against the handlers, the flat-schema subset and the skill/convention tool names.
 

@@ -4,8 +4,10 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fakeCc } from './_fakeCc.js';
+import { makeRepo, localPlace } from './_git.js';
 import { attempt } from '../src/refusals.js';
-import { resolveCheckout, forkPoints, sessions, sessionCheckout, isConductorProject } from '../src/checkouts.js';
+import { resolveCheckout, forkPoints, sessions, sessionCheckout, isConductorProject, checkoutInfo } from '../src/checkouts.js';
+import { statusOf } from '../src/git.js';
 
 let cc;
 let tmp;
@@ -13,8 +15,14 @@ beforeEach(async () => {
   tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'cr-co-'));
   process.env.CODE_REVIEW_CC_TIMEOUT_MS = '100';
   cc = await fakeCc({
-    projects: [{ name: 'app', path: tmp, system: 'local' }, { name: 'remote', path: '/r', system: 'box' }, { name: 'bare', path: '/b' }],
+    projects: [
+      { name: 'app', path: tmp, system: 'local' }, { name: 'bare', path: '/b' },
+      { name: 'remote', path: '/cr-remote-box/main', system: 'box', remoteId: 'b1' },
+    ],
+    // The box system's virtual root, absent on this machine, is backed by `tmp`.
+    systems: { box: { root: '/cr-remote-box', dir: tmp, remoteId: 'b1' } },
     worktrees: {
+      remote: [{ worktreeName: 'rw', worktreePath: '/cr-remote-box/rw', branch: 'r', baseBranch: 'main', baseSha: 'r0' }],
       app: [
         { worktreeName: 'feature', worktreePath: path.join(tmp, 'wt-feature'), branch: 'feat', baseBranch: 'main', baseSha: 'f0' },
         { worktreeName: 'subtask', worktreePath: path.join(tmp, 'wt-sub'), branch: 'sub', baseBranch: 'feat', baseSha: 's0', baseWorktree: 'feature' },
@@ -47,10 +55,73 @@ test('the main checkout resolves to the project path; a worktree to its row', as
   assert.equal(wt.exists, false);
 });
 
-test('a non-local project is refused PROJECT_NOT_LOCAL; absent system means local; unknown ones are refused', async () => {
-  assert.equal((await attempt(() => resolveCheckout({ project: 'remote', worktree: null }))).code, 'PROJECT_NOT_LOCAL');
-  assert.equal((await resolveCheckout({ project: 'bare', worktree: null })).path, '/b');
+test('a project on a system resolves with its placement, and its worktree inherits it; existence is asked of that system', async () => {
+  fs.mkdirSync(path.join(tmp, 'main'));
+  const main = await resolveCheckout({ project: 'remote', worktree: null });
+  assert.deepEqual(main.place, { system: 'box', remoteId: 'b1', path: '/cr-remote-box/main' });
+  assert.deepEqual(main.mainPlace, main.place);
+  assert.equal(main.exists, true);
+  const wt = await resolveCheckout({ project: 'remote', worktree: 'rw' });
+  assert.deepEqual(wt.place, { system: 'box', remoteId: 'b1', path: '/cr-remote-box/rw' });
+  assert.deepEqual(wt.mainPlace, main.place);
+  assert.equal(wt.exists, false);
+  fs.mkdirSync(path.join(tmp, 'rw'));
+  assert.equal((await resolveCheckout({ project: 'remote', worktree: 'rw' })).exists, true);
+  const probes = cc.state.execCalls.map((b) => [b.system, b.remoteId, b.argv.at(-1)]);
+  assert.deepEqual(probes, [['box', 'b1', '/cr-remote-box/main'], ['box', 'b1', '/cr-remote-box/rw'], ['box', 'b1', '/cr-remote-box/rw']]);
+});
+
+test('absent system means local; unknown projects are refused', async () => {
+  const bare = await resolveCheckout({ project: 'bare', worktree: null });
+  assert.deepEqual(bare.place, localPlace('/b'));
+  assert.equal(bare.exists, false);
   assert.equal((await attempt(() => resolveCheckout({ project: 'nope', worktree: null }))).code, 'PROJECT_UNKNOWN');
+});
+
+test('a system that cannot answer the existence probe refuses; the checkout is never reported missing', async () => {
+  for (const [code, expected] of [['SYSTEM_UNREACHABLE', 'SYSTEM_UNREACHABLE'], ['REMOTE_NOT_FOUND', 'SYSTEM_UNREACHABLE']]) {
+    cc.state.execHook = () => ({ status: 502, body: { error: 'down', code } });
+    assert.equal((await attempt(() => resolveCheckout({ project: 'remote', worktree: null }))).code, expected);
+    assert.equal((await attempt(() => resolveCheckout({ project: 'app', worktree: 'feature' }))).code, expected);
+  }
+  cc.state.execHook = () => ({ status: 504, body: { error: 'slow', code: 'EXEC_TIMEOUT' } });
+  assert.equal((await attempt(() => checkoutInfo({ project: 'app', worktree: null }))).code, 'GIT_TIMEOUT');
+});
+
+test('statusOf: head, branch, detached and unborn HEAD, dirty from tracked and untracked changes', async () => {
+  const r = makeRepo();
+  try {
+    const at = localPlace(r.dir);
+    assert.deepEqual(await statusOf(at), { head: null, branch: 'main', dirty: false });
+    r.write('u.txt', 'u\n');
+    assert.deepEqual(await statusOf(at), { head: null, branch: 'main', dirty: true });
+    const sha = r.commit({});
+    assert.deepEqual(await statusOf(at), { head: sha, branch: 'main', dirty: false });
+    r.write('u.txt', 'changed\n');
+    assert.equal((await statusOf(at)).dirty, true);
+    r.git('stash', '-q');
+    r.git('checkout', '-q', '--detach');
+    assert.deepEqual(await statusOf(at), { head: sha, branch: 'HEAD', dirty: false });
+  } finally {
+    r.cleanup();
+  }
+});
+
+test('checkoutInfo reads head, branch and dirty state in one status call after the existence probe', async () => {
+  const r = makeRepo();
+  try {
+    const sha = r.commit({ 'a.txt': 'a\n' });
+    r.write('a.txt', 'b\n');
+    cc.state.projects.push({ name: 'real', path: r.dir, system: 'local' });
+    cc.state.execCalls = [];
+    const { checkout } = await checkoutInfo({ project: 'real', worktree: null });
+    assert.deepEqual(checkout, { project: 'real', worktree: null, path: r.dir, branch: 'main', headSha: sha, dirty: true, exists: true });
+    assert.equal(cc.state.execCalls.length, 2);
+    const gone = await checkoutInfo({ project: 'bare', worktree: null });
+    assert.deepEqual(gone.checkout, { project: 'bare', worktree: null, path: '/b', branch: null, headSha: null, dirty: false, exists: false });
+  } finally {
+    r.cleanup();
+  }
 });
 
 test('an unknown worktree is refused CHECKOUT_UNKNOWN', async () => {

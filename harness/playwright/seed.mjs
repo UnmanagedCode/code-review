@@ -73,6 +73,8 @@ export async function seed() {
 
     return {
       url: srv.url, ids: { range: id, uncommitted: un.id, conducted: conducted.id }, call,
+      /** Makes the fake cc refuse every exec as SYSTEM_UNREACHABLE (true) or run them again (false). */
+      systemDown(down) { w.cc.state.execHook = down ? () => ({ status: 502, body: { error: 'provider down', code: 'SYSTEM_UNREACHABLE' } }) : null; },
       async close() { await srv.close(); w.cleanup(); },
     };
   } catch (e) {

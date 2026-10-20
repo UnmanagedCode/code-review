@@ -1,8 +1,9 @@
-import { test, afterEach } from 'node:test';
+import { test, before, after, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { makeRepo, lines } from './_git.js';
+import { makeRepo, lines, localPlace } from './_git.js';
+import { fakeCc } from './_fakeCc.js';
 import { resolveTarget, buildSnapshot, isBinaryFile } from '../src/snapshot.js';
 import { parseCitations, resolveCitation, citationsForMessage, MAX_EXCERPT_LINES } from '../src/citations.js';
 
@@ -58,6 +59,9 @@ test('a gone snapshot degrades to unresolved citations instead of failing', asyn
 });
 
 let repo;
+let cc;
+before(async () => { cc = await fakeCc(); });
+after(() => cc.close());
 afterEach(() => repo?.cleanup());
 
 test('an uncommitted symlink escaping the checkout is unresolved, a normal file resolves', async () => {
@@ -66,8 +70,8 @@ test('an uncommitted symlink escaping the checkout is unresolved, a normal file 
   const outside = path.join(path.dirname(repo.dir), 'secret.txt'); // in the repo's own temp dir
   fs.writeFileSync(outside, 'secret\n');
   fs.symlinkSync(outside, path.join(repo.dir, 'link.js'));
-  const shas = await resolveTarget(repo.dir, 'uncommitted', {});
-  const snap = await buildSnapshot({ kind: 'uncommitted', repo: repo.dir, checkout: repo.dir, ...shas });
+  const shas = await resolveTarget(localPlace(repo.dir), 'uncommitted', {});
+  const snap = await buildSnapshot({ kind: 'uncommitted', repo: localPlace(repo.dir), checkout: localPlace(repo.dir), ...shas });
   assert.ok((await resolveCitation({ path: 'link.js', startLine: 1, endLine: 1 }, snap)).error);
   assert.equal((await resolveCitation({ path: 'a.js', startLine: 1, endLine: 1 }, snap)).lines[0].text, 'l1');
 });
@@ -77,8 +81,8 @@ test('a citation into a file the snapshot flags binary is unresolved, even witho
   repo.commit({ 'a.js': lines(3) });
   repo.branch('feat');
   repo.commit({ '.gitattributes': '*.bin -diff\n', 'x.bin': 'plain text\n' });
-  const shas = await resolveTarget(repo.dir, 'range', { base: 'main' });
-  const snap = await buildSnapshot({ kind: 'range', repo: repo.dir, checkout: repo.dir, ...shas });
+  const shas = await resolveTarget(localPlace(repo.dir), 'range', { base: 'main' });
+  const snap = await buildSnapshot({ kind: 'range', repo: localPlace(repo.dir), checkout: localPlace(repo.dir), ...shas });
   assert.ok((await resolveCitation({ path: 'x.bin', startLine: 1, endLine: 1 }, snap)).error);
   assert.equal((await resolveCitation({ path: 'a.js', startLine: 1, endLine: 1 }, snap)).lines[0].text, 'l1');
 });
@@ -88,8 +92,8 @@ async function rangeSnap(commitOnMain, commitOnBranch) {
   repo.commit(commitOnMain);
   repo.branch('feat');
   repo.commit(commitOnBranch);
-  const shas = await resolveTarget(repo.dir, 'range', { base: 'main' });
-  return buildSnapshot({ kind: 'range', repo: repo.dir, checkout: repo.dir, ...shas });
+  const shas = await resolveTarget(localPlace(repo.dir), 'range', { base: 'main' });
+  return buildSnapshot({ kind: 'range', repo: localPlace(repo.dir), checkout: localPlace(repo.dir), ...shas });
 }
 
 test('a citation to a NUL-containing file outside the diff is unresolved', async () => {
@@ -107,8 +111,8 @@ test('a citation into a tooLarge file is unresolved', async () => {
   repo = makeRepo();
   repo.commit({ 'a.js': lines(3) });
   repo.write('big.txt', 'plain text that is over the cap\n');
-  const shas = await resolveTarget(repo.dir, 'uncommitted', {});
-  const snap = await buildSnapshot({ kind: 'uncommitted', repo: repo.dir, checkout: repo.dir, ...shas, limits: { maxFileBytes: 5 } });
+  const shas = await resolveTarget(localPlace(repo.dir), 'uncommitted', {});
+  const snap = await buildSnapshot({ kind: 'uncommitted', repo: localPlace(repo.dir), checkout: localPlace(repo.dir), ...shas, limits: { maxFileBytes: 5 } });
   assert.equal(snap.files.find((f) => f.path === 'big.txt').tooLarge, true);
   assert.ok((await resolveCitation({ path: 'big.txt', startLine: 1, endLine: 1 }, snap)).error);
 });

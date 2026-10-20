@@ -30,9 +30,6 @@ export function checkRef(x) {
   return x;
 }
 
-/** A place on cc's own machine. */
-export const localPlace = (path) => ({ system: 'local', remoteId: null, path });
-
 /** Single-quotes `s` for a POSIX sh script. */
 const shq = (s) => `'${s.replace(/'/g, `'\\''`)}'`;
 

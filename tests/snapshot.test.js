@@ -180,7 +180,7 @@ test('a teardown the system refuses returns the callback\'s result and warns, na
 
 test('teardown refuses to remove a path not named cr-index-*, without running anything', async () => {
   const r = repo();
-  for (const bad of [r.dir, '/tmp', 'cr-index-rel', '/tmp/cr-index-x/../y', '/tmp/not-cr-index-x', '/tmp/cr-index-', '/tmp/cr-index-x/..']) {
+  for (const bad of [r.dir, '/tmp', 'cr-index-rel', '/tmp/cr-index-x/../y', '/tmp/not-cr-index-x', '/tmp/cr-index-', '/tmp/cr-index-x/..', '/tmp/cr-index-a/../cr-index-b']) {
     await assert.rejects(removeTemp(localPlace(r.dir), bad), /refusing to remove/, bad);
   }
   assert.equal(cc.state.execCalls.length, 0);
@@ -557,7 +557,7 @@ test('the post-create check is structural: a dir whose path holds a line termina
   };
   assert.equal(await withPrivateIndex(localPlace(r.dir), ({ env }) => env.GIT_INDEX_FILE), `${made}/index`);
   assert.equal(fs.existsSync(made), false, 'torn down');
-  for (const bad of ['', 'relative/cr-index-x', '/tmp/not-ours', '/tmp/cr-index-']) {
+  for (const bad of ['', 'relative/cr-index-x', '/tmp/not-ours', '/tmp/cr-index-', '/tmp/cr-index-a/../cr-index-b']) {
     printed = `${bad}\0${objects}\0`;
     const res = await attempt(() => withPrivateIndex(localPlace(r.dir), () => assert.fail('must not run')));
     assert.equal(res.code, 'TEMP_UNUSABLE', JSON.stringify(bad));

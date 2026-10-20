@@ -107,6 +107,21 @@ test('statusOf: head, branch, detached and unborn HEAD, dirty from tracked and u
   }
 });
 
+test('statusOf: a clean checkout with an upstream (branch.upstream and branch.ab headers) is not dirty', async () => {
+  const r = makeRepo();
+  try {
+    r.commit({ 'a.txt': 'a\n' });
+    r.git('checkout', '-q', '-b', 'feat', '--track', 'main');
+    const sha = r.commit({ 'b.txt': 'b\n' }); // ahead of its upstream
+    const raw = r.git('status', '--porcelain=v2', '--branch', '--no-ahead-behind');
+    assert.match(raw, /^# branch\.upstream main$/m, 'the fixture has upstream headers');
+    assert.match(raw, /^# branch\.ab /m);
+    assert.deepEqual(await statusOf(localPlace(r.dir)), { head: sha, branch: 'feat', dirty: false });
+  } finally {
+    r.cleanup();
+  }
+});
+
 test('checkoutInfo reads head, branch and dirty state in one status call after the existence probe', async () => {
   const r = makeRepo();
   try {

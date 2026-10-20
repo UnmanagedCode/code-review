@@ -14,9 +14,11 @@ export const DIFF_FLAGS = ['diff', '--no-color', '--no-ext-diff', '--no-textconv
 const BASE_ENV = { LC_ALL: 'C', GIT_OPTIONAL_LOCKS: '0' };
 
 // fsmonitor off on every call: with core.fsmonitor=true even `git status` starts a detached daemon that writes into .git.
+// splitIndex off on every call: with core.splitIndex=true, writing the private index writes a new `sharedindex.*` into
+// the real .git; off, git still reads an existing split index and writes the private one whole.
 // (A clean/smudge filter named by the reviewed repo's own .gitattributes still runs on working-tree paths.)
-const BASE_ARGS = ['-c', 'core.fsmonitor=false'];
-const GIT = 'git -c core.fsmonitor=false';
+const BASE_ARGS = ['-c', 'core.fsmonitor=false', '-c', 'core.splitIndex=false'];
+const GIT = `git ${BASE_ARGS.join(' ')}`;
 
 // Paths per batched script call, well under any ARG_MAX.
 const SIZE_CHUNK = 200;
@@ -60,12 +62,22 @@ const CD = 'cd -- "$1" || exit 3; shift';
 
 // Makes the private index dir on the target: prints "<dir>\0<absolute objects dir>\0". The copy takes the original's
 // times exactly (`touch -r`), so git's racy-clean decisions on it are the original's own; a missing index is not copied.
+// The temp base must be an existing absolute dir outside both the checkout and its common git dir (exit 7 otherwise),
+// checked before anything is created; every failure after `mktemp` removes the dir it made.
 const CREATE_INDEX = `${CD}
+t=\${TMPDIR:-/tmp}
+case $t in /*) ;; *) exit 7 ;; esac
+t=$(cd -- "$t" && pwd -P) || exit 7
+r=$(pwd -P) || exit 3
+c=$(${GIT} rev-parse --git-common-dir) || exit 4
+c=$(cd -- "$c" && pwd -P) || exit 4
+case $t/ in "$r"/*|"$c"/*) exit 7 ;; esac
 i=$(${GIT} rev-parse --git-path index) || exit 4
 o=$(${GIT} rev-parse --git-path objects) || exit 4
 case $i in /*) ;; *) i=$PWD/$i ;; esac
 case $o in /*) ;; *) o=$PWD/$o ;; esac
-d=$(mktemp -d "\${TMPDIR:-/tmp}/cr-index-XXXXXX") || exit 5
+d=$(mktemp -d "$t/cr-index-XXXXXX") || exit 5
+case $d in "$t"/cr-index-*) ;; *) [ -z "$d" ] || rm -rf -- "$d"; exit 5 ;; esac
 if ! mkdir -p "$d/objects/info" || { [ -e "$i" ] && ! { cp -- "$i" "$d/index" && touch -r "$i" "$d/index"; }; }; then rm -rf -- "$d"; exit 6; fi
 printf '%s\\0%s\\0' "$d" "$o"`;
 
@@ -81,7 +93,10 @@ const TEMP_RE = /^\/(.+\/)?cr-index-[^/]+$/;
  * afterwards, so index-refreshing and staging commands never write the project tree.
  */
 export async function withPrivateIndex(place, fn) {
-  const [dir, objects] = (await sh(place, CREATE_INDEX)).stdout.split('\0');
+  const made = await sh(place, CREATE_INDEX, [], { ok: [0, 5, 7] });
+  if (made.code === 7) throw new Refusal('TEMP_UNUSABLE', `TMPDIR on ${place.system} is not an existing absolute directory outside the checkout and its git dir`);
+  if (made.code === 5) throw new Refusal('TEMP_UNUSABLE', `could not create a private index dir in TMPDIR on ${place.system}`);
+  const [dir, objects] = made.stdout.split('\0');
   if (!TEMP_RE.test(dir)) throw new Error(`private index: unexpected temp dir ${JSON.stringify(dir)}`);
   const teardown = () => removeTemp(place, dir).catch((e) => {
     console.warn(`code-review: could not remove the private index dir ${dir} on ${place.system}: ${e.message}`);

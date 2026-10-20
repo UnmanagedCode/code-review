@@ -7,6 +7,7 @@ const BACKEND: Record<string, string> = {
   SYSTEM_UNREACHABLE: 'The project’s system is unreachable, so its checkout can’t be read right now',
   GIT_TIMEOUT: 'Git on the project’s system took too long to answer',
   GIT_UNAVAILABLE: 'Git can’t run on the project’s system',
+  TEMP_UNUSABLE: 'The project’s system has no usable temp directory (check TMPDIR there)',
   CHECKOUT_GONE: 'The checkout was removed; the review stays readable but can’t refresh',
   BASE_REQUIRED: 'Pick a base to review against',
   BAD_REF: 'That is not a valid git ref',

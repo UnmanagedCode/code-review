@@ -24,7 +24,7 @@ afterEach(() => {
 const repo = () => { r = makeRepo(); r.commit({ 'a.txt': 'a\n' }); return localPlace(r.dir); };
 const answer = (status, body) => () => ({ status, body });
 
-test('a git call is form B at cwd /, argv form with the fsmonitor and -C prefix, base64, with the base env overlay', async () => {
+test('a git call is form B at cwd /, argv form with the fsmonitor, splitIndex and -C prefix, base64, with the base env overlay', async () => {
   const at = repo();
   await git.headOf(at);
   const [b] = cc.state.execCalls;
@@ -33,7 +33,7 @@ test('a git call is form B at cwd /, argv form with the fsmonitor and -C prefix,
   assert.equal(b.cwd, '/');
   assert.equal(b.encoding, 'base64');
   assert.equal('shell' in b, false);
-  assert.deepEqual(b.argv.slice(0, 5), ['git', '-c', 'core.fsmonitor=false', '-C', r.dir]);
+  assert.deepEqual(b.argv.slice(0, 7), ['git', '-c', 'core.fsmonitor=false', '-c', 'core.splitIndex=false', '-C', r.dir]);
   assert.deepEqual(b.env, { LC_ALL: 'C', GIT_OPTIONAL_LOCKS: '0' });
   assert.equal(b.maxOutputBytes, git.MAX_DIFF_BYTES);
 });
@@ -45,6 +45,7 @@ test('a script call is sh -c with the checkout as $1, the base env overlay merge
   assert.ok(scripts.length >= 2);
   for (const b of scripts) {
     assert.deepEqual([b.argv[1], b.argv[3], b.argv[4]], ['-c', 'sh', r.dir]);
+    if (b.argv[2].includes('git ')) assert.ok(b.argv[2].includes('git -c core.fsmonitor=false -c core.splitIndex=false '), 'scripts call git with the same config');
     assert.equal(b.env.LC_ALL, 'C');
     assert.equal(b.env.GIT_OPTIONAL_LOCKS, '0');
   }

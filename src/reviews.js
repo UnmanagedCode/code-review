@@ -12,7 +12,7 @@ import { pickRound, roundDiff } from './rounds.js';
 
 const KINDS = ['range', 'commit', 'uncommitted'];
 const VERDICTS = ['pending', 'accepted', 'rejected'];
-const UNREADABLE = ['CHECKOUT_GONE', 'SNAPSHOT_GONE', 'DIFF_TOO_LARGE', ...UNREACHABLE];
+const UNREADABLE = ['CHECKOUT_GONE', 'SNAPSHOT_GONE', 'DIFF_TOO_LARGE', 'TEMP_UNUSABLE', ...UNREACHABLE];
 const now = () => new Date().toISOString();
 
 /** Bumps the review-wide change counter; every human or agent mutation takes a fresh seq. */

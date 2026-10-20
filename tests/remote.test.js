@@ -130,6 +130,45 @@ for (const [ccStatus, ccCode, code] of [[502, 'SYSTEM_UNREACHABLE', 'SYSTEM_UNRE
   });
 }
 
+for (const [ccStatus, ccCode, code] of [[502, 'SYSTEM_UNREACHABLE', 'SYSTEM_UNREACHABLE'], [504, 'EXEC_TIMEOUT', 'GIT_TIMEOUT']]) {
+  test(`with only the snapshot's commands refused (${ccCode}), the existence probe still answers and reviews degrade to snapshotError ${code}`, async () => {
+    await remoteWorld();
+    w.addWorktree().commit({ 'a.js': editLines({ 2: 'top-edit' }) });
+    const range = ok(await reviews.openReview({ project: 'app', worktree: 'feature' }, HUMAN)).review;
+    w.repo.write('a.js', editLines({ 5: 'live' }));
+    const unc = ok(await reviews.openReview({ project: 'app', worktree: null, kind: 'uncommitted' }, HUMAN)).review;
+    const t = ok(await threads.annotate(unc.id, HUMAN, { anchor: { file: 'a.js', side: 'new', startLine: 5 }, kind: 'comment', body: 'x' })).thread;
+    const probe = (b) => b.argv[0] === 'sh' && b.argv[2] === '[ -e "$1" ]';
+    w.cc.state.execHook = (b) => (probe(b) ? null : { status: ccStatus, body: { error: 'down', code: ccCode } });
+    w.cc.state.execCalls = [];
+
+    const listed = ok(await reviews.listReviews({ project: 'app' })).reviews;
+    assert.deepEqual(listed.map((r) => r.id).sort(), [range.id, unc.id].sort());
+    for (const r of listed) assert.deepEqual([r.snapshotError, r.checkoutGone], [code, false], r.id);
+    assert.ok(w.cc.state.execCalls.some(probe) && w.cc.state.execCalls.some((b) => !probe(b)), 'the probe answered and a snapshot command was refused');
+    assert.equal(ok(await reviews.getReview(range.id)).review.snapshotError, code);
+    assert.equal(ok(await reviews.getReview(unc.id)).review.snapshotError, code);
+    assert.deepEqual(ok(await threads.listThreads(unc.id, {})).threads.map((x) => [x.id, x.status]), [[t.id, 'open']]);
+    assert.equal(codeOf(await reviews.diff(range.id, {})), code);
+  });
+}
+
+test('a target TMPDIR that is relative degrades reviews to snapshotError TEMP_UNUSABLE, refuses a new snapshot, and leaves the tree alone', async () => {
+  await remoteWorld();
+  w.repo.write('a.js', editLines({ 5: 'live' }));
+  const unc = ok(await reviews.openReview({ project: 'app', worktree: null, kind: 'uncommitted' }, HUMAN)).review;
+  const status = w.repo.git('status', '--porcelain', '--untracked-files=all');
+  w.cc.state.execEnv = { TMPDIR: 'reltmp' };
+  const [row] = ok(await reviews.listReviews({ project: 'app' })).reviews;
+  assert.deepEqual([row.id, row.snapshotError, row.checkoutGone], [unc.id, 'TEMP_UNUSABLE', false]);
+  ok(await threads.listThreads(unc.id, {}));
+  const wt = w.addWorktree();
+  wt.write('a.js', editLines({ 6: 'wt' }));
+  assert.equal(codeOf(await reviews.openReview({ project: 'app', worktree: 'feature', kind: 'uncommitted' }, HUMAN)), 'TEMP_UNUSABLE');
+  assert.equal(w.repo.git('status', '--porcelain', '--untracked-files=all'), status);
+  assert.equal(fs.existsSync(path.join(wt.dir, 'reltmp')), false);
+});
+
 test('over HTTP: /projects lists the project on a system; /checkout describes it, and answers 502 while its system is down', async () => {
   const boot = tempStore();
   const dist = fs.mkdtempSync(path.join(os.tmpdir(), 'cr-remote-dist-'));
@@ -180,21 +219,38 @@ function dirty(co) {
   fs.utimesSync(path.join(co.dir, 'b.js'), future, future);
 }
 
-for (const fsmonitor of [false, true]) {
+// git freshens (bumps the mtime of) an existing shared index on every read of a split index, as a plain `git status`
+// does; that is git's own read behaviour. Only that field of a `sharedindex.*` entry is dropped: its name, content
+// hash and size stay compared, so a new, removed or rewritten shared index still fails, and every other file's
+// mtime stays exact.
+const ignoringSharedIndexFreshen = (sigs) => sigs.map((entries) => entries.map((e) => (
+  /(^|\/)sharedindex\.[0-9a-f]+ /.test(e) ? e.slice(0, e.lastIndexOf(' ')) : e)));
+
+for (const config of [null, 'core.fsmonitor', 'core.splitIndex']) {
   for (const where of ['main', 'worktree']) {
-    test(`over /api/exec on a system, every read path leaves the ${where} checkout's .git byte-identical${fsmonitor ? ' with core.fsmonitor=true' : ''}`, async () => {
+    test(`over /api/exec on a system, every read path leaves the ${where} checkout's .git byte-identical${config ? ` with ${config}=true` : ''}`, async () => {
       await remoteWorld();
       const base = w.repo.git('rev-parse', 'HEAD');
       const co = where === 'main' ? w.repo : w.addWorktree();
       dirty(co);
-      if (fsmonitor) w.repo.git('config', 'core.fsmonitor', 'true');
+      const fsmonitor = config === 'core.fsmonitor';
+      if (config) w.repo.git('config', config, 'true');
+      if (config === 'core.splitIndex') {
+        co.git('update-index', '--split-index'); // the checkout's index is split from here on, with the rm --cached path still restageable
+        assert.ok(fs.readdirSync(path.join(w.repo.dir, '.git'), { recursive: true }).some((n) => /sharedindex\./.test(n)), 'the fixture has a shared index');
+      }
       const tmp = pinTmp();
       const sig = () => [gitDirSig(w.repo.dir), ...(where === 'worktree' ? [gitDirSig(co.dir)] : [])];
       const before = sig();
       if (where === 'worktree') assert.ok(before[0].some((e) => /^\.git\/worktrees\/[^/]+\/index /.test(e)), 'the common dir signature covers the worktree\'s index');
       try {
         await readEverything(where === 'main' ? null : 'feature', base);
-        assert.deepEqual(sig(), before);
+        if (config === 'core.splitIndex') {
+          const after = sig();
+          assert.deepEqual(ignoringSharedIndexFreshen(after), ignoringSharedIndexFreshen(before));
+          const shared = (x) => x.flat().filter((e) => /(^|\/)sharedindex\./.test(e)).map((e) => e.split(' ')[0]);
+          assert.deepEqual(shared(after), shared(before), 'no shared index appeared or vanished');
+        } else assert.deepEqual(sig(), before);
         assert.deepEqual(fs.readdirSync(tmp), [], 'no private index dir left behind');
         assertAllRemote();
       } finally {

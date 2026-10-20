@@ -294,6 +294,20 @@ test('sizes reports lstat sizes in argument order: a symlink its own size, a van
   assert.deepEqual(await sizes(localPlace(r.dir), []), []);
 });
 
+test('untracked files are chunked by summed size: a chunk closes before it passes a third of the buffer limit', async () => {
+  const r = repo();
+  r.commit({ 'a.txt': 'a\n' });
+  const names = ['s1.txt', 's2.txt', 's3.txt', 's4.txt', 's5.txt'];
+  for (const n of names) r.write(n, `${'x'.repeat(399)}\n`); // 400 bytes each
+  const at = localPlace(r.dir);
+  const shas = await resolveTarget(at, 'uncommitted', {});
+  // Budget 3000 / 3 = 1000 bytes: two 400-byte files fit (800), a third would not (1200).
+  const snap = await buildSnapshot({ kind: 'uncommitted', repo: at, checkout: at, ...shas, limits: { maxDiffBytes: 3000 } });
+  const chunks = scriptCalls('--no-index').map((b) => b.argv.slice(5));
+  assert.deepEqual(chunks, [['s1.txt', 's2.txt'], ['s3.txt', 's4.txt'], ['s5.txt']]);
+  assert.deepEqual(snap.files.map((f) => [f.path, f.additions]), names.map((n) => [n, 1]));
+});
+
 test('250 untracked files cost three diff calls and two size calls, and parse the same as one diff per file', async () => {
   const r = repo();
   r.commit({ 'a.txt': 'a\n' });
@@ -331,6 +345,10 @@ test('in a repo with core.fsmonitor=true, statusOf and range and uncommitted sna
   r.commit({ 'b.txt': 'b\n' });
   r.write('u.txt', 'u\n');
   r.git('config', 'core.fsmonitor', 'true');
+  // Stat-dirty a tracked file into the future, so any index refresh that is allowed to write always has something to
+  // write, whatever the racy-timestamp state of the index: the outcome no longer depends on timing.
+  const future = new Date(Date.now() + 5000);
+  fs.utimesSync(path.join(r.dir, 'a.txt'), future, future);
   const before = gitDirSig(r.dir);
   try {
     await statusOf(localPlace(r.dir));
@@ -462,5 +480,89 @@ test('an uncommitted snapshot works in a checkout whose path contains a newline,
     const { snap } = await snapOf(r, 'uncommitted', {});
     assert.deepEqual(paths(snap), ['a.txt'], JSON.stringify(dirName));
     assert.ok(snap.files[0].hunks[0].lines.some((l) => l.t === 'del' && l.text === 'one'), 'HEAD objects resolved through the alternates entry');
+  }
+});
+
+/** Points the fake cc's commands at `tmpdir` and returns the refusal code of an uncommitted snapshot of `dir`. */
+async function snapshotWithTmp(dir, tmpdir) {
+  cc.state.execEnv = { TMPDIR: tmpdir };
+  const at = localPlace(dir);
+  const shas = await resolveTarget(at, 'uncommitted', {});
+  return (await attempt(() => buildSnapshot({ kind: 'uncommitted', repo: at, checkout: at, ...shas }))).code;
+}
+
+test('a relative TMPDIR on the target is refused TEMP_UNUSABLE before anything is created, so the checkout gains nothing', async () => {
+  const r = repo();
+  r.commit({ 'a.txt': 'a\n' });
+  r.write('u.txt', 'u\n');
+  const before = r.git('status', '--porcelain', '--untracked-files=all');
+  assert.equal(await snapshotWithTmp(r.dir, 'reltmp'), 'TEMP_UNUSABLE');
+  assert.equal(fs.existsSync(path.join(r.dir, 'reltmp')), false);
+  assert.equal(fs.existsSync('/reltmp'), false, 'not resolved against cwd / either');
+  assert.equal(r.git('status', '--porcelain', '--untracked-files=all'), before);
+  assert.equal(scriptCalls('mktemp').length, 1, 'refused by the create script');
+});
+
+test('a TMPDIR that resolves inside the checkout, its .git, or onto the checkout itself is refused, and nothing is made there', async () => {
+  const r = repo();
+  r.commit({ 'a.txt': 'a\n' });
+  const sub = path.join(r.dir, 'sub');
+  const inGit = path.join(r.dir, '.git', 'tmp');
+  fs.mkdirSync(sub);
+  fs.mkdirSync(inGit);
+  const link = path.join(path.dirname(r.dir), 'link-to-sub'); // outside the checkout, but resolving into it
+  fs.symlinkSync(sub, link);
+  for (const tmp of [sub, inGit, r.dir, link]) {
+    assert.equal(await snapshotWithTmp(r.dir, tmp), 'TEMP_UNUSABLE', tmp);
+  }
+  assert.deepEqual(fs.readdirSync(sub), []);
+  assert.deepEqual(fs.readdirSync(inGit), []);
+  assert.equal(fs.readdirSync(r.dir).some((n) => n.startsWith('cr-index-')), false);
+});
+
+test('a linked worktree refuses a TMPDIR inside the common git dir it shares with the main checkout', async () => {
+  const r = repo();
+  r.commit({ 'a.txt': 'a\n' });
+  const wt = fs.realpathSync(r.worktreeAdd(path.join(path.dirname(r.dir), 'wt'), 'wt-branch'));
+  const inCommon = path.join(r.dir, '.git', 'tmp');
+  fs.mkdirSync(inCommon);
+  assert.equal(await snapshotWithTmp(wt, inCommon), 'TEMP_UNUSABLE');
+  assert.deepEqual(fs.readdirSync(inCommon), []);
+});
+
+test('a TMPDIR that does not exist is refused TEMP_UNUSABLE; an absolute one outside the checkout works', async () => {
+  const r = repo();
+  r.commit({ 'a.txt': 'a\n' });
+  r.write('a.txt', 'b\n');
+  assert.equal(await snapshotWithTmp(r.dir, path.join(path.dirname(r.dir), 'missing')), 'TEMP_UNUSABLE');
+  const ok = path.join(path.dirname(r.dir), 'tmp-ok');
+  fs.mkdirSync(ok);
+  assert.equal(await snapshotWithTmp(r.dir, ok), undefined);
+  assert.deepEqual(fs.readdirSync(ok), []);
+});
+
+test('the committed-snapshot cache is per place: one virtual path on two systems is diffed on each', async () => {
+  // Two repos with identical commits (pinned identity and dates make the shas equal); only system b's marks a.txt
+  // binary through .git/info/attributes, which is not part of any commit.
+  const [a, b] = [repo(), repo()];
+  for (const x of [a, b]) {
+    x.commit({ 'a.txt': 'one\n' });
+    x.branch('feat');
+    x.commit({ 'a.txt': 'two\n' });
+  }
+  assert.equal(a.git('rev-parse', 'HEAD'), b.git('rev-parse', 'HEAD'));
+  fs.writeFileSync(path.join(b.dir, '.git', 'info', 'attributes'), 'a.txt binary\n');
+  const root = `/cr-remote-${path.basename(path.dirname(a.dir))}`;
+  cc.state.systems = { sa: { root, dir: path.dirname(a.dir) }, sb: { root, dir: path.dirname(b.dir) } };
+  try {
+    const files = async (system) => {
+      const at = { system, remoteId: null, path: `${root}/repo` };
+      const shas = await resolveTarget(at, 'range', { base: 'main' });
+      return (await buildSnapshot({ kind: 'range', repo: at, checkout: at, ...shas })).files.map((f) => [f.path, f.binary]);
+    };
+    assert.deepEqual(await files('sa'), [['a.txt', false]]);
+    assert.deepEqual(await files('sb'), [['a.txt', true]]);
+  } finally {
+    cc.state.systems = {};
   }
 });

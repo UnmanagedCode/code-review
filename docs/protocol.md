@@ -21,7 +21,7 @@ REST under `/api` (JSON), an SSE stream, and the cc MCP endpoint. Behaviour behi
 | 410 | `SNAPSHOT_GONE` (a pinned sha was garbage-collected) |
 | 413 | `DIFF_TOO_LARGE` (a diff, or a working-tree file read, over `MAX_DIFF_BYTES` in `src/git.js`) `BODY_TOO_LARGE` |
 | 415 | `UNSUPPORTED_MEDIA_TYPE` |
-| 502 | `CONDUCTOR_UNAVAILABLE` (also: a cc without `POST /api/exec`) `SYSTEM_UNREACHABLE` (the checkout's system or target cannot be asked) `GIT_UNAVAILABLE` (git or `sh` cannot start on the system) |
+| 502 | `CONDUCTOR_UNAVAILABLE` (also: a cc without `POST /api/exec`) `SYSTEM_UNREACHABLE` (the checkout's system or target cannot be asked) `GIT_UNAVAILABLE` (git or `sh` cannot start on the system) `TEMP_UNUSABLE` (the system's `TMPDIR` is relative, missing, unwritable, or inside the checkout or its git dir) |
 | 503 | `STORE_UNCONFIGURED` (the server still serves `/health` and the UI) |
 | 504 | `GIT_TIMEOUT` (a command passed `CODE_REVIEW_GIT_TIMEOUT_MS`) |
 
@@ -29,7 +29,7 @@ REST under `/api` (JSON), an SSE stream, and the cc MCP endpoint. Behaviour behi
 
 - **ReviewSummary:** `id, project, worktree, branch, kind, target, label, title, status, recipient, author|null, recipientRole, round, headSha, baseSha, headMoved, dirty, checkoutGone, counts:{files, hunks, threads:{open,resolved,outdated}}, mergeBlockers, unread, seenByHuman, rev, createdAt, createdBy, lastSubmission:{id,status,code,round}|null`.
   - `counts.hunks` is `{pending,accepted,rejected}`, or `{total}` for uncommitted reviews.
-  - `snapshotError` (`CHECKOUT_GONE|SNAPSHOT_GONE|DIFF_TOO_LARGE|SYSTEM_UNREACHABLE|GIT_TIMEOUT|GIT_UNAVAILABLE`) is present when the diff is unreadable; `counts.files` and `counts.hunks` are then `null`. With one of the last three the system could not answer: `checkoutGone` and `dirty` are then `false`, never a claim that the checkout is missing.
+  - `snapshotError` (`CHECKOUT_GONE|SNAPSHOT_GONE|DIFF_TOO_LARGE|TEMP_UNUSABLE|SYSTEM_UNREACHABLE|GIT_TIMEOUT|GIT_UNAVAILABLE`) is present when the diff is unreadable; `counts.files` and `counts.hunks` are then `null`. With `TEMP_UNUSABLE` or one of the last three the system could not serve the read: `checkoutGone` and `dirty` are then `false`, never a claim that the checkout is missing.
 - **FileState:** `path, oldPath, status (added|deleted|modified|renamed), binary, tooLarge, additions, deletions, hunks (count), verdicts:{pending,accepted,rejected}|null, threads:{open,resolved,outdated}, unread`.
 - **Hunk:** text `{id, kind:'text', header, oldStart, oldLines, newStart, newLines, lines:[{t:'ctx'|'add'|'del', old, new, text, noEol?}], verdict}`; file-level `{id, kind:'file', lines:[], verdict}`. `verdict` is `null` for uncommitted reviews, in the commit filter view and in past-round views.
 - **Thread:** `id, kind, severity, status (open|resolved|outdated), disposition, resolveProposed, anchor:{file, side, startLine, endLine, hunkId, round, linesHash, drifted}, openedBy, unread, messages:[{id, author, body, at, round, proposeResolve, citations:[{raw,path,startLine,endLine}]}]`.

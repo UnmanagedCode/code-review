@@ -76,7 +76,7 @@ export function makeEnv(review) {
   return env;
 }
 
-const UNREADABLE = ['CHECKOUT_GONE', 'SNAPSHOT_GONE', ...UNREACHABLE];
+const UNREADABLE = ['CHECKOUT_GONE', 'SNAPSHOT_GONE', 'TEMP_UNUSABLE', ...UNREACHABLE];
 
 // An uncommitted review's threads follow the live working tree; an unreadable tree leaves them untouched.
 async function sweep(review, env) {

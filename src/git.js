@@ -62,12 +62,15 @@ const CD = 'cd -- "$1" || exit 3; shift';
 
 // Makes the private index dir on the target: prints "<dir>\0<absolute objects dir>\0". The copy takes the original's
 // times exactly (`touch -r`), so git's racy-clean decisions on it are the original's own; a missing index is not copied.
-// The temp base must be an existing absolute dir outside both the checkout and its common git dir (exit 7 otherwise),
-// checked before anything is created; every failure after `mktemp` removes the dir it made.
+// The temp base must be an existing absolute dir, free of line terminators, outside both the checkout and its common
+// git dir (exit 7 otherwise), checked before anything is created; every failure after `mktemp` removes the dir it made.
+const NO_EOL = `case $t in *'\n'*|*'\r'*) exit 7 ;; esac`;
 const CREATE_INDEX = `${CD}
 t=\${TMPDIR:-/tmp}
 case $t in /*) ;; *) exit 7 ;; esac
+${NO_EOL}
 t=$(cd -- "$t" && pwd -P) || exit 7
+${NO_EOL}
 r=$(pwd -P) || exit 3
 c=$(${GIT} rev-parse --git-common-dir) || exit 4
 c=$(cd -- "$c" && pwd -P) || exit 4
@@ -85,7 +88,9 @@ printf '%s\\0%s\\0' "$d" "$o"`;
 const WRITE_ALTERNATES = `${CD}
 printf '%s\\n' "$2" > "$1/objects/info/alternates"`;
 
-const TEMP_RE = /^\/(.+\/)?cr-index-[^/]+$/;
+/** Structurally a private index dir: absolute, no `..` segment, basename `cr-index-*`. Any byte else is allowed. */
+const isTempDir = (d) => typeof d === 'string' && d.startsWith('/') && !d.split('/').includes('..')
+  && d.slice(d.lastIndexOf('/') + 1).startsWith('cr-index-') && d.length > d.lastIndexOf('/') + 'cr-index-'.length + 1;
 
 /**
  * Calls `fn({env})` with GIT_INDEX_FILE pointing at a unique temp copy of the checkout's index and GIT_OBJECT_DIRECTORY
@@ -93,11 +98,14 @@ const TEMP_RE = /^\/(.+\/)?cr-index-[^/]+$/;
  * afterwards, so index-refreshing and staging commands never write the project tree.
  */
 export async function withPrivateIndex(place, fn) {
-  const made = await sh(place, CREATE_INDEX, [], { ok: [0, 5, 7] });
+  const made = await sh(place, CREATE_INDEX, [], { ok: [0, 5, 6, 7] });
   if (made.code === 7) throw new Refusal('TEMP_UNUSABLE', `TMPDIR on ${place.system} is not an existing absolute directory outside the checkout and its git dir`);
   if (made.code === 5) throw new Refusal('TEMP_UNUSABLE', `could not create a private index dir in TMPDIR on ${place.system}`);
+  if (made.code === 6) throw new Refusal('TEMP_UNUSABLE', `could not prepare the private index in TMPDIR on ${place.system} (creating its objects dir or copying the index failed)`);
   const [dir, objects] = made.stdout.split('\0');
-  if (!TEMP_RE.test(dir)) throw new Error(`private index: unexpected temp dir ${JSON.stringify(dir)}`);
+  // Every path the script can print passes (its base is absolute and it made `<base>/cr-index-*`), so a mismatch
+  // means the output names no dir the script made: there is nothing it is safe to remove.
+  if (!isTempDir(dir)) throw new Refusal('TEMP_UNUSABLE', `private index: the create script printed no private index dir (${JSON.stringify(dir)})`);
   const teardown = () => removeTemp(place, dir).catch((e) => {
     console.warn(`code-review: could not remove the private index dir ${dir} on ${place.system}: ${e.message}`);
   });
@@ -118,7 +126,7 @@ export async function withPrivateIndex(place, fn) {
 
 /** Removes a private index dir; refuses any path not named `cr-index-*`. */
 export async function removeTemp(place, dir) {
-  if (!TEMP_RE.test(dir)) throw new Error(`refusing to remove ${JSON.stringify(dir)}: not a private index dir`);
+  if (!isTempDir(dir)) throw new Error(`refusing to remove ${JSON.stringify(dir)}: not a private index dir`);
   await call(place, ['rm', '-rf', '--', dir], 'rm');
 }
 

@@ -101,6 +101,7 @@ test('each cc refusal maps to its code-review refusal and HTTP status', async ()
     assert.equal(HTTP_STATUS[code], expectedStatus[code], code);
   }
   assert.deepEqual(UNREACHABLE.map((c) => HTTP_STATUS[c]), [502, 504, 502]);
+  assert.equal(HTTP_STATUS.TEMP_UNUSABLE, 502, 'a target without a usable temp base is the system failing to serve the read');
 });
 
 test('an unreachable refusal names the system and cc\'s code', async () => {

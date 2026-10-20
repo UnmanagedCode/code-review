@@ -21,7 +21,7 @@ REST under `/api` (JSON), an SSE stream, and the cc MCP endpoint. Behaviour behi
 | 410 | `SNAPSHOT_GONE` (a pinned sha was garbage-collected) |
 | 413 | `DIFF_TOO_LARGE` (a diff, or a working-tree file read, over `MAX_DIFF_BYTES` in `src/git.js`) `BODY_TOO_LARGE` |
 | 415 | `UNSUPPORTED_MEDIA_TYPE` |
-| 502 | `CONDUCTOR_UNAVAILABLE` (also: a cc without `POST /api/exec`) `SYSTEM_UNREACHABLE` (the checkout's system or target cannot be asked) `GIT_UNAVAILABLE` (git or `sh` cannot start on the system) `TEMP_UNUSABLE` (the system's `TMPDIR` is relative, missing, unwritable, or inside the checkout or its git dir) |
+| 502 | `CONDUCTOR_UNAVAILABLE` (also: a cc without `POST /api/exec`) `SYSTEM_UNREACHABLE` (the checkout's system or target cannot be asked) `GIT_UNAVAILABLE` (git or `sh` cannot start on the system) `TEMP_UNUSABLE` (the system's `TMPDIR` is relative, missing, unwritable, holds a line terminator, or is inside the checkout or its git dir; or the private index could not be prepared there) |
 | 503 | `STORE_UNCONFIGURED` (the server still serves `/health` and the UI) |
 | 504 | `GIT_TIMEOUT` (a command passed `CODE_REVIEW_GIT_TIMEOUT_MS`) |
 

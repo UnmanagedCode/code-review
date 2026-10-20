@@ -15,13 +15,13 @@ function remembered(): { project: string; worktree?: string } | null {
 
 /**
  * Picks the checkout: the route if it names one, else cc's active session, else the last one used.
- * With a bridge, later session changes to a local project switch the checkout. Inert without a bridge.
+ * With a bridge, later session changes to a listed project switch the checkout. Inert without a bridge.
  */
 export function useFollowSession(route: Route) {
   const projects = useProjects();
   const session = useBridgeSession();
   const names = projects.data?.projects.map((p) => p.name);
-  const local = !!session && !!names?.includes(session.project);
+  const known = !!session && !!names?.includes(session.project);
   const routeProject = route.project;
   const consumed = useRef(false);
   const sessions = useSessions(routeProject, route.worktree ?? null);
@@ -33,18 +33,18 @@ export function useFollowSession(route: Route) {
     const first = !consumed.current;
     consumed.current = true;
     if (first && routeProject) return; // a route-named checkout wins on load
-    if (local && session) {
+    if (known && session) {
       if (session.project === routeProject && (session.worktree ?? undefined) === route.worktree) return;
       navigateTo({ project: session.project, worktree: session.worktree ?? undefined }, { replace: true });
     } else if (first && !routeProject) {
       const last = remembered();
       if (last && names.includes(last.project)) navigateTo(last, { replace: true });
     }
-  }, [names?.join(), session?.sessionId, session?.project, session?.worktree, local]);
+  }, [names?.join(), session?.sessionId, session?.project, session?.worktree, known]);
 
-  const followed = local ? sessions.data?.sessions.find((s) => s.sessionId === session!.sessionId) : undefined;
+  const followed = known ? sessions.data?.sessions.find((s) => s.sessionId === session!.sessionId) : undefined;
   return {
-    followingTitle: local && session!.project === routeProject && (session!.worktree ?? undefined) === route.worktree ? (followed?.title || session!.sessionId.slice(0, 8)) : undefined,
-    unfollowable: !!session && !!names && !local,
+    followingTitle: known && session!.project === routeProject && (session!.worktree ?? undefined) === route.worktree ? (followed?.title || session!.sessionId.slice(0, 8)) : undefined,
+    unfollowable: !!session && !!names && !known,
   };
 }

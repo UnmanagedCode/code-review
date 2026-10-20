@@ -1,9 +1,13 @@
 import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
 const DATE = '2024-01-01T00:00:00Z';
+
+/** The place of a checkout on cc's own machine, as `resolveCheckout` builds it. */
+export const localPlace = (dir) => ({ system: 'local', remoteId: null, path: dir });
 
 /** Runs git in `dir` with a pinned identity, no signing and fixed dates. */
 export function git(dir, ...args) {
@@ -58,13 +62,13 @@ export function makeRepo({ dirName = 'repo' } = {}) {
 
 export const lines = (n, prefix = 'l') => Array.from({ length: n }, (_, i) => `${prefix}${i + 1}`).join('\n') + '\n';
 
-/** Size and mtime of every file under `dir`'s `.git` (a directory, or a linked worktree's `.git` file): equal before and after = untouched. */
+/** Content hash, size and mtime of every file under `dir`'s `.git` (a directory, or a linked worktree's `.git` file): equal before and after = untouched. */
 export function gitDirSig(dir) {
   const out = [];
   const walk = (p) => {
     const s = fs.statSync(p);
     if (s.isDirectory()) { for (const name of fs.readdirSync(p)) walk(path.join(p, name)); return; }
-    out.push(`${path.relative(dir, p)} ${s.size} ${s.mtimeMs}`);
+    out.push(`${path.relative(dir, p)} ${createHash('sha256').update(fs.readFileSync(p)).digest('hex')} ${s.size} ${s.mtimeMs}`);
   };
   walk(path.join(dir, '.git'));
   return out.sort();

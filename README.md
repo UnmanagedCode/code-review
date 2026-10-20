@@ -34,6 +34,7 @@ frontend/              index.html, vite.config.ts, public/theme-init.js, src/{li
 tests/                 node --test backend tests
 harness/mutation/      code-mutant config (see its README)
 harness/playwright/    seed.mjs, snap.mjs (screenshots), golden.mjs (interaction)
+harness/bench/         open-review.mjs (openReview timing, see its README)
 .wiki/                 durable project knowledge
 ```
 
@@ -75,7 +76,8 @@ Then Settings → Plugins → Rescan, and enable.
 ## Known limitations
 
 - `caller` in the MCP envelope is unauthenticated loopback input: any local process can pose as any agent (see [protocol](docs/protocol.md#mcp)). The REST surface already acts as the human.
-- Local projects only; remote (`system`) projects are refused.
+- Every checkout, local or on a System, is read through cc's `POST /api/exec`: **code-review needs a code-conductor that serves it** (an older cc answers `CONDUCTOR_UNAVAILABLE`, naming the route).
+- Each System that holds a reviewed project needs `git` ≥ 2.17 (`status --porcelain=v2 --no-ahead-behind`), a POSIX `sh`, `mktemp`, `mkdir`, `cp`, `touch -r`, `rm`, `ls`, `awk`, `realpath` and `cat`, and a `TMPDIR` (default `/tmp`) that is absolute and outside the project's tree.
 - The commit-filter view of a range review is read-only.
 - Past-round views are read-only; open/resolved there is the thread's current status (unless it went outdated later), and they show no verdicts.
 - Uncommitted edits are not pushed: the UI re-fetches on focus or an interval.

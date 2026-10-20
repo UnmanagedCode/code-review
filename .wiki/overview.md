@@ -9,7 +9,7 @@
 - `src/` — backend modules; `docs/` — features, protocol, architecture; `skills/` and `conventions/` — agent prompt surfaces.
 - `frontend/` — React + Vite + Tailwind v4 UI (cc's reference setup).
 - `tests/` — `node --test` backend tests; UI tests sit beside their sources as `*.test.ts(x)`.
-- `harness/mutation/`, `harness/playwright/` — project-local verification harnesses.
+- `harness/mutation/`, `harness/playwright/`, `harness/bench/` — project-local verification harnesses and the `open_review` benchmark.
 
 ## Glossary
 

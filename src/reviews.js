@@ -2,6 +2,7 @@ import * as store from './store.js';
 import * as git from './git.js';
 import { withLock } from './mutex.js';
 import { attempt, refuse, Refusal } from './refusals.js';
+import { UNREACHABLE } from './exec.js';
 import { resolveCheckout, forkPoints, sessions, sessionCheckout, isConductorProject } from './checkouts.js';
 import { resolveTarget, buildSnapshot, isBinaryFile } from './snapshot.js';
 import { followThreads } from './follow.js';
@@ -11,7 +12,7 @@ import { pickRound, roundDiff } from './rounds.js';
 
 const KINDS = ['range', 'commit', 'uncommitted'];
 const VERDICTS = ['pending', 'accepted', 'rejected'];
-const UNREADABLE = ['CHECKOUT_GONE', 'SNAPSHOT_GONE', 'DIFF_TOO_LARGE'];
+const UNREADABLE = ['CHECKOUT_GONE', 'SNAPSHOT_GONE', 'DIFF_TOO_LARGE', 'TEMP_UNUSABLE', ...UNREACHABLE];
 const now = () => new Date().toISOString();
 
 /** Bumps the review-wide change counter; every human or agent mutation takes a fresh seq. */
@@ -27,24 +28,27 @@ function record(review, hunkId, verdict) {
   else review.verdicts[hunkId] = { verdict, seq, at: now() };
 }
 
-/** ReviewSummary for a review inside its request context. */
+/**
+ * ReviewSummary for a review inside its request context. A system that cannot answer is a `snapshotError`, never
+ * `checkoutGone`: the list still shows the review.
+ */
 export async function summaryOf(review, env) {
-  const co = await env.checkout();
-  let files = null;
   let snapshotError = null;
-  try {
-    files = (await env.snapshot()).files;
-  } catch (e) {
-    if (!(e instanceof Refusal) || !UNREADABLE.includes(e.code)) throw e;
-    snapshotError = e.code;
-  }
+  const unreadable = (codes) => (e) => {
+    if (!(e instanceof Refusal) || !codes.includes(e.code)) throw e;
+    snapshotError ??= e.code;
+    return null;
+  };
+  const co = await env.checkout().catch(unreadable(UNREACHABLE));
+  const files = co && (await env.snapshot().then((s) => s.files, unreadable(UNREADABLE)));
   let headMoved = false;
   let dirty = false;
-  if (co.exists && review.kind !== 'uncommitted') {
-    dirty = await git.isDirty(co.path);
-    if (review.kind === 'range') headMoved = (await git.headOf(co.path)) !== currentRound(review).headSha;
+  if (co?.exists && review.kind !== 'uncommitted') {
+    const st = await git.statusOf(co.place).catch(unreadable(UNREACHABLE));
+    dirty = st?.dirty ?? false;
+    if (st && review.kind === 'range') headMoved = st.head !== currentRound(review).headSha;
   }
-  return summarize(review, files, { headMoved, dirty, checkoutGone: !co.exists, snapshotError });
+  return summarize(review, files ?? null, { headMoved, dirty, checkoutGone: co ? !co.exists : false, snapshotError });
 }
 
 /** Fresh summary of a stored review (re-read, so `rev` is current). */
@@ -77,7 +81,7 @@ export const openReview = (args, actor) => attempt(() => withLock('create', asyn
     target.base = args.base ?? (await forkPoints(co))[0]?.ref;
     if (!target.base) throw new Refusal('BASE_REQUIRED', 'a range review of a main checkout needs a base');
   }
-  const shas = await resolveTarget(co.path, kind, kind === 'commit' ? { sha: args.sha } : target);
+  const shas = await resolveTarget(co.place, kind, kind === 'commit' ? { sha: args.sha } : target);
   if (kind === 'commit') target.sha = shas.headSha;
 
   const same = (r) => r.status === 'open' && r.project === args.project && r.worktree === worktree && r.kind === kind
@@ -85,9 +89,9 @@ export const openReview = (args, actor) => attempt(() => withLock('create', asyn
   const existing = store.list().find(same);
   if (existing) return { ok: true, review: (await summaryById(existing.id)).review, reused: true };
 
-  const snap = await buildSnapshot({ kind, repo: co.path, checkout: co.path, ...shas });
+  const snap = await buildSnapshot({ kind, repo: co.place, checkout: co.place, ...shas });
   const recipient = actor.kind === 'agent' ? actor.sessionId : await resolveRecipient(args.recipient, { project: args.project, worktree });
-  const branch = co.branch ?? (await git.currentBranch(co.path));
+  const branch = co.branch ?? (await git.currentBranch(co.place));
   const review = {
     id: store.newId(), project: args.project, worktree, branch, kind, target,
     baseLabel: kind === 'range' ? target.base : null, title: '', status: 'open', createdAt: now(), createdBy: null,
@@ -180,7 +184,7 @@ export const refreshReview = (id) => attempt(async () => inReview(id, async (rev
   const co = await env.checkout();
   if (!co.exists) throw new Refusal('CHECKOUT_GONE', `${co.path ?? 'the checkout'} no longer exists`);
   const cur = currentRound(review);
-  const shas = await resolveTarget(co.path, review.kind, review.target);
+  const shas = await resolveTarget(co.place, review.kind, review.target);
   const zero = { moved: 0, drifted: 0, outdated: 0, dropped: 0 };
   const push = (snap) => review.rounds.push({ n: cur.n + 1, ...shas, fingerprint: snap.fingerprint, createdAt: now(), submittedAt: null });
 
@@ -192,7 +196,7 @@ export const refreshReview = (id) => attempt(async () => inReview(id, async (rev
   }
 
   if (shas.headSha === cur.headSha && shas.baseSha === cur.baseSha) return { ok: true, unchanged: true, round: cur.n };
-  const next = await buildSnapshot({ kind: 'range', repo: co.path, checkout: co.path, ...shas });
+  const next = await buildSnapshot({ kind: 'range', repo: co.place, checkout: co.place, ...shas });
   const nextIds = new Set(next.files.flatMap((f) => f.hunks.map((h) => h.id)));
   let prevIds = new Set();
   try { prevIds = new Set((await env.snapshot()).files.flatMap((f) => f.hunks.map((h) => h.id))); } catch (e) {
@@ -204,7 +208,7 @@ export const refreshReview = (id) => attempt(async () => inReview(id, async (rev
     else { delete review.verdicts[hunkId]; hunks.reset++; }
   }
   let renames = {};
-  try { renames = await git.renames(co.path, cur.headSha, shas.headSha); } catch { /* previous head gone: threads fall back to same-path lookup */ }
+  try { renames = await git.renames(co.place, cur.headSha, shas.headSha); } catch { /* previous head gone: threads fall back to same-path lookup */ }
   const threads = await followThreads(review, next, 'reanchor', { renames, round: cur.n + 1 });
   push(next);
   return { ok: true, unchanged: false, round: cur.n + 1, hunks, threads };

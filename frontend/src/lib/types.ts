@@ -52,7 +52,7 @@ export interface ReviewSummary {
   counts: { files: number | null; hunks: ({ pending: number; accepted: number; rejected: number } | { total: number }) | null; threads: ThreadCounts };
   mergeBlockers: number; unread: number; seenByHuman: boolean; rev: number; createdAt: string; createdBy: Author;
   lastSubmission: SubmissionRef | null;
-  snapshotError?: 'CHECKOUT_GONE' | 'SNAPSHOT_GONE' | 'DIFF_TOO_LARGE';
+  snapshotError?: 'CHECKOUT_GONE' | 'SNAPSHOT_GONE' | 'DIFF_TOO_LARGE' | 'SYSTEM_UNREACHABLE' | 'GIT_TIMEOUT' | 'GIT_UNAVAILABLE' | 'TEMP_UNUSABLE';
 }
 
 export interface Session { sessionId: string; project: string; worktree: string | null; title: string; status: string; live: boolean; conductor: boolean; conducted: boolean; attached: boolean }

@@ -51,7 +51,7 @@ export function apiRouter() {
   r.use(express.json());
 
   r.get('/projects', route(async () => ({
-    ok: true, projects: (await cc.projects()).filter((p) => !p.system || p.system === 'local').map((p) => ({ name: p.name })),
+    ok: true, projects: (await cc.projects()).map((p) => ({ name: p.name })),
   })));
   r.get('/checkout', route(withCheckout(async (co) => ({ ok: true, ...(await checkoutInfo(co)) }))));
   r.get('/checkout/commits', route(withCheckout(async (co, req) => ({ ok: true, commits: await checkoutCommits({ ...co, limit: req.query.limit }) }))));

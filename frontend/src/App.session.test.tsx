@@ -38,7 +38,7 @@ test('a session in a local project switches the checkout, replacing the history 
   expect(replace).toHaveBeenCalledWith(null, '', '?project=other&worktree=feature');
 });
 
-test('a conductor or non-local session leaves the route alone and says so', async () => {
+test('a conductor or unlisted session leaves the route alone and says so', async () => {
   installFakeEventSource();
   world();
   const bridge = installBridge(undefined);

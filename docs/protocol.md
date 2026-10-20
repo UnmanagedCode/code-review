@@ -9,7 +9,7 @@ REST under `/api` (JSON), an SSE stream, and the cc MCP endpoint. Behaviour behi
 - **Limits:** a message or thread body is at most `MAX_BODY_CHARS` (20 000, `src/threads.js`) characters, else `413 BODY_TOO_LARGE`. The SSE feed has no client cap (the store's change emitter has no listener limit; listeners are removed on disconnect).
 - `worktree: ""` means the main checkout, like an omitted or `null` one, in `POST /reviews` and MCP `open_review`.
 - Source of truth for codes and statuses: `HTTP_STATUS` in `src/refusals.js`.
-- Env: `CODE_REVIEW_STORE` (store dir) else `$PROJECTS_ROOT/.code-review`; `CONDUCTOR_URL` (cc base URL, injected by cc); `CODE_REVIEW_CC_TIMEOUT_MS` (cc call timeout, default 3000); `PORT` (default 7400).
+- Env: `CODE_REVIEW_STORE` (store dir) else `$PROJECTS_ROOT/.code-review`; `CONDUCTOR_URL` (cc base URL, injected by cc); `CODE_REVIEW_CC_TIMEOUT_MS` (timeout of the cc GET routes, default 3000); `CODE_REVIEW_GIT_TIMEOUT_MS` (per-command timeout of `POST /api/exec`, default 120000, capped at cc's `EXEC_MAX_TIMEOUT_MS`); `PORT` (default 7400).
 
 ## Refusal codes
 
@@ -17,18 +17,19 @@ REST under `/api` (JSON), an SSE stream, and the cc MCP endpoint. Behaviour behi
 |---|---|
 | 400 | `INVALID_ARGUMENT` `BAD_REF` `BASE_REQUIRED` `LINE_OUT_OF_RANGE` `SEVERITY_REQUIRED` `CALLER_UNKNOWN` |
 | 404 | `PROJECT_UNKNOWN` `CHECKOUT_UNKNOWN` `REF_UNKNOWN` `REVIEW_UNKNOWN` `THREAD_UNKNOWN` `HUNK_UNKNOWN` `FILE_NOT_IN_DIFF` `SUBMISSION_UNKNOWN` `COMMIT_NOT_IN_RANGE` `RECIPIENT_UNKNOWN` `ROUND_UNKNOWN` `AUTHOR_UNKNOWN` (MCP only) |
-| 409 | `PROJECT_NOT_LOCAL` `CHECKOUT_GONE` `NO_COMMON_ANCESTOR` `UNBORN_HEAD` `IMMUTABLE_TARGET` `NO_VERDICTS` `REVIEW_CLOSED` `BINARY_FILE` `NO_RECIPIENT` `NOTHING_TO_SUBMIT` `SUBMISSION_NOT_PENDING` `THREAD_DROPPED` |
+| 409 | `CHECKOUT_GONE` `NO_COMMON_ANCESTOR` `UNBORN_HEAD` `IMMUTABLE_TARGET` `NO_VERDICTS` `REVIEW_CLOSED` `BINARY_FILE` `NO_RECIPIENT` `NOTHING_TO_SUBMIT` `SUBMISSION_NOT_PENDING` `THREAD_DROPPED` |
 | 410 | `SNAPSHOT_GONE` (a pinned sha was garbage-collected) |
-| 413 | `DIFF_TOO_LARGE` `BODY_TOO_LARGE` |
+| 413 | `DIFF_TOO_LARGE` (a diff, or a working-tree file read, over `MAX_DIFF_BYTES` in `src/git.js`) `BODY_TOO_LARGE` |
 | 415 | `UNSUPPORTED_MEDIA_TYPE` |
-| 502 | `CONDUCTOR_UNAVAILABLE` |
+| 502 | `CONDUCTOR_UNAVAILABLE` (also: a cc without `POST /api/exec`) `SYSTEM_UNREACHABLE` (the checkout's system or target cannot be asked) `GIT_UNAVAILABLE` (git or `sh` cannot start on the system) `TEMP_UNUSABLE` (the system's `TMPDIR` is relative, missing, unwritable, holds a line terminator, or is inside the checkout or its git dir; or the private index could not be prepared there) |
 | 503 | `STORE_UNCONFIGURED` (the server still serves `/health` and the UI) |
+| 504 | `GIT_TIMEOUT` (a command passed `CODE_REVIEW_GIT_TIMEOUT_MS`) |
 
 ## Shapes
 
 - **ReviewSummary:** `id, project, worktree, branch, kind, target, label, title, status, recipient, author|null, recipientRole, round, headSha, baseSha, headMoved, dirty, checkoutGone, counts:{files, hunks, threads:{open,resolved,outdated}}, mergeBlockers, unread, seenByHuman, rev, createdAt, createdBy, lastSubmission:{id,status,code,round}|null`.
   - `counts.hunks` is `{pending,accepted,rejected}`, or `{total}` for uncommitted reviews.
-  - `snapshotError` (`CHECKOUT_GONE|SNAPSHOT_GONE|DIFF_TOO_LARGE`) is present when the diff is unreadable; `counts.files` and `counts.hunks` are then `null`.
+  - `snapshotError` (`CHECKOUT_GONE|SNAPSHOT_GONE|DIFF_TOO_LARGE|TEMP_UNUSABLE|SYSTEM_UNREACHABLE|GIT_TIMEOUT|GIT_UNAVAILABLE`) is present when the diff is unreadable; `counts.files` and `counts.hunks` are then `null`. With `TEMP_UNUSABLE` or one of the last three the system could not serve the read: `checkoutGone` and `dirty` are then `false`, never a claim that the checkout is missing.
 - **FileState:** `path, oldPath, status (added|deleted|modified|renamed), binary, tooLarge, additions, deletions, hunks (count), verdicts:{pending,accepted,rejected}|null, threads:{open,resolved,outdated}, unread`.
 - **Hunk:** text `{id, kind:'text', header, oldStart, oldLines, newStart, newLines, lines:[{t:'ctx'|'add'|'del', old, new, text, noEol?}], verdict}`; file-level `{id, kind:'file', lines:[], verdict}`. `verdict` is `null` for uncommitted reviews, in the commit filter view and in past-round views.
 - **Thread:** `id, kind, severity, status (open|resolved|outdated), disposition, resolveProposed, anchor:{file, side, startLine, endLine, hunkId, round, linesHash, drifted}, openedBy, unread, messages:[{id, author, body, at, round, proposeResolve, citations:[{raw,path,startLine,endLine}]}]`.
@@ -42,8 +43,8 @@ REST under `/api` (JSON), an SSE stream, and the cc MCP endpoint. Behaviour behi
 
 | Method + path | Request | Success body | Refusals |
 |---|---|---|---|
-| `GET /projects` | | `{projects:[{name}]}` (local only) | `CONDUCTOR_UNAVAILABLE` |
-| `GET /checkout` | `?project&worktree` (omit `worktree` for main) | `{checkout:{project, worktree, path, branch, headSha, dirty, exists}, forkPoints:[{ref,label,forkSha}], worktrees:[{worktreeName,branch}]}` | `INVALID_ARGUMENT`, `PROJECT_*`, `CHECKOUT_UNKNOWN` |
+| `GET /projects` | | `{projects:[{name}]}` (every cc project, local or on a System) | `CONDUCTOR_UNAVAILABLE` |
+| `GET /checkout` | `?project&worktree` (omit `worktree` for main) | `{checkout:{project, worktree, path, branch, headSha, dirty, exists}, forkPoints:[{ref,label,forkSha}], worktrees:[{worktreeName,branch}]}` | `INVALID_ARGUMENT`, `PROJECT_*`, `CHECKOUT_UNKNOWN`, `SYSTEM_UNREACHABLE` `GIT_TIMEOUT` `GIT_UNAVAILABLE` |
 | `GET /checkout/commits` | `?project&worktree&limit` (default 50, max 500) | `{commits:[{sha, short, author, date, subject, merge}]}` | as above, `CHECKOUT_GONE` |
 | `GET /sessions` | `?project&worktree` | `{sessions:[Session]}` (all cc sessions; `attached` is relative to the checkout) | `INVALID_ARGUMENT`, `CONDUCTOR_UNAVAILABLE` |
 | `GET /reviews` | `?project&worktree&status` (`open`, `closed` or `all`; `all` or no `status` = every status); no `worktree` = every checkout, empty `worktree=` = main | `{reviews:[ReviewSummary]}` newest first | |
@@ -101,13 +102,26 @@ REST under `/api` (JSON), an SSE stream, and the cc MCP endpoint. Behaviour behi
 
 ## cc routes consumed
 
-All through `CONDUCTOR_URL`, 3 s timeout; any failure is `CONDUCTOR_UNAVAILABLE`.
+All through `CONDUCTOR_URL`. The GET routes time out after `CODE_REVIEW_CC_TIMEOUT_MS`; any failure there is `CONDUCTOR_UNAVAILABLE`.
 
 | Route | Fields used |
 |---|---|
-| `GET /api/projects` | `name`, `path`, `system` (absent or `local` = local) |
+| `GET /api/projects` | `name`, `path`, `system` (absent = `local`), `remoteId` (absent = the provider's default target) |
 | `GET /api/projects/:name/worktrees` | `worktreeName`, `worktreePath`, `branch`, `baseBranch`, `baseSha`, `baseWorktree?` (absent = forked from the main checkout) |
 | `GET /api/instances` | `sessionId`, `project`, `status`, `title`, `conducted`, `worktree.worktreeName` |
+| `POST /api/exec` | every git command and checkout read (`src/exec.js`). Sent: `system`, `remoteId` (omitted when `null`), `cwd: "/"`, `argv`, `env`, `stdinB64?`, `encoding: "base64"`, `timeoutMs`, `maxOutputBytes`. Read: `exitCode`, `stdout`, `stderr`; on a refusal `code`, `error`, `errno` |
+
+**`POST /api/exec` refusals → code-review** (mapped in `exec` in `src/exec.js`, the only place cc's exec codes are read):
+
+| cc answer | code-review |
+|---|---|
+| fetch fails (refused, reset, deadline `timeoutMs + min(10 s, timeoutMs)`) or a non-JSON body | `CONDUCTOR_UNAVAILABLE` |
+| 404 without a `code` (a cc that predates the route) | `CONDUCTOR_UNAVAILABLE`, reason naming `POST /api/exec` |
+| `SYSTEM_UNREACHABLE` `REMOTE_NOT_FOUND` `SYSTEM_NOT_REGISTERED` `SYSTEM_NO_PROVIDER` `SYSTEM_NO_REMOTES` `SYSTEMS_UNAVAILABLE` | `SYSTEM_UNREACHABLE` (reason carries cc's code and error) |
+| `EXEC_TIMEOUT` | `GIT_TIMEOUT` |
+| `EXEC_OUTPUT_TOO_LARGE` | `DIFF_TOO_LARGE` |
+| `EXEC_SPAWN_FAILED` | `GIT_UNAVAILABLE` (reason carries the errno) |
+| anything else (`INVALID_ARGUMENT`, `CWD_NOT_ABSOLUTE`, express's 413, a 5xx) | a plain error: `500 INTERNAL` |
 
 - A session is live unless `status` is `exited` or `crashed`. The conductor is the session whose `project` is `.conduct`.
 - The `sessionIds` lists on the other cc routes are not liveness-filtered and are not used.

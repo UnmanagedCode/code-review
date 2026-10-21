@@ -128,3 +128,16 @@ test('while a comparison loads every tab shows Loading, not an empty claim', asy
     expect(within(panel).queryByText(/Every thread has a place|No threads/), String(tab)).toBeNull();
   }
 });
+
+// Invariant: a failed reload keeps the comparison already loaded (useFetch retains its data), so its lists stay.
+test('a loaded comparison whose reload failed still lists its threads in every tab', async () => {
+  const viewLoad = { loading: false, error: { code: 'SYSTEM_UNREACHABLE', reason: 'down' }, reload: vi.fn() };
+  render(<ReviewProvider value={comparison({ viewLoad })}><ThreadPanel /></ReviewProvider>);
+  const user = userEvent.setup();
+  for (const [tab, n] of [[/^This file/, 2], [/^All/, 3], [/^Not in diff/, 1]] as const) {
+    await user.click(screen.getByRole('tab', { name: tab }));
+    const panel = screen.getByRole('tabpanel');
+    expect(within(panel).queryByRole('button', { name: 'Retry' }), String(tab)).toBeNull();
+    expect(within(panel).getAllByRole('article'), String(tab)).toHaveLength(n);
+  }
+});

@@ -41,8 +41,9 @@ function CompareThreadPanel({ compare }: { compare: NonNullable<ReturnType<typeo
     .sort((a, b) => a.thread.id.localeCompare(b.thread.id, undefined, { numeric: true }));
   const all = every.filter((s) => status === 'all' || s.thread.status === status);
   // Until the comparison has loaded (or when it failed) no tab can list anything, nor claim that nothing is there.
+  // A loaded view wins over an error: a failed reload keeps the previous data.
   const load = ctx.viewLoad;
-  const gate = load?.error ? <ErrorState error={load.error} onRetry={load.reload} /> : !view ? <Loading label="Loading threads" rows={3} /> : null;
+  const gate = view ? null : load?.error ? <ErrorState error={load.error} onRetry={load.reload} /> : <Loading label="Loading threads" rows={3} />;
   return (
     <section aria-label="Threads" className="flex min-h-0 flex-1 flex-col">
       <Tabs value={tab} onValueChange={setTab} className="min-h-0 flex-1 gap-0">

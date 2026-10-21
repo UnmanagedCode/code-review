@@ -118,6 +118,30 @@ describe.each(['inline', 'split'])('%s view', (view) => {
     expect((screen.getByLabelText('Reply') as HTMLTextAreaElement).value).toBe('half typed');
   });
 
+  // Invariant: a reply draft survives its hunk being accepted (the card moves under the hunk summary and remounts).
+  test('a reply draft survives its hunk being accepted, collapsed and expanded', () => {
+    const { update } = mount(diffFile({ threads: [thread()] }));
+    fireEvent.change(screen.getByLabelText('Reply'), { target: { value: 'half typed' } });
+    update(accepted({ threads: [thread()] }));
+    expect(screen.getByRole('button', { name: SUMMARY }).getAttribute('aria-expanded')).toBe('false');
+    expect((screen.getByLabelText('Reply') as HTMLTextAreaElement).value).toBe('half typed');
+    fireEvent.click(screen.getByRole('button', { name: SUMMARY }));
+    expect(screen.getByRole('gridcell', { name: 'new line 3' })).toBeTruthy();
+    expect((screen.getByLabelText('Reply') as HTMLTextAreaElement).value).toBe('half typed');
+  });
+
+  // Invariant: a hunk can't be collapsed over the selection (which would leave it hidden and inert).
+  test('a hunk holding the selection offers no collapse control until the selection is cleared', () => {
+    const { update } = mount(diffFile());
+    fireEvent.pointerDown(screen.getByRole('gridcell', { name: 'new line 3' }), { button: 0, pointerType: 'touch' });
+    update(accepted());
+    expect(screen.getByRole('toolbar', { name: 'Selection' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Collapse hunk' })).toBeNull();
+    fireEvent.click(within(screen.getByRole('toolbar', { name: 'Selection' })).getByRole('button', { name: 'Clear' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Collapse hunk' }));
+    expect(screen.getByRole('button', { name: SUMMARY }).getAttribute('aria-expanded')).toBe('false');
+  });
+
   // Invariant: navigation never lands on hidden content.
   test('a focused thread and a cited range are always expanded', () => {
     history.replaceState(null, '', '?file=src%2Fa.ts&thread=t-2');

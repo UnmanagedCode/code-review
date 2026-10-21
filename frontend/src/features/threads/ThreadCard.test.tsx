@@ -52,6 +52,26 @@ test('resolveProposed shows a banner and a proposing message is badged', () => {
   expect(screen.getByText('proposes resolution')).toBeTruthy();
 });
 
+// Invariant: an unsent reply survives the card remounting (the store is keyed by review and thread), and a sent one is cleared.
+test('a reply draft survives a remount and is cleared once sent', async () => {
+  const net = stubFetch({ 'POST api/reviews/r-1/threads/t-1/messages': { thread: thread() } });
+  const user = userEvent.setup();
+  const first = renderInReview(<ThreadCard thread={thread()} />);
+  await user.type(screen.getByLabelText('Reply'), 'wip');
+  first.unmount();
+  const other = renderInReview(<ThreadCard thread={thread({ id: 't-2' })} />);
+  expect(screen.getByLabelText<HTMLTextAreaElement>('Reply').value).toBe('');
+  other.unmount();
+  const second = renderInReview(<ThreadCard thread={thread()} />);
+  expect(screen.getByLabelText<HTMLTextAreaElement>('Reply').value).toBe('wip');
+  await user.click(screen.getByRole('button', { name: 'Reply' }));
+  await waitFor(() => expect(net.count('POST api/reviews/r-1/threads/t-1/messages')).toBe(1));
+  await waitFor(() => expect(screen.getByLabelText<HTMLTextAreaElement>('Reply').value).toBe(''));
+  second.unmount();
+  renderInReview(<ThreadCard thread={thread()} />);
+  expect(screen.getByLabelText<HTMLTextAreaElement>('Reply').value).toBe('');
+});
+
 test('a drifted anchor is flagged', () => {
   renderInReview(<ThreadCard thread={thread({ anchor: { ...thread().anchor, drifted: true } })} />);
   expect(screen.getByText('re-anchored by context')).toBeTruthy();

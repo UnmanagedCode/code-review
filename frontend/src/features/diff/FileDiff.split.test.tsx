@@ -6,7 +6,7 @@ import { installResizeObserver } from '@/test/fakeResizeObserver';
 import { diffFile, hunk, thread } from '@/test/fixtures';
 import { renderDiff } from '@/test/renderCtx';
 import { FileDiff } from './FileDiff';
-import { SPLIT_MIN_PX } from './useDiffView';
+import { SPLIT_EXIT_SLACK_PX, SPLIT_MIN_PX } from './useDiffView';
 
 // Default fixture hunk: c1 c2 d3 a3 c4 (old 1–4, new 1–4).
 let ro: ReturnType<typeof installResizeObserver>;
@@ -70,6 +70,35 @@ test('split starts exactly at SPLIT_MIN_PX', () => {
   expect(isSplit()).toBe(false);
   ro.resize('all', SPLIT_MIN_PX);
   expect(isSplit()).toBe(true);
+});
+
+// Invariant: once split, the view leaves it only below SPLIT_MIN_PX − SPLIT_EXIT_SLACK_PX, so a width jitter
+// near the threshold (a scrollbar appearing as split changes the content height) can't flip it back and forth.
+test('split has hysteresis: it enters at SPLIT_MIN_PX and leaves only below the exit slack', () => {
+  localStorage.setItem('code-review:diffView', 'split');
+  show(undefined, undefined, undefined, null, SPLIT_MIN_PX);
+  expect(isSplit()).toBe(true);
+  ro.resize('all', SPLIT_MIN_PX - SPLIT_EXIT_SLACK_PX);
+  expect(isSplit()).toBe(true);
+  ro.resize('all', SPLIT_MIN_PX - SPLIT_EXIT_SLACK_PX - 1);
+  expect(isSplit()).toBe(false);
+  ro.resize('all', SPLIT_MIN_PX - 1);
+  expect(isSplit()).toBe(false);
+  ro.resize('all', SPLIT_MIN_PX);
+  expect(isSplit()).toBe(true);
+});
+
+// Invariant: a new-comment draft survives a view flip (the composer remounts under a differently keyed row).
+test('the composer keeps its draft when the view flips', () => {
+  show();
+  fireEvent.pointerDown(screen.getByRole('gridcell', { name: 'new line 3' }), { button: 0, buttons: 1, pointerType: 'mouse' });
+  fireEvent.pointerUp(window);
+  fireEvent.change(screen.getByLabelText('Message'), { target: { value: 'not sent yet' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Split' }));
+  expect(isSplit()).toBe(true);
+  expect((screen.getByLabelText('Message') as HTMLTextAreaElement).value).toBe('not sent yet');
+  fireEvent.click(screen.getByRole('button', { name: 'Inline' }));
+  expect((screen.getByLabelText('Message') as HTMLTextAreaElement).value).toBe('not sent yet');
 });
 
 // Invariant: the phone layout never splits, whatever its pane width.

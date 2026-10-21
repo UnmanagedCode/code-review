@@ -137,7 +137,7 @@ Counted by the fake cc (`execCalls`); locally each costs roughly an HTTP round t
 |---|---|
 | `lib/` | `api.ts` (`ApiError {status, code, reason}`), `endpoints.ts` (the only place `api/…` paths are built), `types.ts` (wire shapes), `refusals.ts` (`messageFor` for backend codes, `bridgeMessage` for bridge codes), `route.ts`, `bridge.ts` (`window.ccBridge`, read per call), `sse.ts` (one shared EventSource), `storage.ts` (the only `localStorage` user, `code-review:` keys: `lastCheckout`, `diffView`, `threadPanelWidth`), `useMediaQuery.ts`, `useWidthObserver.ts` (ResizeObserver callback ref) |
 | `lib/` (pure) | `markdown.ts` (body → AST; citations and URLs as atoms), `diffRows.ts` (rows, collapsible gaps, `collapseRows`), `splitRows.ts` (side-by-side pairing), `selection.ts` (selection model), `panelWidth.ts` (thread column bounds, `clampPanel`), `fileTree.ts` |
-| `state/` | Hooks that fetch and write: `useFetch`, `live` (SSE reload, polling), `checkout`, `reviewList`, `review`, `round` (past-round view), `fileDiff`, `threads` (write actions), `threadIndex`, `submit` (delivery state machine), `admin`, `dropped`, `reviewContext` |
+| `state/` | Hooks that fetch and write: `useFetch`, `live` (SSE reload, polling), `checkout`, `reviewList`, `review`, `round` (past-round view), `fileDiff`, `threads` (write actions), `threadIndex`, `submit` (delivery state machine), `admin`, `dropped`, `drafts` (unsent reply/comment text by review and thread or anchor), `reviewContext` |
 | `features/` | Components by area: `checkout`, `picker`, `reviews`, `review`, `files`, `diff`, `threads`, `submit`, `layout`, `common` |
 
 - Components never call `fetch`; they use `state/` hooks and `lib/endpoints.ts`.
@@ -145,7 +145,7 @@ Counted by the fake cc (`execCalls`); locally each costs roughly an HTTP round t
 - **Uncommitted reviews** emit no events for working-tree edits: `usePolling` reloads on focus, `visibilitychange` and every `POLL_MS` while visible.
 - **Diff rows.** `buildRows` produces hunk, line and gap rows from hunks plus per-gap expansion counts (`top`, `bottom`) and fetched line texts. The total line count (needed for the trailing gap) comes from a one-line `GET …/file`. Without a diff-wide list endpoint, the thread index fetches the diff of each file whose counts show threads.
 - **Diff pipeline in `FileDiff`.** `rows` → `collapseRows` (accepted hunks reduced to a `collapsed` header; `useCollapse` owns which) → `visible`, which `useLineSelection`, the row limit and target widening all use → sliced to the limit → `splitRows` in split view. Both transforms are pure; split keeps each side's line order, so selection, keyboard and thread placement run on the flat visible rows in both views. `InlineRow` / `SplitRow` render line rows; `HunkHeader` the hunk row (normal, collapsible, collapsed); `SettledThread` every inline thread (summary disclosure when resolved); one `belowRow` closure renders notices, cards and the selection toolbar/composer under inline rows, split pairs and collapsed hunks.
-- **Diff view.** `useDiffView` reads the stored choice and reports split as available in the wide layout while `FileDiff`'s root is at least `SPLIT_MIN_PX` wide (`useWidthObserver`; that element's width does not depend on the view).
+- **Diff view.** `useDiffView` reads the stored choice and reports split as available in the wide layout while `FileDiff`'s root is wide enough (`useWidthObserver`): it enters at `SPLIT_MIN_PX` and leaves below `SPLIT_MIN_PX − SPLIT_EXIT_SLACK_PX`. The root's width is the centre `main`'s, which has `scrollbar-gutter: stable`, so neither the view's row height nor a scrollbar appearing changes it; the hysteresis is the second guard against flipping back and forth.
 - **Resizable thread column.** `DesktopLayout` (`features/layout/layouts.tsx`) sizes its right column from `useResizablePanel`: stored width clamped on render to the room (layout width minus the left column) by `clampPanel`; `ResizeHandle` is the `role="separator"`. Without a right column nothing is observed.
 - **Past-round view.** `ReviewView` derives `round` from the route (range reviews, no `commit`, below the current round) and puts it in the review context with `readOnly: true`. `files`, `outdatedThreads` and `threadCounts` then come from `useRoundView`; `useFileDiff`, `useThreadIndex` and `CitedExcerpt` pass `round` to `diff`/`file`. Until the review loads, a `round=` URL holds the open file's fetch, since the live and past views cannot be told apart yet.
 - **Selection.** `useLineSelection` drives a `role="grid"` with roving `tabIndex`; the selection model lives in `lib/selection.ts`.
@@ -157,7 +157,7 @@ Counted by the fake cc (`execCalls`); locally each costs roughly an HTTP round t
 
 `npm run test:ui` (vitest, happy-dom). `src/test/` holds the shared fakes:
 
-- `setup.ts`: cleanup, `vi.unstubAllGlobals()`, deletes `window.ccBridge`, clears storage and tombstones, resets the URL.
+- `setup.ts`: cleanup, `vi.unstubAllGlobals()`, deletes `window.ccBridge`, clears storage, tombstones and drafts, resets the URL.
 - `stubFetch.ts`: route table keyed `METHOD path` (or RegExp); an unstubbed request fails the test.
 - `fakeEventSource.ts`: `emit`, `fail`, `reopen`; installed through `setEventSourceFactory`.
 - `fakeBridge.ts`: `installBridge(session?)` with programmable `sendPrompt`/`openSession` and `emit`.

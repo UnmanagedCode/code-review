@@ -78,6 +78,17 @@ test('a cancelled drag reverts and stores nothing', () => {
   expect(stored()).toBeNull();
 });
 
+// Invariant: a click on the handle (no movement) never overwrites the remembered width with a clamped one.
+test('a press and release without moving stores nothing', () => {
+  localStorage.setItem('code-review:threadPanelWidth', '600');
+  show(true, 900);
+  fireEvent.pointerDown(handle(), { button: 0, clientX: 500, pointerId: 1 });
+  fireEvent.pointerUp(handle(), { clientX: 500, pointerId: 1 });
+  expect(stored()).toBe('600');
+  ro.resize('all', ROOM);
+  expect(now()).toBe(600);
+});
+
 // Invariant: the width persists across reloads.
 test('a chosen width survives a remount', () => {
   const { unmount } = show();

@@ -36,7 +36,8 @@ export function useResizablePanel() {
     },
     // The handle sits on the panel's left edge: moving left widens it.
     onPointerMove: (e: PointerEvent<HTMLElement>) => { if (drag) setDrag({ ...drag, live: drag.startWidth + (drag.startX - e.clientX) }); },
-    onPointerUp: () => { if (!drag) return; commit(drag.live); setDrag(null); },
+    // A press without movement stores nothing: committing would overwrite the stored width with the clamped one.
+    onPointerUp: () => { if (!drag) return; if (drag.live !== drag.startWidth) commit(drag.live); setDrag(null); },
     // A cancelled drag reverts and stores nothing.
     onPointerCancel: () => setDrag(null),
     onKeyDown: (e: KeyboardEvent<HTMLElement>) => {

@@ -61,19 +61,22 @@ export function FileDiff({ onBack, extra }: { onBack?: () => void; extra?: React
   const [limit, setLimit] = useState(CHUNK_ROWS);
   const target = route.lines ? parseLines(route.lines) : null;
   const targetSide: Side = route.side ?? 'new';
-  const targetSel: Selection | null = target ? { side: targetSide, start: target.start, end: target.end, anchorLine: target.start } : null;
+  const targetSel = useMemo<Selection | null>(() => {
+    const t = route.lines ? parseLines(route.lines) : null;
+    return t ? { side: targetSide, start: t.start, end: t.end, anchorLine: t.start } : null;
+  }, [route.lines, targetSide]);
   const diffView = useDiffView();
 
   // Accepted hunks and resolved threads collapse; the routed thread and the hunks holding the cited range never do.
-  const textHunks = (file?.hunks ?? []).filter((h): h is TextHunk => h.kind === 'text');
-  const settled = [
+  const textHunks = useMemo(() => (file?.hunks ?? []).filter((h): h is TextHunk => h.kind === 'text'), [file]);
+  const settled = useMemo(() => [
     ...textHunks.filter((h) => h.verdict === 'accepted').map((h) => `h:${h.id}`),
     ...(file?.threads ?? []).filter((t) => t.status === 'resolved').map((t) => `t:${t.id}`),
-  ];
-  const forced = new Set([
+  ], [file, textHunks]);
+  const forced = useMemo(() => new Set([
     ...(route.thread ? [`t:${route.thread}`] : []),
     ...textHunks.filter((h) => selectionTouches(targetSel, h.lines)).map((h) => `h:${h.id}`),
-  ]);
+  ]), [route.thread, targetSel, textHunks]);
   // The previous render's selection: a settle comes from a verdict change, which never changes the selection.
   const selRef = useRef<Selection | null>(null);
   const collapse = useCollapse({
@@ -178,9 +181,11 @@ export function FileDiff({ onBack, extra }: { onBack?: () => void; extra?: React
   const render = (r: Row | SplitRowT, bi: number) => {
     if (r.kind === 'hunk') {
       const id = `h:${r.hunk.id}`;
+      // No collapse over the selection: it would stay selected but hidden and inert.
+      const toggleable = collapse.toggleable(id) && (r.collapsed || !selectionTouches(sel.selection, r.hunk.lines));
       return (
         <Fragment key={r.key}>
-          <HunkHeader row={r} toggleable={collapse.toggleable(id)} onToggle={(open) => collapse.setOpen(id, open)} />
+          <HunkHeader row={r} toggleable={toggleable} onToggle={(open) => collapse.setOpen(id, open)} />
           {r.collapsed && belowRow(keysOf(r.hunk.lines), false)}
         </Fragment>
       );

@@ -7,7 +7,7 @@ const same = (a: string[], b: string[]) => a.length === b.length && a.every((x, 
  * Settled items (accepted hunks `h:<id>`, resolved threads `t:<id>`) render collapsed unless opened.
  * Overrides are view-only, in memory and per open file (`resetKey`). An item that stops being settled loses its
  * override, so settling it again collapses it; one that becomes settled while `keepOpen` says so starts open.
- * `forced` items are always shown and offer no toggle.
+ * `forced` items are always shown and offer no toggle; pass a memoised set.
  */
 export function useCollapse(o: { settled: string[]; forced: ReadonlySet<string>; resetKey: string; keepOpen: (id: string) => boolean }) {
   const { settled, forced, resetKey, keepOpen } = o;
@@ -19,23 +19,24 @@ export function useCollapse(o: { settled: string[]; forced: ReadonlySet<string>;
   if (cur.key !== resetKey) cur = { key: resetKey, prevSettled: settled, open: new Set() };
   if (!same(cur.prevSettled, settled)) {
     const was = new Set(cur.prevSettled);
-    const open = new Set([...cur.open].filter((id) => settled.includes(id)));
+    const now = new Set(settled);
+    const open = new Set([...cur.open].filter((id) => now.has(id)));
     for (const id of settled) if (!was.has(id) && keepOpen(id)) open.add(id);
     cur = { key: resetKey, prevSettled: settled, open };
   }
   if (cur !== state) setState(cur);
 
   const settledKey = settled.join('\n');
-  const forcedKey = [...forced].join('\n');
+  const settledSet = useMemo(() => new Set(settled), [settledKey]);
   const collapsed = useMemo<ReadonlySet<string>>(
-    () => new Set(cur.prevSettled.filter((id) => !cur.open.has(id) && !forced.has(id))),
-    [settledKey, forcedKey, cur.open],
+    () => new Set([...settledSet].filter((id) => !cur.open.has(id) && !forced.has(id))),
+    [settledSet, forced, cur.open],
   );
   return {
     collapsed,
-    toggleable: (id: string) => settled.includes(id) && !forced.has(id),
+    toggleable: (id: string) => settledSet.has(id) && !forced.has(id),
     setOpen: (id: string, open: boolean) => setState((s) => {
-      if (open === s.open.has(id) || (open && !s.prevSettled.includes(id))) return s;
+      if (open === s.open.has(id) || (open && !settledSet.has(id))) return s;
       const next = new Set(s.open);
       if (open) next.add(id); else next.delete(id);
       return { ...s, open: next };

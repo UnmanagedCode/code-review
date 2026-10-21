@@ -8,7 +8,8 @@ export function DesktopLayout({ left, center, right }: { left: ReactNode; center
   return (
     <div ref={right ? panel.rootRef : undefined} className="flex h-full min-h-0">
       <aside ref={panel.leftRef} className="flex w-80 shrink-0 flex-col overflow-y-auto border-r xl:w-96">{left}</aside>
-      <main className="min-w-0 flex-1 overflow-auto">{center}</main>
+      {/* A stable scrollbar gutter keeps the centre's width (which picks the diff view) independent of its scrollbar. */}
+      <main className="min-w-0 flex-1 overflow-auto [scrollbar-gutter:stable]">{center}</main>
       {right && (
         <aside className="relative flex shrink-0 flex-col overflow-hidden border-l" style={{ width: panel.width }}>
           <ResizeHandle {...panel.handleProps} />

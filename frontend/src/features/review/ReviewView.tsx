@@ -151,7 +151,7 @@ export function ReviewView({ id, chrome }: { id: string; chrome?: ReactNode }) {
   const path = (route.round || route.compare) && !route.commit && !detail ? undefined : route.file;
   const fileDiff = useFileDiff({
     reviewId: id, path, version: rv.version, uncommitted: detail?.review.kind === 'uncommitted', commitFiles, round,
-    compare: compare && { ...compare, files: compareView.data?.files, error: compareView.error },
+    compare: compare && { ...compare, files: compareView.data?.files, error: compareView.error, reload: compareView.reload },
   });
   const treeFiles = useMemo(
     () => (commitFiles ? commitFiles.map(asFileState)

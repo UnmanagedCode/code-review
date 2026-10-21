@@ -119,7 +119,7 @@ test('in a comparison the file comes from the loaded comparison and no /diff is 
   const net = stubFetch({ 'GET api/reviews/r-1/file': fileLines });
   const file = diffFile({ hunks: [hunk({ verdict: null })] });
   const { result, rerender } = renderHook((p: { files?: ReturnType<typeof diffFile>[] }) =>
-    useFileDiff({ reviewId: 'r-1', path: 'src/a.ts', version: 1, uncommitted: false, compare: { from: 1, to: 3, files: p.files } }), { initialProps: {} as { files?: ReturnType<typeof diffFile>[] } });
+    useFileDiff({ reviewId: 'r-1', path: 'src/a.ts', version: 1, uncommitted: false, compare: { from: 1, to: 3, files: p.files, reload: () => {} } }), { initialProps: {} as { files?: ReturnType<typeof diffFile>[] } });
   expect(result.current.loading).toBe(true);
   rerender({ files: [file] });
   expect(result.current.loading).toBe(false);
@@ -132,7 +132,7 @@ test('in a comparison the file comes from the loaded comparison and no /diff is 
 test('in a comparison the total and expanded context are read from round B\'s head', async () => {
   const net = stubFetch({ 'GET api/reviews/r-1/file': fileLines });
   const file = diffFile({ hunks: [hunk({ oldStart: 11, newStart: 11, verdict: null })] });
-  const { result } = renderHook(() => useFileDiff({ reviewId: 'r-1', path: 'src/a.ts', version: 1, uncommitted: false, compare: { from: 1, to: 3, files: [file] } }));
+  const { result } = renderHook(() => useFileDiff({ reviewId: 'r-1', path: 'src/a.ts', version: 1, uncommitted: false, compare: { from: 1, to: 3, files: [file], reload: () => {} } }));
   await vi.waitFor(() => expect(result.current.total).toBe(40));
   await act(async () => { await result.current.expand('pre', 'bottom'); });
   expect(fileCalls(net).length).toBeGreaterThan(1);
@@ -143,7 +143,7 @@ test('in a comparison the total and expanded context are read from round B\'s he
 test('in a comparison a deleted file\'s context is read from round A\'s head', async () => {
   const net = stubFetch({ 'GET api/reviews/r-1/file': fileLines });
   const file = diffFile({ status: 'deleted', hunks: [hunk({ oldStart: 11, oldLines: 4, newStart: 0, newLines: 0, lines: lines('d1 d2 d3 d4').map((l, i) => ({ ...l, old: 11 + i })), verdict: null })] });
-  const { result } = renderHook(() => useFileDiff({ reviewId: 'r-1', path: 'src/a.ts', version: 1, uncommitted: false, compare: { from: 1, to: 3, files: [file] } }));
+  const { result } = renderHook(() => useFileDiff({ reviewId: 'r-1', path: 'src/a.ts', version: 1, uncommitted: false, compare: { from: 1, to: 3, files: [file], reload: () => {} } }));
   await vi.waitFor(() => expect(result.current.total).toBe(40));
   await act(async () => { await result.current.expand('pre', 'bottom'); });
   expect(fileCalls(net).length).toBeGreaterThan(1);
@@ -159,7 +159,7 @@ test('in a comparison an old-side line in a collapsed gap is revealed', async ()
     oldStart: 11, oldLines: 4, newStart: 11, newLines: 3, verdict: null,
     lines: [{ t: 'ctx', old: 11, new: 11, text: 'c' }, { t: 'del', old: 12, new: null, text: 'd' }, { t: 'del', old: 13, new: null, text: 'd' }, { t: 'add', old: null, new: 12, text: 'a' }, { t: 'ctx', old: 14, new: 13, text: 'c' }],
   });
-  const { result } = renderHook(() => useFileDiff({ reviewId: 'r-1', path: 'src/a.ts', version: 1, uncommitted: false, compare: { from: 1, to: 3, files: [diffFile({ hunks: [h] })] } }));
+  const { result } = renderHook(() => useFileDiff({ reviewId: 'r-1', path: 'src/a.ts', version: 1, uncommitted: false, compare: { from: 1, to: 3, files: [diffFile({ hunks: [h] })], reload: () => {} } }));
   await vi.waitFor(() => expect(result.current.total).toBe(40));
   act(() => result.current.reveal([{ side: 'old', n: 30 }]));
   await vi.waitFor(() => expect(result.current.rows.some((r) => r.kind === 'line' && r.line.old === 30 && r.line.new === 29 && r.line.text === 'L29')).toBe(true));

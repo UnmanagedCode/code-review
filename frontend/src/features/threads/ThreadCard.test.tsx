@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { toast } from 'sonner';
 import { expect, test, vi } from 'vitest';
 import { agent, message, refusal, review, thread } from '@/test/fixtures';
+import { parseRoute } from '@/lib/route';
 import { renderInReview } from '@/test/renderCtx';
 import { stubFetch } from '@/test/stubFetch';
 import { ThreadCard } from './ThreadCard';
@@ -149,4 +150,22 @@ test('Resolve inside the reply form does not submit the draft', async () => {
   await waitFor(() => expect(patchBody(net)).toEqual({ status: 'resolved' }));
   expect(net.calls.map((c) => `${c.method} ${c.url.pathname}`)).toEqual(['PATCH /api/reviews/r-1/threads/t-1']);
   expect(screen.getByLabelText<HTMLTextAreaElement>('Reply').value).toBe('wip');
+});
+
+const cited = (round: number) => thread({ messages: [message({ round, body: 'see src/a.ts#L3', citations: [{ raw: 'src/a.ts#L3', path: 'src/a.ts', startLine: 3, endLine: 3 }] })] });
+
+// Invariant: in a comparison a citation is read at its message's round: it opens that round's view, leaving the comparison.
+test('in a comparison a citation link leaves it for the round view of the message\'s round', async () => {
+  history.replaceState(null, '', '?review=r-1&compare=1..3&file=b.ts');
+  renderInReview(<ThreadCard thread={cited(1)} />, { compare: { from: 1, to: 3 }, readOnly: true });
+  await userEvent.setup().click(screen.getByRole('link', { name: 'src/a.ts#L3' }));
+  expect(parseRoute(location.search)).toEqual({ review: 'r-1', round: '1', file: 'src/a.ts', side: 'new', lines: '3' });
+});
+
+// Invariant: outside a comparison a citation link keeps the current view and only opens the cited lines.
+test('outside a comparison a citation link adds no round', async () => {
+  history.replaceState(null, '', '?review=r-1&file=b.ts');
+  renderInReview(<ThreadCard thread={cited(1)} />);
+  await userEvent.setup().click(screen.getByRole('link', { name: 'src/a.ts#L3' }));
+  expect(parseRoute(location.search)).toEqual({ review: 'r-1', file: 'src/a.ts', side: 'new', lines: '3' });
 });

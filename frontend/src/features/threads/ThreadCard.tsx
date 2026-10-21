@@ -17,7 +17,7 @@ const place = (t: Thread) => `L${formatLines(t.anchor.startLine, t.anchor.endLin
 
 /** One thread. `dropped`: a session-local tombstone of an uncommitted thread whose lines changed. `note`: shown under the header. */
 export function ThreadCard({ thread, dropped = false, showLocation = false, note }: { thread: Thread; dropped?: boolean; showLocation?: boolean; note?: ReactNode }) {
-  const { readOnly } = useReviewCtx();
+  const { readOnly, compare } = useReviewCtx();
   const actions = useReviewActions();
   const route = useRoute();
   const ref = useRef<HTMLElement>(null);
@@ -63,7 +63,7 @@ export function ThreadCard({ thread, dropped = false, showLocation = false, note
               <AuthorBadge author={m.author} />
               {m.proposeResolve && <Badge variant="success">proposes resolution</Badge>}
             </span>
-            <MessageBody message={m} />
+            <MessageBody message={m} atItsRound={!!compare} />
           </li>
         ))}
       </ol>

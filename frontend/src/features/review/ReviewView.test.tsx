@@ -228,3 +228,21 @@ test('Exit comparison clears the comparison and the file position', async () => 
   expect(parseRoute(location.search)).toEqual({ review: 'r-1' });
   expect(await screen.findByRole('combobox', { name: 'Commit filter' })).toBeTruthy();
 });
+
+// Invariant: on a phone the open file's Retry is the only recovery from a failed comparison, so it refetches it.
+test('Retry in the file pane of a failed comparison fetches the comparison again', async () => {
+  const rounds = [1, 2].map((n) => ({ n, headSha: `${n}`.repeat(40), baseSha: 'b'.repeat(40), createdAt: '', submittedAt: null }));
+  const net = stubFetch({
+    'GET api/reviews/r-1': { review: review({ round: 2 }), files: [fileState()], rounds, submissions: [], outdatedThreads: [] },
+    'GET api/reviews/r-1/compare': refusal('SNAPSHOT_GONE', 410),
+    'GET api/sessions': { sessions: [] },
+  });
+  installMedia({ [WIDE_QUERY]: false }); // phone: the open file replaces the sidebar, so its Retry is the only one
+  history.replaceState(null, '', '?review=r-1&compare=1..2&file=src%2Fa.ts');
+  render(<ReviewView id="r-1" />);
+  const retry = await screen.findByRole('button', { name: 'Retry' });
+  await waitFor(() => expect(net.count('GET api/reviews/r-1/compare')).toBeGreaterThan(0));
+  const before = net.count('GET api/reviews/r-1/compare');
+  await userEvent.setup().click(retry);
+  await waitFor(() => expect(net.count('GET api/reviews/r-1/compare')).toBe(before + 1));
+});

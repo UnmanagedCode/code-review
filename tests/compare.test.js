@@ -136,6 +136,17 @@ describe('placeThreads', () => {
     assert.deepEqual(res.counts, { open: 2, resolved: 1, outdated: 1 });
   });
 
+  test('counts include threads served only in unplaced: base-side, unchanged-file, no-lines, and one outdated between A and B', () => {
+    const placedOpen = thread('t1', { pastAnchors: [pos(1, 5)], anchor: stored(2, 5) });
+    const base = thread('t2', { pastAnchors: [pos(1, 5, { side: 'old' })], anchor: stored(2, 5, { side: 'old' }) });
+    const elsewhere = thread('t3', { status: 'resolved', resolution: { by: { kind: 'human' }, seq: 3 }, pastAnchors: [pos(1, 5, { file: 'c.js' })], anchor: stored(2, 5, { file: 'c.js' }) });
+    const binary = thread('t4', { pastAnchors: [pos(1, 5, { file: 'bin' })], anchor: stored(2, 5, { file: 'bin' }) });
+    const goneBase = thread('t5', { status: 'outdated', anchor: stored(1, 5, { side: 'old' }) });
+    const res = place([placedOpen, base, elsewhere, binary, goneBase], 1, 2, [file('a.js'), file('bin', { binary: true })]);
+    assert.deepEqual(res.unplaced.map((c) => c.id), ['t2', 't3', 't4', 't5'], 'every thread but t1 is served only in unplaced');
+    assert.deepEqual(res.counts, { open: 3, resolved: 1, outdated: 1 });
+  });
+
   test('per-file lists and unplaced are ordered by thread number, a thread\'s from-copy before its to-copy', () => {
     const mk = (id, side = 'new') => thread(id, { pastAnchors: [pos(1, 5, { side })], anchor: stored(2, 5, { side }) });
     const res = place([mk('t10'), mk('t2'), mk('t1'), mk('t11', 'old'), mk('t3', 'old')], 1, 2, [file('a.js')]);
@@ -230,6 +241,7 @@ test('a base-side thread is unplaced with its reason', async () => {
   const res = await compare(review.id, '1', '2');
   assert.deepEqual(res.unplaced.map((u) => [u.id, u.placement, u.reason]), [[t.id, 'to', 'base-side']]);
   assert.deepEqual(res.files[0].threads, []);
+  assert.deepEqual(res.counts, { open: 1, resolved: 0, outdated: 0 }, 'an unplaced thread still counts');
 });
 
 test('only files either round reviews: an upstream change merged in between is absent, a file reverted to base in B is present', async () => {
@@ -240,9 +252,25 @@ test('only files either round reviews: an upstream change merged in between is a
   wt.git('merge', '-q', '--no-edit', 'main');
   wt.commit({ 'a.js': editLines({ 2: 'top-edit-2' }), 'b.js': lines(10, 'b'), 'c.js': 'new in round 2\n' });
   ok(await reviews.refreshReview(review.id));
+  assert.deepEqual(ok(await reviews.diff(review.id, {})).files.map((f) => f.path).sort(), ['a.js', 'c.js'], 'round B does not review b.js');
   const res = await compare(review.id, '1', '2');
   assert.deepEqual(res.files.map((f) => f.path).sort(), ['a.js', 'b.js', 'c.js'], 'c.js is reviewed by round B only');
   assert.deepEqual(changed(res.files.find((f) => f.path === 'b.js')).slice(0, 2), ['-b-edit', '+b1']);
+});
+
+test('a file reviewed in A and back at base content in B is in the comparison, its round-A thread placed on the old side', async () => {
+  const wt = w.addWorktree();
+  wt.commit({ 'a.js': editLines({ 2: 'top-edit' }), 'b.js': lines(10, 'b').replace('b3\n', 'b-edit\n') });
+  const review = await open();
+  const t = ok(await threads.annotate(review.id, HUMAN, { anchor: { file: 'b.js', side: 'new', startLine: 3, endLine: 3 }, kind: 'comment', body: 'b' })).thread;
+  wt.commit({ 'a.js': editLines({ 2: 'top-edit' }), 'b.js': lines(10, 'b') });
+  ok(await reviews.refreshReview(review.id));
+  assert.deepEqual(ok(await reviews.diff(review.id, {})).files.map((f) => f.path), ['a.js'], 'round B does not review b.js');
+  const res = await compare(review.id, '1', '2');
+  assert.deepEqual(res.files.map((f) => [f.path, f.status]), [['b.js', 'modified']], 'a.js is unchanged between the rounds');
+  assert.deepEqual(changed(res.files[0]), ['-b-edit', '+b3']);
+  assert.deepEqual(res.files[0].threads.map((c) => [c.id, c.placement, c.anchor.side, c.anchor.startLine, c.outdatedIn]), [[t.id, 'from', 'old', 3, 2]]);
+  assert.deepEqual(res.unplaced, []);
 });
 
 test('a rename reverted in B is present under B\'s path: round A reviewed it under the path it is renamed from', async () => {

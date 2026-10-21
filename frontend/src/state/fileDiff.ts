@@ -22,8 +22,9 @@ export interface FileDiffOptions {
   /**
    * Comparison of two rounds: the file comes from `files` (undefined while loading). Its old side is round `from`'s head
    * and its new side round `to`'s, so context is read from a round's head: `to`'s, or `from`'s for a file deleted there.
+   * `reload` refetches the comparison: the file has no fetch of its own.
    */
-  compare?: { from: number; to: number; files: DiffFile[] | undefined; error?: unknown };
+  compare?: { from: number; to: number; files: DiffFile[] | undefined; error?: unknown; reload: () => void };
 }
 
 /** The open file's hunks and threads, its expandable context, and the local patches for mutation responses. */
@@ -143,7 +144,7 @@ export function useFileDiff({ reviewId, path, version, uncommitted, commitFiles,
   const patchVerdict = useCallback((hunkId: string, verdict: Verdict) => patch((f) => ({ ...f, hunks: f.hunks.map((h) => (h.id === hunkId ? { ...h, verdict } : h)) })), [patch]);
 
   return {
-    file, rows, side, total, expand, reveal, patchThread, patchVerdict, reload: fetched.reload,
+    file, rows, side, total, expand, reveal, patchThread, patchVerdict, reload: compare ? compare.reload : fetched.reload,
     loading: commitMode ? false : compare ? !compare.files && !compare.error : fetched.loading && !fetched.data,
     error: commitMode ? undefined : compare ? compare.error : fetched.error,
   };

@@ -40,6 +40,9 @@ function CompareThreadPanel({ compare }: { compare: NonNullable<ReturnType<typeo
   const every = dedupeCopies([...(view?.files.flatMap((f) => f.threads) ?? []), ...unplaced])
     .sort((a, b) => a.thread.id.localeCompare(b.thread.id, undefined, { numeric: true }));
   const all = every.filter((s) => status === 'all' || s.thread.status === status);
+  // Until the comparison has loaded (or when it failed) no tab can list anything, nor claim that nothing is there.
+  const load = ctx.viewLoad;
+  const gate = load?.error ? <ErrorState error={load.error} onRetry={load.reload} /> : !view ? <Loading label="Loading threads" rows={3} /> : null;
   return (
     <section aria-label="Threads" className="flex min-h-0 flex-1 flex-col">
       <Tabs value={tab} onValueChange={setTab} className="min-h-0 flex-1 gap-0">
@@ -50,7 +53,7 @@ function CompareThreadPanel({ compare }: { compare: NonNullable<ReturnType<typeo
         </TabsList>
         <div className="min-h-0 flex-1 overflow-y-auto">
           <TabsContent value="file">
-            {fileThreads.length ? compareList(fileThreads, compare, false) : <Empty title="No threads in this file" />}
+            {gate ?? (fileThreads.length ? compareList(fileThreads, compare, false) : <Empty title="No threads in this file" />)}
           </TabsContent>
           <TabsContent value="all">
             <div className="flex flex-wrap items-center gap-2 px-3">
@@ -59,10 +62,10 @@ function CompareThreadPanel({ compare }: { compare: NonNullable<ReturnType<typeo
                 <option value="open">Open</option><option value="resolved">Resolved</option><option value="all">All</option>
               </NativeSelect>
             </div>
-            {!view ? <Loading label="Loading threads" rows={3} /> : all.length ? compareList(all, compare, true) : <Empty title="No threads" />}
+            {gate ?? (all.length ? compareList(all, compare, true) : <Empty title="No threads" />)}
           </TabsContent>
           <TabsContent value="unplaced">
-            {unplaced.length ? compareList(unplaced.map((t) => ({ thread: t })), compare, false) : <Empty title="Every thread has a place in this diff" />}
+            {gate ?? (unplaced.length ? compareList(unplaced.map((t) => ({ thread: t })), compare, false) : <Empty title="Every thread has a place in this diff" />)}
           </TabsContent>
         </div>
       </Tabs>

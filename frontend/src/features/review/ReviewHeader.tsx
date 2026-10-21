@@ -17,9 +17,9 @@ import { RecipientPicker } from './RecipientPicker';
 const CLEAR = { review: undefined, ...REVIEW_SCOPED };
 
 export function ReviewHeader() {
-  const { review, rounds, sessions, round: pastRound } = useReviewCtx();
-  // A past-round view is read-only: no review-level writes either, since they would act on the current round.
-  const writable = pastRound === undefined;
+  const { review, rounds, sessions, pastView } = useReviewCtx();
+  // A past-round view or a comparison is read-only: no review-level writes either, since they would act on the current round.
+  const writable = !pastView;
   const admin = useReviewAdmin();
   const actions = useReviewActions();
   const [picker, setPicker] = useState(false);

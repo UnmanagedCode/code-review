@@ -6,9 +6,9 @@ import { useReviewActions } from '@/state/threads';
 
 /** File-header verdict tally and "Accept file". Counts come from the optimistic diff, so they move on click. */
 export function FileVerdict({ file }: { file: DiffFile }) {
-  const { review, commit, round } = useReviewCtx();
+  const { review, commit, pastView } = useReviewCtx();
   const actions = useReviewActions();
-  if (commit || round !== undefined || review.kind === 'uncommitted') return null;
+  if (commit || pastView || review.kind === 'uncommitted') return null;
   const n = file.hunks.length;
   const accepted = file.hunks.filter((h) => h.verdict === 'accepted').length;
   const rejected = file.hunks.filter((h) => h.verdict === 'rejected').length;

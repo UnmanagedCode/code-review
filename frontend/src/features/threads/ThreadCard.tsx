@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, type ReactNode } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription } from '@/components/ui/alert';
@@ -15,9 +15,9 @@ import { ResolveControls } from './ResolveControls';
 
 const place = (t: Thread) => `L${formatLines(t.anchor.startLine, t.anchor.endLine).replace('-', '–L')} (${t.anchor.side})`;
 
-/** One thread. `dropped`: a session-local tombstone of an uncommitted thread whose lines changed. */
-export function ThreadCard({ thread, dropped = false, showLocation = false }: { thread: Thread; dropped?: boolean; showLocation?: boolean }) {
-  const { readOnly } = useReviewCtx();
+/** One thread. `dropped`: a session-local tombstone of an uncommitted thread whose lines changed. `note`: shown under the header. */
+export function ThreadCard({ thread, dropped = false, showLocation = false, note }: { thread: Thread; dropped?: boolean; showLocation?: boolean; note?: ReactNode }) {
+  const { readOnly, compare } = useReviewCtx();
   const actions = useReviewActions();
   const route = useRoute();
   const ref = useRef<HTMLElement>(null);
@@ -50,6 +50,7 @@ export function ThreadCard({ thread, dropped = false, showLocation = false }: { 
         )}
         {!dropped && !focused && <Button variant="ghost" size="sm" className="ml-auto h-6 px-2 text-xs" onClick={() => navigate({ thread: thread.id })}>Focus</Button>}
       </header>
+      {note}
       {dropped && <p className="text-xs text-muted-foreground">dropped: its lines changed</p>}
       {outdated && <p className="text-xs text-muted-foreground">outdated · was {place(thread)} at round {thread.anchor.round}</p>}
       {thread.resolveProposed && thread.status === 'open' && (
@@ -62,7 +63,7 @@ export function ThreadCard({ thread, dropped = false, showLocation = false }: { 
               <AuthorBadge author={m.author} />
               {m.proposeResolve && <Badge variant="success">proposes resolution</Badge>}
             </span>
-            <MessageBody message={m} />
+            <MessageBody message={m} atItsRound={!!compare} />
           </li>
         ))}
       </ol>

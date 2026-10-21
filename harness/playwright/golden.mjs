@@ -129,6 +129,44 @@ try {
     await page.getByRole('group', { name: 'Hunk verdict' }).first().waitFor();
     assert.equal(await question.count(), 0, 'the outdated question is not in the current diff');
     await shot('5-back-to-current');
+
+    // 5c. Compare rounds (1 → 2): round 1's question sits on the left at its round-1 lines, noted outdated in round 2;
+    // the comment on line 9 (unchanged in both rounds) shows once; nothing is writable.
+    await page.getByRole('button', { name: 'Compare rounds' }).click();
+    await page.getByRole('button', { name: 'Exit comparison' }).waitFor();
+    assert.equal(new URL(page.url()).searchParams.get('compare'), '1..2');
+    await page.getByRole('link', { name: /a\.js/ }).first().click();
+    await question.waitFor();
+    assert.equal((await rowBefore(question)).text, '4||−|changed4', 'inline, the question sits under round 1\'s line 4 (deleted in round 2)');
+    assert.match(await question.textContent(), /outdated in round 2/);
+    assert.equal(await page.locator('[role=rowgroup] article', { hasText: 'Fine, but add a test.' }).count(), 1, 'the comment on a line both rounds share shows once');
+    assert.equal(await page.getByRole('group', { name: 'Hunk verdict' }).count(), 0, 'no verdict controls in a comparison');
+    assert.equal(await page.getByLabel('Reply').count(), 0, 'no reply box in a comparison');
+    assert.equal(await page.getByRole('button', { name: 'Submit round' }).count(), 0, 'no Submit in a comparison');
+    await shot('5c-compare-inline');
+
+    // 5d. Split (needs a 36rem pane: md–xl width): the question is under the pair whose left number is 4.
+    await page.setViewportSize({ width: 1100, height: 800 });
+    await page.getByRole('group', { name: 'Diff view' }).getByRole('button', { name: 'Split' }).click();
+    await page.locator('[role=row].grid').first().waitFor();
+    assert.match((await rowBefore(question)).text, /^4\|−\|changed4\|/, 'split, the question is under the pair whose left number is 4');
+    const compareOverflow = await page.getByRole('grid').evaluate((g) => g.scrollWidth - g.clientWidth);
+    assert.ok(compareOverflow <= 0, `the split comparison has no horizontal overflow (${compareOverflow}px)`);
+    await shot('5c-compare-split');
+
+    // 5e. The threads sheet lists the base-side finding under Not in diff; Exit comparison leaves it.
+    await page.getByRole('button', { name: /^Threads/ }).click();
+    const sheet = page.getByRole('dialog');
+    await sheet.getByRole('tab', { name: /^Not in diff/ }).click();
+    const unplaced = sheet.getByRole('tabpanel').locator('article', { hasText: 'Missing guard' });
+    await unplaced.waitFor();
+    assert.match(await unplaced.textContent(), /on the base side/);
+    await shot('5e-compare-not-in-diff');
+    await page.keyboard.press('Escape');
+    await sheet.waitFor({ state: 'detached' });
+    await page.getByRole('button', { name: 'Exit comparison' }).click();
+    await page.getByRole('combobox', { name: 'Commit filter' }).waitFor();
+    assert.ok(!new URL(page.url()).searchParams.has('compare'));
     assert.deepEqual(errors, []);
   }, { headless: true, viewport: { width: 1280, height: 800 } });
 
@@ -228,6 +266,14 @@ try {
     assert.equal(await viewGroup.count(), 0, 'no view toggle on a phone');
     assert.equal(await isSplit(), false, 'a phone shows inline rows');
     await shot('9-phone-inline');
+
+    // 9b. A comparison on a phone: inline rows, round 1's question under its round-1 line 4.
+    await page.goto(q({ review: range, compare: '1..2', file: 'a.js' }));
+    const phoneQuestion = page.locator('[role=rowgroup] article', { hasText: 'Why change both lines?' });
+    await phoneQuestion.waitFor();
+    assert.equal(await isSplit(), false, 'a phone comparison shows inline rows');
+    assert.equal((await rowBefore(phoneQuestion)).text, '4||−|changed4');
+    await shot('9b-phone-compare');
 
     // 10. xl: the thread column has a handle; widening it pushes split down to inline, narrowing brings it back.
     await page.setViewportSize({ width: 1440, height: 900 });

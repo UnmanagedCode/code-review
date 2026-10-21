@@ -1,7 +1,7 @@
 import { api } from './api';
 import type {
-  CheckoutInfo, Commit, DiffFile, FileState, ForkPoint, Kind, RefreshReport, ReviewSummary, Round, Session,
-  Severity, Submission, Thread, ThreadAnchorInput, ThreadCounts, ThreadKind, Verdict,
+  CheckoutInfo, Commit, ComparedThread, DiffFile, FileState, ForkPoint, Kind, RefreshReport, ReviewSummary, Round, Session,
+  Severity, Submission, Thread, ThreadAnchorInput, ThreadCounts, ThreadKind, UnplacedThread, Verdict,
 } from './types';
 
 /** One typed function per REST call in docs/protocol.md; the only place `api/…` paths are built. */
@@ -17,6 +17,9 @@ const r = (id: string) => `api/reviews/${encodeURIComponent(id)}`;
 export interface ReviewDetail { review: ReviewSummary; files: FileState[]; rounds: Round[]; submissions: Submission[]; outdatedThreads: Thread[] }
 /** A past round of a range review, read-only: its files, the counts of its threads, and its outdated threads. */
 export interface RoundView { readOnly: true; round: Round; files: FileState[]; counts: ThreadCounts; outdatedThreads: Thread[] }
+export interface CompareView {
+  readOnly: true; from: Round; to: Round; files: (DiffFile & { threads: ComparedThread[] })[]; counts: ThreadCounts; unplaced: UnplacedThread[];
+}
 export interface FileLines { path: string; side: 'old' | 'new'; total: number; lines: { n: number; text: string }[] }
 
 export const projects = () => api<{ projects: { name: string }[] }>('api/projects');
@@ -44,6 +47,7 @@ export const roundView = (id: string, n: number) => api<RoundView>(`${r(id)}/rou
 export const roundDiff = (id: string, round: number, file?: string) =>
   api<{ readOnly: true; round: Round; files: DiffFile[] }>(`${r(id)}/diff${q({ file, round })}`);
 /** `round`: read a past round of a range review instead of the current one. */
+export const compare = (id: string, from: number, to: number) => api<CompareView>(`${r(id)}/compare${q({ from, to })}`);
 export const fileLines = (id: string, path: string, side: 'old' | 'new', start: number, end: number, round?: number) =>
   api<FileLines>(`${r(id)}/file${q({ path, side, start, end, round })}`);
 export const setVerdict = (id: string, hunkId: string, verdict: Verdict) =>

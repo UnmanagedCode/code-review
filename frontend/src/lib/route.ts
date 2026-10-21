@@ -2,17 +2,25 @@ import { useSyncExternalStore } from 'react';
 
 export interface Route {
   project?: string; worktree?: string; review?: string; file?: string; side?: 'old' | 'new';
-  lines?: string; thread?: string; commit?: string; round?: string; view?: 'new' | 'threads';
+  lines?: string; thread?: string; commit?: string; round?: string; compare?: string; view?: 'new' | 'threads';
 }
-const KEYS = ['project', 'worktree', 'review', 'file', 'side', 'lines', 'thread', 'commit', 'round', 'view'] as const;
+const KEYS = ['project', 'worktree', 'review', 'file', 'side', 'lines', 'thread', 'commit', 'round', 'compare', 'view'] as const;
 
 /**
  * Every key that belongs to the open review (its file position, filters, views). Spread it into any patch that opens,
  * leaves or deletes a review, so nothing of one review leaks into the next: `navigate` merges into the current route.
  */
 export const REVIEW_SCOPED = {
-  file: undefined, side: undefined, lines: undefined, thread: undefined, commit: undefined, round: undefined, view: undefined,
+  file: undefined, side: undefined, lines: undefined, thread: undefined, commit: undefined, round: undefined, compare: undefined, view: undefined,
 } as const satisfies Route;
+
+const COMPARE_RE = /^([1-9]\d*)\.\.([1-9]\d*)$/;
+
+/** `A..B` → the two rounds of a comparison; null when absent or malformed. Order is not checked here. */
+export function parseCompare(s: string | undefined): { from: number; to: number } | null {
+  const m = COMPARE_RE.exec(s ?? '');
+  return m ? { from: Number(m[1]), to: Number(m[2]) } : null;
+}
 
 export function parseRoute(search: string): Route {
   const p = new URLSearchParams(search);
@@ -24,6 +32,7 @@ export function parseRoute(search: string): Route {
     if (k === 'view' && v !== 'new' && v !== 'threads') continue;
     if (k === 'lines' && !/^\d+(-\d+)?$/.test(v)) continue;
     if (k === 'round' && !/^[1-9]\d*$/.test(v)) continue;
+    if (k === 'compare' && !COMPARE_RE.test(v)) continue;
     (route as Record<string, string>)[k] = v;
   }
   return route;

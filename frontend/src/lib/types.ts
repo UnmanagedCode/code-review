@@ -23,6 +23,11 @@ export interface Thread {
   laterMessages?: number;
 }
 
+/** A thread's copy in a round comparison: `from` = as of round A (old side), `to` = as of round B (new side). */
+export type ComparedThread = Thread & { placement: 'from' | 'to'; outdatedIn: number | null };
+export type UnplacedReason = 'base-side' | 'unchanged-file' | 'no-lines';
+export type UnplacedThread = ComparedThread & { reason: UnplacedReason };
+
 export interface ThreadCounts { open: number; resolved: number; outdated: number }
 export interface FileState {
   path: string; oldPath: string | null; status: 'added' | 'deleted' | 'modified' | 'renamed';

@@ -50,6 +50,13 @@ A **review** is a persisted discussion about one checkout (a project's main chec
   - threads opened in a later round are absent;
   - a thread outdated in a later round shows the status it had before it went outdated; one outdated by then is outdated, at its last located anchor;
   - open/resolved is otherwise the thread's current status, and there are no verdicts, no unread counts and no proposed resolutions.
+- **Comparing rounds** (range reviews only, read-only): round A's head against round B's head, A before B.
+  - **Files:** those changed between the two heads that either round reviews (`path` in round B's diff, or `oldPath ?? path` in round A's). Upstream churn merged in between stays out; a file reverted to base in B stays in. Inside a kept file every line that differs between the heads shows, upstream edits included.
+  - **Threads:** each thread live in round A sits on the left (old side) at its round-A lines, as of round A (later replies hidden and counted); each thread live in round B on the right at its round-B lines, as of B. Notes say "round A L… · outdated in round k" or "… · still applies in round B" (left copies) and "round B L…" (right copies).
+  - **One card per row:** when both copies of a thread fall under one row (a context line, or a deleted/added pair in split), it shows once, as its round-B copy, noted with both positions.
+  - **Not in diff:** base-side threads, threads in files unchanged between the rounds, and threads on binary/too-large files are listed in the thread panel's Not in diff tab with the reason.
+  - **Inline / phone:** one combined diff. Deleted lines are round A's, added lines round B's, context lines both; a thread on a changed line shows twice (under its deleted and its added line), one on an unchanged line once.
+  - Threads outdated by round A, or opened after round B, are not in the comparison (the round-A view lists the former).
 - **Uncommitted anchors are volatile.** Every read and write re-locates threads in the live working tree. A pure line shift moves the thread with its lines; changed or vanished lines delete the thread, and a later reply gets `THREAD_DROPPED`. Edits elsewhere in the same hunk never touch it.
 
 ## Submitting a round
@@ -93,7 +100,7 @@ The plugin page. Wire calls are in [protocol.md](protocol.md); module layout in 
   - **External links:** `http(s)` and `mailto` links, and bare `http(s)` URLs, open in a new tab. A bare URL ends at whitespace, `<`, `>`, `"`, a backtick, `[`, `]`, or a `)` it did not open; trailing punctuation is not part of it. Any other target (relative, `#…`, `//host`, `javascript:`, `data:`…) shows its label as text.
   - **Shown as text:** raw HTML (including `<!-- … -->`). Images show as a link labelled by their alt text; nothing loads.
   - **Unsupported:** indented code blocks, setext headings, reference links, GFM task lists (`- [ ] x` shows a literal `[ ]`).
-- **Commit filter.** Range reviews: choose one commit of the round to see its diff, read-only. Hidden in a past-round view.
+- **Commit filter.** Range reviews: choose one commit of the round to see its diff, read-only. Hidden in a past-round view and a comparison.
 - **Round picker.** Range reviews with more than one round: "Round n (current)", then each past round (newest first, with its head's short sha). Picking a past round (`round=` in the URL) closes the open file and the commit filter and shows that round read-only (see [Past rounds](#rounds-and-refresh)):
   - a banner "Viewing round k of n — read-only…" with **Back to current round**; the file header shows a "round k · read-only" badge;
   - no verdict bar, no Accept file, no line selection, no composer, no reply box, no resolve controls; context expansion and cited excerpts read that round;
@@ -101,6 +108,13 @@ The plugin page. Wire calls are in [protocol.md](protocol.md); module layout in 
   - thread cards say how many later replies are hidden;
   - a refused round view shows the refusal in place of the file tree, with the picker still there.
   - `round=` naming the current round (or a later one) is dropped from the URL.
+- **Compare rounds** (button beside the round picker) opens a comparison of the previous and the current round (`compare=A..B`; see [Comparing rounds](#rounds-and-refresh)), closing the open file, the round view and the commit filter:
+  - **From** and **To** selects replace the round picker ("Round k · sha", the current round marked "(current)"); From lists rounds before To, To rounds after From; changing either closes the open file;
+  - a banner "Comparing round A with round B — read-only…" with **Exit comparison**; the file header shows a "round A → B · read-only" badge;
+  - read-only exactly like a past round (no verdicts, selection, composer, replies, resolve controls or review-level writes); still live: the file tree, file navigation, the split/inline toggle, resolved-thread collapse, context expansion (read from round B's head, round A's for a file deleted in the comparison), Focus and thread links, cited excerpts (`side=old` reads round A's head, `new` round B's). Focus marks nothing read;
+  - thread panel tabs: This file (each thread once), All (every compared thread once, placed or not, with its note; the badge counts them), Not in diff (with the reason); no Outdated tab. Until the comparison loads every tab shows a loading state; a comparison that failed to load shows its error with Retry in every tab, and in the file pane (a failed reload keeps the loaded lists);
+  - a citation link in a message leaves the comparison for the round view of the round that message was written in (`round=<its round>`), since that is the code it cites; outside comparisons citation links keep the current view;
+  - no entry point with one round or on commit/uncommitted reviews.
 - **Rounds.** A range review whose HEAD moved shows "HEAD moved — Refresh available"; uncommitted reviews have a Refresh button; commit reviews have none. A refresh reports hunks kept/reset/new and threads moved/drifted/outdated/dropped, or "No changes; still round n".
 - **Closed and gone.** A closed review disables every write and offers Reopen. A removed checkout shows a banner; an unreadable snapshot replaces the tree with the refusal text.
 - **Live updates.** Review events refetch what is on screen; uncommitted reviews also refetch on window focus and every 15 s while the page is visible. Only verdicts (per hunk and Accept file) update before the server answers, and revert with a toast if refused.

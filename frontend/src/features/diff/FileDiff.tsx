@@ -2,6 +2,7 @@ import { ArrowLeftIcon, ChevronLeftIcon, ChevronRightIcon } from 'lucide-react';
 import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { dedupeCopies } from '@/lib/compare';
 import { collapseRows, type Row } from '@/lib/diffRows';
 import { formatLines, navigate, parseLines, useRoute } from '@/lib/route';
 import { lineOn, selectionTouches, type Selection } from '@/lib/selection';
@@ -13,6 +14,7 @@ import { useReviewCtx } from '@/state/reviewContext';
 import { Empty, ErrorState, Loading } from '@/features/common/States';
 import { Composer } from '@/features/threads/Composer';
 import { CitedExcerpt } from './CitedExcerpt';
+import { CompareNote } from './CompareNote';
 import { FileVerdict } from './FileVerdict';
 import { GapRow } from './GapRow';
 import { HunkBar } from './HunkBar';
@@ -29,7 +31,7 @@ export const CHUNK_ROWS = 1500;
 const byId = (a: Thread, b: Thread) => a.id.localeCompare(b.id, undefined, { numeric: true });
 
 function FileHeader({ file, files, onBack, extra, view }: { file: DiffFile; files: { path: string }[]; onBack?: () => void; extra?: ReactNode; view?: { chosen: DiffView; choose: (v: DiffView) => void } }) {
-  const { round } = useReviewCtx();
+  const { round, compare } = useReviewCtx();
   const i = files.findIndex((f) => f.path === file.path);
   const go = (path: string) => navigate({ file: path, lines: undefined, side: undefined, thread: undefined });
   return (
@@ -40,6 +42,7 @@ function FileHeader({ file, files, onBack, extra, view }: { file: DiffFile; file
         {file.oldPath && <p className="truncate font-mono text-xs text-muted-foreground">renamed from {file.oldPath}</p>}
       </div>
       {round !== undefined && <Badge variant="info">round {round} · read-only</Badge>}
+      {compare && <Badge variant="info">round {compare.from} → {compare.to} · read-only</Badge>}
       <Badge variant="outline">{file.status}</Badge>
       <span className="text-xs"><span className="text-success">+{file.additions}</span> <span className="text-destructive">−{file.deletions}</span></span>
       <FileVerdict file={file} />
@@ -130,7 +133,7 @@ export function FileDiff({ onBack, extra }: { onBack?: () => void; extra?: React
   if (loading) return <Loading label="Loading diff" rows={8} />;
   if ((error as { code?: string } | undefined)?.code === 'FILE_NOT_IN_DIFF') return <CitedExcerpt path={route.file} />;
   if (error) return <ErrorState error={error} onRetry={reload} />;
-  if (!file) return <Empty title="That file isn’t in this diff" />;
+  if (!file) return ctx.compare && route.lines ? <CitedExcerpt path={route.file} /> : <Empty title="That file isn’t in this diff" />;
 
   const split = diffView.view === 'split';
   const shown = visible.slice(0, limit);
@@ -143,17 +146,23 @@ export function FileDiff({ onBack, extra }: { onBack?: () => void; extra?: React
   const lastGap = [...visible].reverse().find((r) => r.kind === 'gap');
   const enabled = !ctx.readOnly;
 
-  /** What renders under a row: tombstone notices, thread cards, then the selection toolbar or composer. */
+  /**
+   * What renders under a row: tombstone notices, thread cards, then the selection toolbar or composer.
+   * A comparison thread whose two copies fall under one row shows once, as its round-B copy.
+   */
   const belowRow = (keys: string[], endsSelection: boolean) => {
-    const threads = keys.flatMap((k) => threadsByRow.get(k) ?? []);
+    const threads = dedupeCopies(keys.flatMap((k) => threadsByRow.get(k) ?? []));
     const notices = keys.flatMap((k) => tombstones.get(k) ?? []);
     return (
       <>
         {notices.map((t) => <p key={t.id} className="px-3 py-1 font-sans text-xs text-muted-foreground">Thread {t.id} dropped: its lines changed</p>)}
         {threads.length > 0 && (
           <div className="sticky left-0 flex flex-col gap-2 px-3 py-2 font-sans text-sm">
-            {threads.map((t) => (
-              <SettledThread key={t.id} thread={t} collapsed={collapse.collapsed.has(`t:${t.id}`)} toggleable={collapse.toggleable(`t:${t.id}`)} onToggle={(open) => collapse.setOpen(`t:${t.id}`, open)} />
+            {threads.map(({ thread: t, other }) => (
+              <SettledThread
+                key={t.id} thread={t} collapsed={collapse.collapsed.has(`t:${t.id}`)} toggleable={collapse.toggleable(`t:${t.id}`)} onToggle={(open) => collapse.setOpen(`t:${t.id}`, open)}
+                note={ctx.compare && <CompareNote thread={t} other={other} compare={ctx.compare} />}
+              />
             ))}
           </div>
         )}

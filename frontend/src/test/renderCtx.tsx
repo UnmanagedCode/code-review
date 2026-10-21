@@ -10,7 +10,9 @@ export function ctxValue(over: Partial<ReviewCtx> = {}): ReviewCtx {
   const rv = over.review ?? review();
   return {
     id: 'r-1', review: rv, files: [fileState()], rounds: [{ n: 1, headSha: 'a', baseSha: 'b', createdAt: '', submittedAt: null }], submissions: [], outdatedThreads: [],
-    commit: undefined, round: undefined, roundLoad: undefined, threadCounts: rv.counts.threads,
+    commit: undefined, round: undefined, compare: undefined, viewLoad: undefined,
+    // As ReviewView derives it: a round view or a comparison.
+    pastView: over.round !== undefined || over.compare !== undefined, threadCounts: rv.counts.threads,
     readOnly: false, version: 1, sessions: [], reload: vi.fn(), applyReview: vi.fn(), ...over, fileDiff,
   };
 }

@@ -100,6 +100,20 @@ test('GET /reviews/:id/rounds/:n is a past round\'s view; diff and file take ?ro
   assert.equal((await req('GET', `/reviews/${id}/rounds/x`)).status, 400);
 });
 
+test('GET /reviews/:id/compare compares two rounds read-only; from not before to is 400 INVALID_ARGUMENT, an unknown round 404 ROUND_UNKNOWN', async () => {
+  const id = (await openReview()).review.id;
+  bindRepo(w.cc.state.worktrees.app[0].worktreePath).commit({ 'a.js': ['ins1', ...editLines({ 2: 'top-edit', 18: 'bottom-edit' }).split('\n')].join('\n') });
+  assert.equal((await req('POST', `/reviews/${id}/refresh`)).body.round, 2);
+  const cmp = await req('GET', `/reviews/${id}/compare?from=1&to=2`);
+  assert.equal(cmp.status, 200);
+  assert.deepEqual(Object.keys(cmp.body).sort(), ['counts', 'files', 'from', 'ok', 'readOnly', 'to', 'unplaced']);
+  assert.deepEqual([cmp.body.readOnly, cmp.body.from.n, cmp.body.to.n, cmp.body.files.map((f) => f.path)], [true, 1, 2, ['a.js']]);
+  const back = await req('GET', `/reviews/${id}/compare?from=2&to=1`);
+  assert.deepEqual([back.status, back.body.code], [400, 'INVALID_ARGUMENT']);
+  const unknown = await req('GET', `/reviews/${id}/compare?from=1&to=9`);
+  assert.deepEqual([unknown.status, unknown.body.code], [404, 'ROUND_UNKNOWN']);
+});
+
 test('with an unparsable and a misfiled review file present, the list still answers 200 and a review can be opened', async (t) => {
   const errors = t.mock.method(console, 'error', () => {});
   const good = (await openReview()).review.id;

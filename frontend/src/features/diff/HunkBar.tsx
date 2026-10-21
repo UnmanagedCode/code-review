@@ -9,12 +9,12 @@ import { Composer } from '@/features/threads/Composer';
 
 const VERDICTS: { value: Verdict; label: string }[] = [{ value: 'accepted', label: 'Accept' }, { value: 'rejected', label: 'Reject' }, { value: 'pending', label: 'Pending' }];
 
-/** Per-hunk verdict toggle and "comment on hunk". No bar at all in the commit-filter and past-round views. */
+/** Per-hunk verdict toggle and "comment on hunk". No bar at all in the commit-filter, past-round and comparison views. */
 export function HunkBar({ hunk, commentable }: { hunk: Hunk; commentable: boolean }) {
-  const { review, readOnly, commit, round } = useReviewCtx();
+  const { review, readOnly, commit, pastView } = useReviewCtx();
   const actions = useReviewActions();
   const [composing, setComposing] = useState(false);
-  if (commit || round !== undefined) return null;
+  if (commit || pastView) return null;
   const hasVerdicts = review.kind !== 'uncommitted';
   const closed = review.status === 'closed';
   return (

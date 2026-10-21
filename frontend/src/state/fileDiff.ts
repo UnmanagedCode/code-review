@@ -19,43 +19,52 @@ export interface FileDiffOptions {
   commitFiles?: DiffFile[];
   /** Past-round view of a range review: the file and its expandable context are read from that round. */
   round?: number;
+  /**
+   * Comparison of two rounds: the file comes from `files` (undefined while loading). Its old side is round `from`'s head
+   * and its new side round `to`'s, so context is read from a round's head: `to`'s, or `from`'s for a file deleted there.
+   */
+  compare?: { from: number; to: number; files: DiffFile[] | undefined; error?: unknown };
 }
 
 /** The open file's hunks and threads, its expandable context, and the local patches for mutation responses. */
-export function useFileDiff({ reviewId, path, version, uncommitted, commitFiles, round }: FileDiffOptions) {
+export function useFileDiff({ reviewId, path, version, uncommitted, commitFiles, round, compare }: FileDiffOptions) {
   const commitMode = !!commitFiles;
+  const listed = commitMode || !!compare;
   const fetched = useFetch(
-    path && !commitMode ? async () => (await (round ? ep.roundDiff(reviewId, round, path) : ep.diff(reviewId, path))).files[0] : null,
-    [reviewId, path, commitMode, round],
+    path && !listed ? async () => (await (round ? ep.roundDiff(reviewId, round, path) : ep.diff(reviewId, path))).files[0] : null,
+    [reviewId, path, listed, round],
   );
   const lastVersion = useRef(version);
   useEffect(() => {
     if (lastVersion.current !== version) { lastVersion.current = version; fetched.reload(); }
   }, [version]);
 
-  const file: DiffFile | undefined = commitMode ? commitFiles.find((f) => f.path === path) : fetched.data;
+  const file: DiffFile | undefined = commitMode ? commitFiles.find((f) => f.path === path)
+    : compare ? compare.files?.find((f) => f.path === path) : fetched.data;
   const side: Side = file?.status === 'deleted' ? 'old' : 'new';
+  // Where gap lines are read: gap lines are the same on both sides, so a comparison reads a round's head.
+  const source: { side: Side; round?: number } = compare ? { side: 'new', round: side === 'new' ? compare.to : compare.from } : { side, round };
 
   const [expansions, setExpansions] = useState<Expansions>({});
   const [texts, setTexts] = useState<Record<number, string>>({});
   const [total, setTotal] = useState<number | null>(null);
   const textsRef = useRef(texts);
   textsRef.current = texts;
-  useEffect(() => { setExpansions({}); setTexts({}); setTotal(null); }, [reviewId, path, commitMode, round]);
+  useEffect(() => { setExpansions({}); setTexts({}); setTotal(null); }, [reviewId, path, commitMode, round, compare?.from, compare?.to]);
 
   const expandable = !commitMode && !!file && !file.binary && !file.tooLarge && file.hunks.some((h) => h.kind === 'text');
   const hunkSig = file ? file.hunks.map((h) => h.id).join() : '';
   useEffect(() => {
     if (!expandable || !path) return;
     let live = true;
-    ep.fileLines(reviewId, path, side, 1, 1, round).then((r) => { if (live) setTotal(r.total); }, () => {});
+    ep.fileLines(reviewId, path, source.side, 1, 1, source.round).then((r) => { if (live) setTotal(r.total); }, () => {});
     return () => { live = false; };
-  }, [reviewId, path, side, expandable, hunkSig, round]);
+  }, [reviewId, path, source.side, expandable, hunkSig, source.round]);
 
   // Uncommitted threads that vanish between loads are kept (session-local) as tombstones.
   const seen = useRef<{ path: string; threads: Map<string, Thread> } | null>(null);
   useEffect(() => {
-    if (!file || commitMode) return;
+    if (!file || listed) return;
     const now = new Map(file.threads.map((t) => [t.id, t]));
     const prev = seen.current;
     if (uncommitted && prev && prev.path === file.path) {
@@ -63,7 +72,7 @@ export function useFileDiff({ reviewId, path, version, uncommitted, commitFiles,
       clearReturned(reviewId, [...now.keys()]);
     }
     seen.current = { path: file.path, threads: now };
-  }, [file, uncommitted, reviewId, commitMode]);
+  }, [file, uncommitted, reviewId, listed]);
 
   const ensureTexts = useCallback(async (spanFrom: number, spanTo: number, next: { top: number; bottom: number }) => {
     if (!path) return;
@@ -76,10 +85,10 @@ export function useFileDiff({ reviewId, path, version, uncommitted, commitFiles,
       while (lo <= hi && textsRef.current[lo] !== undefined) lo++;
       while (hi >= lo && textsRef.current[hi] !== undefined) hi--;
       if (lo > hi) continue;
-      for (const l of (await ep.fileLines(reviewId, path, side, lo, hi, round)).lines) add[l.n] = l.text;
+      for (const l of (await ep.fileLines(reviewId, path, source.side, lo, hi, source.round)).lines) add[l.n] = l.text;
     }
     if (Object.keys(add).length) setTexts((t) => ({ ...t, ...add }));
-  }, [reviewId, path, side, round]);
+  }, [reviewId, path, source.side, source.round]);
 
   const expandTo = useCallback(async (changes: Record<string, { top: number; bottom: number }>) => {
     if (!file) return;
@@ -135,7 +144,8 @@ export function useFileDiff({ reviewId, path, version, uncommitted, commitFiles,
 
   return {
     file, rows, side, total, expand, reveal, patchThread, patchVerdict, reload: fetched.reload,
-    loading: commitMode ? false : fetched.loading && !fetched.data, error: commitMode ? undefined : fetched.error,
+    loading: commitMode ? false : compare ? !compare.files && !compare.error : fetched.loading && !fetched.data,
+    error: commitMode ? undefined : compare ? compare.error : fetched.error,
   };
 }
 export type FileDiffState = ReturnType<typeof useFileDiff>;

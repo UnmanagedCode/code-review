@@ -1,0 +1,12 @@
+# Round comparison gotchas
+
+`GET /reviews/:id/compare?from=A&to=B` (`compareRounds` in `src/compare.js`) and the `compare=A..B` UI view.
+
+- **Coordinates: old = round A's head, new = round B's head.** Not base vs head. A thread's `side:'new'` anchor of round n is line-for-line in round n's head, so its numbers carry over unchanged (`placeCopy`). A `side:'old'` (base) anchor has no place between two heads: it is always unplaced (`base-side`), never mapped.
+- **Copies come from `threadsAt`, never a new relocation.** From-copies = `threadsAt(review, A)` not outdated; to-copies = `threadsAt(review, B)` not outdated. "Still applies in B" is simply "has a to-copy", i.e. the existing `pastAnchors` chain. Adding matching logic here would let the comparison disagree with the round views.
+- **`outdatedIn` is derived:** the last chain entry's round + 1 (outdated threads are never followed again), shown only when ≤ B. A from-copy with `outdatedIn: null` therefore always has a to-copy.
+- **Thread ids repeat inside one file's `threads`** (one per copy). Anything keyed by `t.id` in the UI must tolerate that: `belowRow` dedupes per row through `dedupeCopies` (keeps the to-copy, the from-copy rides along for the note), the panel dedupes per list, the tree counts distinct ids (`compareFileState`). Collapse state (`t:<id>`) is shared by both copies on purpose.
+- **Same row = one card.** A context line carries both `old:n` and `new:m` keys, and a split pair carries its left old and right new: both copies under one rendered row show once. Different rows (a changed line inline) show two cards.
+- **Gap lines are read from a round's head, not from a side.** `useFileDiff` reads `file?side=new&round=B` for the file's path, or `round=A` when the file is `deleted` in the comparison (only A's head has it). Gap lines are identical on both sides, so `buildRows`' old-number offset still holds.
+- **The reviewed-path filter** keeps a comparison file iff its `path` is in round B's diff or its `oldPath ?? path` in round A's. Without it a base that moved between the rounds (rebase, a merge of `main`) floods the view with upstream files; with it a file reverted to base in B (absent from B's diff) still shows. Inside a kept file the whole head-vs-head difference shows (README known limitation).
+- **Read-only by construction:** only `git diff <sha> <sha>` (two trees, no index), `cat-file -e` and `git show`; no `withPrivateIndex` needed. `tests/compare.test.js` pins `.git` byte-identity on cold rounds.

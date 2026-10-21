@@ -4,6 +4,7 @@ import { expect, test } from 'vitest';
 import { diffFile, fileState, message, review, thread } from '@/test/fixtures';
 import { ctxValue } from '@/test/renderCtx';
 import { stubFetch } from '@/test/stubFetch';
+import type { ComparedThread, UnplacedThread } from '@/lib/types';
 import { ReviewProvider } from '@/state/reviewContext';
 import { ThreadPanel } from './ThreadPanel';
 
@@ -63,4 +64,38 @@ test('thread panel cards render bodies as markdown', async () => {
   await userEvent.setup().click(screen.getByRole('tab', { name: /^All/ }));
   const [article] = await screen.findAllByRole('article');
   expect(within(article).getByText('bold').tagName).toBe('STRONG');
+});
+
+/** A comparison of rounds 1 → 2: t-1 with both copies in src/a.ts, t-2 a round-2 copy there, t-3 on the base side. */
+function comparison() {
+  const copy = (id: string, placement: 'from' | 'to', side: 'old' | 'new' = placement === 'from' ? 'old' : 'new') =>
+    ({ ...thread({ id, anchor: { ...thread().anchor, side } }), placement, outdatedIn: null }) as ComparedThread;
+  const file = { ...diffFile(), threads: [copy('t-1', 'from'), copy('t-1', 'to'), copy('t-2', 'to')] };
+  const unplaced: UnplacedThread[] = [{ ...copy('t-3', 'to', 'old'), reason: 'base-side' }];
+  const round = (n: number) => ({ n, headSha: `${n}`.repeat(40), baseSha: 'b'.repeat(40), createdAt: '', submittedAt: null });
+  const view = { readOnly: true as const, from: round(1), to: round(2), files: [file], counts: { open: 1, resolved: 0, outdated: 2 }, unplaced };
+  return ctxValue({ compare: { from: 1, to: 2, view }, readOnly: true, threadCounts: view.counts, fileDiff: { file } as never });
+}
+
+// Invariant: a comparison's panel lists the threads it could not place, each with its reason, and has no Outdated tab.
+test('in a comparison, Not in diff lists the unplaced threads with their reason, and there is no Outdated tab', async () => {
+  const net = stubFetch({});
+  render(<ReviewProvider value={comparison()}><ThreadPanel /></ReviewProvider>);
+  expect(screen.queryByRole('tab', { name: /^Outdated/ })).toBeNull();
+  await userEvent.setup().click(screen.getByRole('tab', { name: /^Not in diff/ }));
+  const [card] = screen.getAllByRole('article');
+  expect(screen.getAllByRole('article')).toHaveLength(1);
+  expect(card.textContent).toContain('on the base side');
+  expect(net.calls).toEqual([]);
+});
+
+// Invariant: All shows (and counts) every compared thread once, placed or not, without fetching per-file diffs.
+test('in a comparison, All lists each thread once and This file dedupes the open file\'s copies', async () => {
+  const net = stubFetch({});
+  render(<ReviewProvider value={comparison()}><ThreadPanel /></ReviewProvider>);
+  expect(screen.getAllByRole('article')).toHaveLength(2);
+  expect(screen.getByRole('tab', { name: /^All/ }).textContent).toContain('3');
+  await userEvent.setup().click(screen.getByRole('tab', { name: /^All/ }));
+  expect(screen.getAllByRole('article')).toHaveLength(3);
+  expect(net.calls).toEqual([]);
 });

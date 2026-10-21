@@ -5,12 +5,17 @@ import { useReviewCtx } from '@/state/reviewContext';
 import { useFetch } from '@/state/useFetch';
 import { Empty, ErrorState, Loading } from '@/features/common/States';
 
-/** Read-only excerpt of a cited file that is not part of the diff. */
+/**
+ * Read-only excerpt of a cited file that is not part of the diff. In a comparison the sides are the two rounds' heads:
+ * `old` reads round A's, `new` round B's.
+ */
 export function CitedExcerpt({ path }: { path: string }) {
-  const { id, round } = useReviewCtx();
+  const { id, round, compare } = useReviewCtx();
   const route = useRoute();
   const range = parseLines(route.lines);
-  const excerpt = useFetch(range ? () => ep.fileLines(id, path, route.side ?? 'new', range.start, range.end, round) : null, [id, path, route.lines, route.side, round]);
+  const side = compare ? 'new' : route.side ?? 'new';
+  const at = compare ? (route.side === 'old' ? compare.from : compare.to) : round;
+  const excerpt = useFetch(range ? () => ep.fileLines(id, path, side, range.start, range.end, at) : null, [id, path, route.lines, side, at]);
   if (!range) return <Empty title="That file isn’t in this diff" />;
   if (excerpt.loading && !excerpt.data) return <Loading label="Loading excerpt" rows={3} />;
   if (excerpt.error) {

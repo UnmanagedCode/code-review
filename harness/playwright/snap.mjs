@@ -70,6 +70,10 @@ try {
           await page.getByRole('button', { name: /^@@.*accepted$/ }).click();
           await page.locator('[data-cell="new:6"]').waitFor();
           await shot('diff-split');
+          // Rounds 1 → 2 compared, in the split view just chosen: round 1's threads on the left, round 2's on the right.
+          await open(q({ review: range, compare: '1..2', file: 'a.js' }), page.locator('[role=row].grid'));
+          await page.locator('[role=rowgroup] article').first().waitFor();
+          await shot('diff-compare');
           await page.getByRole('group', { name: 'Diff view' }).getByRole('button', { name: 'Inline' }).click();
           await page.setViewportSize(size);
           await open(q({ review: range, file: 'a.js' }), page.getByRole('grid'));
@@ -96,6 +100,11 @@ try {
         await open(q({ review: range, round: '1', file: 'a.js' }), page.getByRole('grid'));
         await page.getByRole('article').first().waitFor();
         await shot('round-1-diff');
+        if (vp === 'phone') {
+          await open(q({ review: range, compare: '1..2', file: 'a.js' }), page.getByRole('grid'));
+          await page.locator('[role=rowgroup] article').first().waitFor();
+          await shot('diff-compare'); // inline: one combined diff
+        }
 
         await open(q({ review: range, file: 'logo.bin' }), page.getByText('Binary file changed'));
         await shot('binary-file');

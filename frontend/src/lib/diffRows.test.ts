@@ -1,6 +1,6 @@
-import { expect, test } from 'vitest';
+import { describe, expect, test } from 'vitest';
 import { hunk, lines } from '@/test/fixtures';
-import { buildRows, gapHolding, gapSpans } from './diffRows';
+import { buildRows, collapseRows, gapHolding, gapSpans } from './diffRows';
 
 // Hunk 1 replaces old line 12 by new lines 12–13 (so later lines shift +1); hunk 2 sits further down.
 const h1 = hunk({ id: 'a', oldStart: 11, oldLines: 3, newStart: 11, newLines: 4, lines: lines('c1 d2 a2 a3 c4').map((l, i) => ({ ...l, old: l.old == null ? null : 11 + (i > 2 ? i - 2 : i) , new: l.new == null ? null : 11 + i })) });
@@ -49,4 +49,26 @@ test('a deleted file expands on the old side', () => {
 test('gapHolding finds the span around a line and its distance from each edge', () => {
   expect(gapHolding([h1, h2], 50, 'new', 20)).toMatchObject({ gapKey: 'after:a', fromTop: 6, fromBottom: 12 });
   expect(gapHolding([h1, h2], 50, 'new', 12)).toBeNull();
+});
+
+describe('collapseRows', () => {
+  const texts = Object.fromEntries(Array.from({ length: 50 }, (_, i) => [i + 1, `t${i + 1}`]));
+  const rows = buildRows({ ...base, texts, hunks: [h1, h2], expansions: { 'after:a': { top: 2, bottom: 0 } } });
+
+  // Invariant: collapse hides exactly the hunk's own lines.
+  test('marks the collapsed hunk header and drops exactly its lines, keeping the context after it and other hunks', () => {
+    const out = collapseRows(rows, (id) => id === 'a');
+    const header = out.find((r) => r.key === 'h:a');
+    expect(header).toMatchObject({ kind: 'hunk', collapsed: true });
+    expect(out.some((r) => r.kind === 'line' && r.hunkId === 'a' && !r.key.startsWith('after:'))).toBe(false);
+    expect(out.filter((r) => r.key.startsWith('after:a:'))).toHaveLength(2);
+    expect(out.filter((r) => r.kind === 'line' && r.key.startsWith('b:'))).toHaveLength(h2.lines.length);
+    expect(out.find((r) => r.key === 'h:b')).not.toHaveProperty('collapsed', true);
+    expect(out).toHaveLength(rows.length - h1.lines.length);
+  });
+
+  // Invariant: collapse is a no-op when nothing is settled.
+  test('with nothing collapsed the rows are unchanged', () => {
+    expect(collapseRows(rows, () => false)).toEqual(rows);
+  });
 });

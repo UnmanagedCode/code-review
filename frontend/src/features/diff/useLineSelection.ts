@@ -4,6 +4,7 @@ import { extendSelection, lineOn, startSelection, type Selection } from '@/lib/s
 import type { Side } from '@/lib/types';
 
 export interface Cell { side: Side; n: number }
+export type LineSelection = ReturnType<typeof useLineSelection>;
 
 /** Line selection for the diff grid: mouse drag/shift-click, touch taps, keyboard. Disabled = never selects. */
 export function useLineSelection(rows: Row[], enabled: boolean, resetKey: string) {

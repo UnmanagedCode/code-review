@@ -26,7 +26,7 @@ import { RefreshControls } from './RefreshControls';
 import { RoundPicker } from './RoundPicker';
 import { ReviewHeader } from './ReviewHeader';
 
-const XL_QUERY = '(min-width: 80rem)';
+export const XL_QUERY = '(min-width: 80rem)';
 const CLEAR = { review: undefined, ...REVIEW_SCOPED };
 
 const asFileState = (f: { path: string; oldPath: string | null; status: FileState['status']; binary: boolean; tooLarge: boolean; additions: number; deletions: number; hunks: unknown[] }): FileState => ({

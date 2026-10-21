@@ -60,3 +60,41 @@ test('the body limit equals the backend’s MAX_BODY_CHARS', () => {
   const src = readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..', '..', 'src', 'threads.js'), 'utf8');
   expect(MAX_BODY_CHARS).toBe(Number(/MAX_BODY_CHARS\s*=\s*([\d_]+)/.exec(src)![1].replace(/_/g, '')));
 });
+
+// Invariant: a new-comment draft (kind, severity, text) survives a remount for the same anchor, Cancel discards it,
+// and another anchor starts empty.
+test('a composer draft survives a remount for its anchor and Cancel discards it', async () => {
+  const user = userEvent.setup();
+  const first = renderInReview(<Composer anchor={anchor} label="x" onClose={() => {}} />);
+  await user.selectOptions(screen.getByLabelText('Kind'), 'finding');
+  await user.selectOptions(screen.getByLabelText('Severity'), 'minor');
+  await user.type(screen.getByLabelText('Message'), 'draft');
+  first.unmount();
+  const other = renderInReview(<Composer anchor={{ ...anchor, endLine: 5 }} label="x" onClose={() => {}} />);
+  expect(screen.getByLabelText<HTMLTextAreaElement>('Message').value).toBe('');
+  other.unmount();
+  const onClose = vi.fn();
+  const second = renderInReview(<Composer anchor={anchor} label="x" onClose={onClose} />);
+  expect(screen.getByLabelText<HTMLTextAreaElement>('Message').value).toBe('draft');
+  expect(screen.getByLabelText<HTMLSelectElement>('Kind').value).toBe('finding');
+  expect(screen.getByLabelText<HTMLSelectElement>('Severity').value).toBe('minor');
+  await user.click(screen.getByRole('button', { name: 'Cancel' }));
+  expect(onClose).toHaveBeenCalled();
+  second.unmount();
+  renderInReview(<Composer anchor={anchor} label="x" onClose={() => {}} />);
+  expect(screen.getByLabelText<HTMLTextAreaElement>('Message').value).toBe('');
+});
+
+// Invariant: a posted comment's draft is gone.
+test('posting clears the composer draft', async () => {
+  stubFetch({ 'POST api/reviews/r-1/threads': { thread: thread() } });
+  const user = userEvent.setup();
+  const onClose = vi.fn();
+  const first = renderInReview(<Composer anchor={anchor} label="x" onClose={onClose} />);
+  await user.type(screen.getByLabelText('Message'), 'sent');
+  await user.click(post());
+  await waitFor(() => expect(onClose).toHaveBeenCalled());
+  first.unmount();
+  renderInReview(<Composer anchor={anchor} label="x" onClose={() => {}} />);
+  expect(screen.getByLabelText<HTMLTextAreaElement>('Message').value).toBe('');
+});

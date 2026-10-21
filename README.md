@@ -83,6 +83,6 @@ Then Settings → Plugins → Rescan, and enable.
 - Uncommitted edits are not pushed: the UI re-fetches on focus or an interval.
 - A branch `base` follows its branch at each refresh; a sha base is fixed.
 - Renaming a file resets the verdicts of its hunks.
-- Unified diff only (no split view) and no syntax highlighting.
+- No syntax highlighting; split view needs a diff pane at least 36rem wide (phones always get the unified view).
 - One file renders at a time; there is no all-files scroll.
 - Dropped uncommitted threads are shown only for the current page session (the backend keeps their ids, not their text).

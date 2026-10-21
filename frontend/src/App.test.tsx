@@ -37,7 +37,8 @@ test('UI source uses no raw-markup or dynamic-code escape hatch', () => {
 test('the source-text guards actually see the sources it is meant to cover', () => {
   const seen = all.map((f) => path.relative(frontend, f));
   expect(seen.length).toBeGreaterThan(30);
-  for (const must of ['src/App.tsx', 'index.html', 'public/theme-init.js', 'src/features/diff/FileDiff.tsx', 'src/state/submit.ts', 'src/lib/route.ts', 'src/components/ui/button.tsx']) expect(seen).toContain(must);
+  for (const must of ['src/App.tsx', 'index.html', 'public/theme-init.js', 'src/features/diff/FileDiff.tsx', 'src/state/submit.ts', 'src/lib/route.ts', 'src/components/ui/button.tsx',
+    'src/lib/splitRows.ts', 'src/features/diff/SplitRow.tsx', 'src/features/diff/SettledThread.tsx', 'src/features/diff/HunkHeader.tsx', 'src/features/layout/ResizeHandle.tsx']) expect(seen).toContain(must);
   expect(seen.some((f) => f.startsWith('dist') || f.includes('node_modules'))).toBe(false);
 });
 

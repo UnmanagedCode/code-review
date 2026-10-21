@@ -26,6 +26,17 @@ function watchErrors(page) {
   page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
   return errors;
 }
+// The last row before `el` in document order (thread cards and composers render below their row): its gutter
+// `data-cell`s and its gridcell texts joined by `|`.
+const rowBefore = (el) => el.evaluate((node) => {
+  const row = [...document.querySelectorAll('[role="row"]')].filter((r) => r.compareDocumentPosition(node) & Node.DOCUMENT_POSITION_FOLLOWING).pop();
+  return {
+    cells: [...(row?.querySelectorAll('[data-cell]') ?? [])].map((c) => c.getAttribute('data-cell')),
+    text: [...(row?.querySelectorAll('[role=gridcell]') ?? [])].map((c) => c.textContent).join('|'),
+  };
+});
+const ACCEPTED_SUMMARY = /^@@.*accepted$/;
+
 const shotter = (page) => async (name) => {
   const file = path.join(outDir, `golden-${name}.png`);
   await page.screenshot({ path: file, animations: 'disabled' });
@@ -39,7 +50,9 @@ try {
     const shot = shotter(page);
 
     // 1. Drag-select lines in the gutter: the release opens the composer directly. Post a question and see it under the last selected line.
+    // Its first hunk is seeded accepted, so it starts collapsed; expand it.
     await page.goto(q({ review: range, file: 'a.js' }));
+    await page.getByRole('button', { name: ACCEPTED_SUMMARY }).click();
     const cell = (n) => page.locator(`[data-cell="new:${n}"]`);
     await cell(10).scrollIntoViewIfNeeded();
     const [from, to] = [await cell(10).boundingBox(), await cell(11).boundingBox()];
@@ -54,13 +67,9 @@ try {
     await page.getByLabel('Message').fill('Is this loop bound right?');
     await shot('1-composer');
     await page.getByRole('button', { name: 'Post' }).click();
-    await page.locator('[role=rowgroup] article', { hasText: 'Is this loop bound right?' }).waitFor();
-    const under = await page.evaluate(() => {
-      const card = [...document.querySelectorAll('article')].find((a) => a.textContent.includes('Is this loop bound right?') && a.closest('[role="rowgroup"]'));
-      const row = card?.parentElement?.previousElementSibling;
-      return row?.querySelector('[data-cell="new:11"]') != null;
-    });
-    assert.ok(under, 'the question renders directly under line 11');
+    const posted = page.locator('[role=rowgroup] article', { hasText: 'Is this loop bound right?' });
+    await posted.waitFor();
+    assert.ok((await rowBefore(posted)).cells.includes('new:11'), 'the question renders directly under line 11');
     await shot('1-posted');
 
     // 2. Accept a hunk; the tree tally follows.
@@ -77,6 +86,7 @@ try {
     const aTree = page.getByRole('link', { name: /a\.js/ }).first();
     const bars = page.getByRole('group', { name: 'Hunk verdict' });
     await aTree.getByText('1 accepted, 1 rejected, 0 pending').waitFor();
+    await page.getByRole('button', { name: ACCEPTED_SUMMARY }).click();
     await bars.nth(0).getByRole('button', { name: 'Pending' }).click();
     await page.getByText('0/2 accepted · 1 rejected').waitFor();
     await aTree.getByText('0 accepted, 1 rejected, 1 pending').waitFor();
@@ -84,8 +94,10 @@ try {
     await page.getByRole('button', { name: 'Accept file' }).click();
     await page.getByText('1/2 accepted · 1 rejected').waitFor();
     await aTree.getByText('1 accepted, 1 rejected, 0 pending').waitFor();
-    assert.equal(await bars.nth(0).getByRole('button', { name: 'Accept', exact: true }).getAttribute('aria-pressed'), 'true');
-    assert.equal(await bars.nth(1).getByRole('button', { name: 'Reject', exact: true }).getAttribute('aria-pressed'), 'true');
+    // The accepted hunk collapses to its summary (no verdict bar); the rejected one stays expanded.
+    await page.getByRole('button', { name: ACCEPTED_SUMMARY }).waitFor();
+    assert.equal(await bars.count(), 1);
+    assert.equal(await bars.nth(0).getByRole('button', { name: 'Reject', exact: true }).getAttribute('aria-pressed'), 'true');
     assert.equal(await page.getByRole('button', { name: 'Accept file' }).isDisabled(), true);
     await shot('2b-accepted-file');
 
@@ -104,12 +116,8 @@ try {
     await page.getByRole('link', { name: /a\.js/ }).first().click();
     const question = page.locator('[role=rowgroup] article', { hasText: 'Why change both lines?' });
     await question.waitFor();
-    const atLine4 = await page.evaluate(() => {
-      const card = [...document.querySelectorAll('[role="rowgroup"] article')].find((a) => a.textContent.includes('Why change both lines?'));
-      // Read-only rows carry no data-cell (no gutter selection): match the row by its new-side number and text.
-      const row = card?.parentElement?.previousElementSibling;
-      return [...(row?.querySelectorAll('[role=gridcell]') ?? [])].map((c) => c.textContent).join('|');
-    });
+    // Read-only rows carry no data-cell (no gutter selection): match the row by its new-side number and text.
+    const atLine4 = (await rowBefore(question)).text;
     assert.equal(atLine4, '|4|+|changed4', 'in round 1 the question renders under new line 4, its last line then');
     assert.equal(await page.getByRole('group', { name: 'Hunk verdict' }).count(), 0, 'no verdict controls in a past round');
     assert.equal(await page.getByLabel('Reply').count(), 0, 'no reply box in a past round');
@@ -160,6 +168,110 @@ try {
     await shot('4-delivered');
     assert.deepEqual(errors, []);
   }, { headless: true, viewport: { width: 1280, height: 800 } });
+  // 6–10: split view, collapsed settled items, the resizable thread panel (stored view/width live in this page's storage).
+  await withPage(async (page) => {
+    const errors = watchErrors(page);
+    const shot = shotter(page);
+    const grid = page.getByRole('grid');
+    const viewGroup = page.getByRole('group', { name: 'Diff view' });
+    const isSplit = () => page.locator('[role=row].grid').count().then((n) => n > 0);
+    const accepted = page.getByRole('button', { name: ACCEPTED_SUMMARY });
+
+    // 6. Accepted hunk collapsed (inline), then Split: the long line wraps instead of overflowing; the choice survives a reload.
+    await page.goto(q({ review: range, file: 'a.js' }));
+    await accepted.waitFor();
+    assert.equal(await page.locator('[data-cell="new:6"]').count(), 0, 'the accepted hunk hides its lines');
+    await shot('6-collapsed-inline');
+    await viewGroup.getByRole('button', { name: 'Split' }).click();
+    await accepted.click();
+    await page.locator('[data-cell="new:6"]').waitFor();
+    assert.ok(await isSplit(), 'split rows render');
+    const overflow = await grid.evaluate((g) => g.scrollWidth - g.clientWidth);
+    assert.ok(overflow <= 0, `split has no horizontal overflow (${overflow}px)`);
+    await shot('6-split');
+    await page.reload();
+    await accepted.click();
+    assert.equal(await viewGroup.getByRole('button', { name: 'Split' }).getAttribute('aria-pressed'), 'true', 'split is remembered');
+
+    // 7. Drag-select on the right (new) gutter: the composer opens under the pair row holding the last line.
+    const cell = (n) => page.locator(`[data-cell="new:${n}"]`);
+    await cell(6).scrollIntoViewIfNeeded();
+    const [from, to] = [await cell(5).boundingBox(), await cell(6).boundingBox()];
+    await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(to.x + to.width / 2, to.y + to.height / 2, { steps: 6 });
+    await page.mouse.up();
+    const form = page.getByRole('form', { name: 'Comment on L5–L6 (new)' });
+    await form.waitFor();
+    assert.ok((await rowBefore(form)).cells.includes('new:6'), 'the composer renders under the pair row holding new line 6');
+    await shot('7-split-composer');
+    await form.getByRole('button', { name: 'Cancel' }).click();
+
+    // 8. Resolve the open finding: it collapses to a summary, in both views.
+    const finding = page.locator('[role=rowgroup] article', { hasText: 'Missing guard' });
+    await finding.getByRole('button', { name: 'Resolve as fixed' }).click();
+    const findingSummary = page.getByRole('button', { name: /Missing guard.*resolved/ });
+    await findingSummary.waitFor();
+    assert.equal(await findingSummary.getAttribute('aria-expanded'), 'false');
+    await shot('8-resolved-split');
+    await viewGroup.getByRole('button', { name: 'Inline' }).click();
+    await findingSummary.waitFor();
+    await findingSummary.click();
+    await finding.waitFor();
+    await shot('8-resolved-expanded-inline');
+    await viewGroup.getByRole('button', { name: 'Split' }).click();
+
+    // 9. Phone: the stored split choice gives way to inline, with no toggle.
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto(q({ review: range, file: 'a.js' }));
+    await grid.waitFor();
+    assert.equal(await viewGroup.count(), 0, 'no view toggle on a phone');
+    assert.equal(await isSplit(), false, 'a phone shows inline rows');
+    await shot('9-phone-inline');
+
+    // 10. xl: the thread column has a handle; widening it pushes split down to inline, narrowing brings it back.
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto(q({ review: range, file: 'a.js' }));
+    const handle = page.getByRole('separator', { name: 'Resize threads panel' });
+    await handle.waitFor();
+    await viewGroup.waitFor();
+    assert.ok(await isSplit(), 'the default panel leaves room for split at 1440px');
+    const panelWidth = () => handle.evaluate((h) => h.parentElement.getBoundingClientRect().width);
+    const before = await panelWidth();
+    const drag = async (dx) => {
+      const b = await handle.boundingBox();
+      await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2);
+      await page.mouse.down();
+      await page.mouse.move(b.x + b.width / 2 + dx, b.y + b.height / 2, { steps: 8 });
+      await page.mouse.up();
+    };
+    await drag(-200);
+    assert.equal(await panelWidth(), before + 200, 'dragging left widens the panel');
+    await viewGroup.waitFor({ state: 'detached' });
+    assert.equal(await isSplit(), false, 'the narrower diff pane falls back to inline');
+    await shot('10-wide-panel-inline');
+    await drag(200);
+    await viewGroup.waitFor();
+    assert.ok(await isSplit(), 'narrowing the panel brings split back');
+    await handle.focus();
+    await page.keyboard.press('End');
+    const pane = await page.getByRole('main').evaluate((m) => m.getBoundingClientRect().width);
+    assert.ok(pane >= 384, `the diff pane keeps its minimum (${pane}px)`);
+    const widest = await panelWidth();
+    await shot('10-panel-max');
+    await page.reload();
+    await handle.waitFor();
+    assert.equal(await panelWidth(), widest, 'the panel width survives a reload');
+
+    // 11. Below xl the threads sheet overlays the diff and has no handle.
+    await page.setViewportSize({ width: 1024, height: 768 });
+    await page.goto(q({ review: range, file: 'a.js' }));
+    await page.getByRole('button', { name: /^Threads/ }).click();
+    await page.getByRole('dialog').waitFor();
+    assert.equal(await page.getByRole('separator', { name: 'Resize threads panel' }).count(), 0, 'the md sheet has no handle');
+    await shot('11-md-sheet');
+    assert.deepEqual(errors, []);
+  }, { headless: true, viewport: { width: 1100, height: 800 } }); // md–xl: a 320px file column leaves a split-wide pane
   console.log('golden path ok');
 } finally {
   await world.close();

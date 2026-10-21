@@ -1,5 +1,5 @@
 import type { Row } from './diffRows';
-import type { Side } from './types';
+import type { DiffLine, Side } from './types';
 
 export interface Selection { side: Side; start: number; end: number; anchorLine: number }
 
@@ -12,7 +12,7 @@ export const startSelection = (side: Side, n: number): Selection => ({ side, sta
 
 /**
  * Extends the selection from its anchor to line `n` on the same side. The range stops before a collapsed
- * gap (or the end of the rendered rows) between the anchor and `n`; once the gap is expanded the range may span it.
+ * gap or collapsed hunk (or the end of the rendered rows) between the anchor and `n`; once expanded the range may span it.
  */
 export function extendSelection(rows: Row[], sel: Selection, n: number): Selection {
   const idx = (line: number) => rows.findIndex((r) => lineOn(r, sel.side) === line);
@@ -23,7 +23,7 @@ export function extendSelection(rows: Row[], sel: Selection, n: number): Selecti
   let reached = sel.anchorLine;
   for (let i = a; i !== b + step; i += step) {
     const r = rows[i];
-    if (r.kind === 'gap') break;
+    if (r.kind === 'gap' || (r.kind === 'hunk' && r.collapsed)) break;
     const m = lineOn(r, sel.side);
     if (m != null) reached = m;
   }
@@ -32,3 +32,7 @@ export function extendSelection(rows: Row[], sel: Selection, n: number): Selecti
 
 export const contains = (sel: Selection | null, side: Side, n: number | null): boolean =>
   !!sel && sel.side === side && n != null && n >= sel.start && n <= sel.end;
+
+/** Whether any of `lines` carries, on the selection's side, a number inside it. */
+export const selectionTouches = (sel: Selection | null, lines: DiffLine[]): boolean =>
+  !!sel && lines.some((l) => contains(sel, sel.side, l[sel.side]));

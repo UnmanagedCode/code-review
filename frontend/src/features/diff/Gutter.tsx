@@ -1,13 +1,11 @@
 import type { Side } from '@/lib/types';
 import { cn } from '@/lib/utils';
-import type { useLineSelection } from './useLineSelection';
-
-type Sel = ReturnType<typeof useLineSelection>;
+import type { LineSelection } from './useLineSelection';
 
 /** One line-number cell. Selectable when it carries a number and selection is on. */
-export function Gutter({ side, n, sel, enabled }: { side: Side; n: number | null; sel: Sel; enabled: boolean }) {
-  if (n == null) return <div role="gridcell" aria-hidden className="w-12 shrink-0" />;
-  if (!enabled) return <div role="gridcell" className="w-12 shrink-0 px-1 text-right text-muted-foreground select-none">{n}</div>;
+export function Gutter({ side, n, sel, enabled, className }: { side: Side; n: number | null; sel: LineSelection; enabled: boolean; className?: string }) {
+  if (n == null) return <div role="gridcell" aria-hidden className={cn('w-12 shrink-0', className)} />;
+  if (!enabled) return <div role="gridcell" className={cn('w-12 shrink-0 px-1 text-right text-muted-foreground select-none', className)}>{n}</div>;
   return (
     <div
       role="gridcell"
@@ -17,7 +15,7 @@ export function Gutter({ side, n, sel, enabled }: { side: Side; n: number | null
       onPointerDown={sel.onPointerDown(side, n)}
       onPointerEnter={sel.onPointerEnter(side, n)}
       onKeyDown={sel.onKeyDown(side, n)}
-      className={cn('w-12 shrink-0 cursor-pointer px-1 text-right text-muted-foreground select-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none pointer-coarse:py-1.5')}
+      className={cn('w-12 shrink-0 cursor-pointer px-1 text-right text-muted-foreground select-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none pointer-coarse:py-1.5', className)}
     >
       {n}
     </div>

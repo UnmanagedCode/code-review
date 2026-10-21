@@ -4,7 +4,7 @@ export interface Expansion { top: number; bottom: number }
 export type Expansions = Record<string, Expansion>;
 
 export type Row =
-  | { kind: 'hunk'; key: string; hunk: Hunk }
+  | { kind: 'hunk'; key: string; hunk: Hunk; collapsed?: boolean }
   | { kind: 'line'; key: string; hunkId: string | null; line: DiffLine }
   | { kind: 'gap'; key: string; gapKey: string; remaining: number; from: number; to: number; side: Side };
 
@@ -45,7 +45,10 @@ export function gapSpans(hunks: Hunk[], total: number | null, side: Side = 'new'
 const ctx = (n: number, side: Side, offset: number, text: string): DiffLine =>
   side === 'new' ? { t: 'ctx', old: n + offset, new: n, text } : { t: 'ctx', old: n, new: null, text };
 
-/** Flat render rows: hunk headers, diff lines, expanded context and the remaining collapsed gaps. */
+/**
+ * Flat render rows: hunk headers, diff lines, expanded context and the remaining collapsed gaps.
+ * Each hunk header is followed by exactly its `hunk.lines`, in order (`collapseRows` relies on it).
+ */
 export function buildRows({ hunks, expansions, texts, total, side = 'new' }: BuildInput): Row[] {
   const rows: Row[] = [];
   const spans = new Map(gapSpans(hunks, total, side).map((s) => [s.gapKey, s]));
@@ -80,4 +83,17 @@ export function gapHolding(hunks: Hunk[], total: number | null, side: Side, n: n
     if (m >= s.from && m <= s.to) return { ...s, size: s.to - s.from + 1, fromTop: m - s.from + 1, fromBottom: s.to - m + 1 };
   }
   return null;
+}
+
+/** The rows with each collapsed hunk reduced to its header (marked `collapsed`): its own lines are dropped, context after it stays. */
+export function collapseRows(rows: Row[], collapsed: (hunkId: string) => boolean): Row[] {
+  const out: Row[] = [];
+  for (let i = 0; i < rows.length; i++) {
+    const r = rows[i];
+    if (r.kind === 'hunk' && collapsed(r.hunk.id)) {
+      out.push({ ...r, collapsed: true });
+      i += r.hunk.lines.length;
+    } else out.push(r);
+  }
+  return out;
 }

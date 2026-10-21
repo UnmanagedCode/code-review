@@ -54,8 +54,9 @@ export async function seed() {
     await mcp('annotate', { review: id, kind: 'finding', severity: 'major', body: finding, file: 'a.js', side: 'old', startLine: 8 }, rev);
     await mcp('reply', { review: id, thread: comment.id, body: 'Test added. Resolving.', resolve: true }, author);
 
-    // A third commit rewrites the questioned lines; refreshing turns that thread outdated.
-    wt.commit({ 'a.js': editLines({ 1: 'r1', 2: 'r2', 3: 'rewritten3', 4: 'rewritten4', 5: 'r5', 6: 'r6', 7: 'r7', 8: 'changed8', 19: 'changed19' }) }, 'third');
+    // A third commit rewrites the questioned lines; refreshing turns that thread outdated. Line 6 is long enough to wrap in split view.
+    const long6 = `r6 ${'a long line that has to wrap in the split view '.repeat(5)}`;
+    wt.commit({ 'a.js': editLines({ 1: 'r1', 2: 'r2', 3: 'rewritten3', 4: 'rewritten4', 5: 'r5', 6: long6, 7: 'r7', 8: 'changed8', 19: 'changed19' }) }, 'third');
     await call('POST', `reviews/${id}/refresh`);
     const diff = await call('GET', `reviews/${id}/diff?file=a.js`);
     const [h1, h2] = diff.files[0].hunks;

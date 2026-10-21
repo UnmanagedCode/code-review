@@ -61,6 +61,18 @@ try {
         await shot('diff');
 
         if (vp === 'desktop') {
+          // Split needs a 36rem pane: at 1280px (xl) the thread column leaves less, so shoot it at md–xl width.
+          await page.setViewportSize({ width: 1100, height: 800 });
+          await open(q({ review: range, file: 'a.js' }), page.getByRole('grid'));
+          await page.getByRole('group', { name: 'Diff view' }).getByRole('button', { name: 'Split' }).click();
+          await page.getByRole('button', { name: /^@@.*accepted$/ }).waitFor();
+          await shot('diff-split-collapsed'); // the seeded accepted hunk, collapsed
+          await page.getByRole('button', { name: /^@@.*accepted$/ }).click();
+          await page.locator('[data-cell="new:6"]').waitFor();
+          await shot('diff-split');
+          await page.getByRole('group', { name: 'Diff view' }).getByRole('button', { name: 'Inline' }).click();
+          await page.setViewportSize(size);
+          await open(q({ review: range, file: 'a.js' }), page.getByRole('grid'));
           await page.getByRole('tab', { name: /^All/ }).click();
           await page.getByRole('tabpanel').getByRole('article').first().waitFor();
           await shot('threads-all');

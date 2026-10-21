@@ -1,11 +1,13 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, expect, test } from 'vitest';
+import { WIDE_QUERY } from '@/lib/useMediaQuery';
 import { installFakeEventSource } from '@/test/fakeEventSource';
+import { installMedia } from '@/test/fakeMedia';
 import { parseRoute } from '@/lib/route';
 import { diffFile, fileState, refusal, review, thread } from '@/test/fixtures';
 import { stubFetch } from '@/test/stubFetch';
-import { ReviewView } from './ReviewView';
+import { ReviewView, XL_QUERY } from './ReviewView';
 
 beforeEach(() => installFakeEventSource());
 
@@ -29,6 +31,17 @@ test('an open review offers gutter selection and a reply box', async () => {
   expect(await screen.findByRole('grid')).toBeTruthy();
   expect(document.querySelector('[data-cell]')).not.toBeNull();
   expect(screen.getAllByLabelText('Reply').length).toBeGreaterThan(0);
+});
+
+// Invariant: the resize handle exists only where the thread panel sits beside the diff.
+test.each([[false, false], [true, true]])('with xl=%s the threads panel handle is present=%s', async (xl, present) => {
+  installMedia({ [WIDE_QUERY]: true, [XL_QUERY]: xl });
+  world('open');
+  history.replaceState(null, '', '?review=r-1&file=src%2Fa.ts&view=threads');
+  render(<ReviewView id="r-1" />);
+  // Below xl the panel is an open modal sheet, which hides the rest from the accessibility tree.
+  await screen.findByRole('grid', { hidden: true });
+  expect(!!screen.queryByRole('separator', { name: 'Resize threads panel', hidden: true })).toBe(present);
 });
 
 test('a closed review is read-only: no gutter selection and no reply box', async () => {

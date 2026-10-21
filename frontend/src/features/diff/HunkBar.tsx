@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import type { Hunk, Verdict } from '@/lib/types';
 import { useReviewCtx } from '@/state/reviewContext';
 import { useReviewActions } from '@/state/threads';
+import { SEGMENT } from '@/features/common/segment';
 import { Composer } from '@/features/threads/Composer';
 
 const VERDICTS: { value: Verdict; label: string }[] = [{ value: 'accepted', label: 'Accept' }, { value: 'rejected', label: 'Reject' }, { value: 'pending', label: 'Pending' }];
@@ -27,7 +28,7 @@ export function HunkBar({ hunk, commentable }: { hunk: Hunk; commentable: boolea
               variant="ghost"
               aria-pressed={(hunk.verdict ?? 'pending') === v.value}
               disabled={closed}
-              className="rounded-none first:rounded-l-md last:rounded-r-md aria-pressed:bg-primary/15 aria-pressed:text-accent-foreground aria-pressed:hover:bg-primary/20 dark:aria-pressed:hover:bg-primary/20"
+              className={SEGMENT}
               onClick={() => (hunk.verdict ?? 'pending') !== v.value && actions.setVerdict(hunk.id, v.value, hunk.verdict)}
             >
               {v.label}

@@ -1,7 +1,7 @@
 import { expect, test } from 'vitest';
-import { buildRows } from './diffRows';
+import { buildRows, collapseRows } from './diffRows';
 import { hunk, lines } from '@/test/fixtures';
-import { contains, extendSelection, startSelection } from './selection';
+import { contains, extendSelection, selectionTouches, startSelection } from './selection';
 
 // new 1–5: c1 c2 a3 a4 c5 ; a del row (old only) sits between c2 and a3.
 const h = hunk({ lines: [
@@ -51,4 +51,24 @@ test('once the gap is expanded the range spans both hunks', () => {
 test('a target line that is not rendered leaves the selection unchanged', () => {
   const sel = startSelection('new', 2);
   expect(extendSelection(rows, sel, 99)).toBe(sel);
+});
+
+// Invariant: a selection never covers hidden lines.
+test('the selection stops before a collapsed hunk and crosses an expanded one', () => {
+  const texts = Object.fromEntries(Array.from({ length: 30 }, (_, i) => [i + 1, 'x']));
+  const r = buildRows({ hunks: [h, far], expansions: { 'after:h1': { top: 15, bottom: 0 }, 'after:z': { top: 8, bottom: 0 } }, texts, total: 30 });
+  expect(extendSelection(r, startSelection('new', 18), 25)).toMatchObject({ start: 18, end: 25 });
+  const hidden = collapseRows(r, (id) => id === 'z');
+  expect(extendSelection(hidden, startSelection('new', 18), 25)).toMatchObject({ start: 18, end: 20 });
+  expect(extendSelection(hidden, startSelection('new', 25), 18)).toMatchObject({ start: 23, end: 25 });
+});
+
+// Invariant: the keep-open and target predicates match a range on its own side only.
+test('selectionTouches is true when any line on the selection side falls in the range', () => {
+  const del = h.lines.filter((l) => l.t === 'del');
+  expect(selectionTouches({ side: 'old', start: 3, end: 3, anchorLine: 3 }, del)).toBe(true);
+  expect(selectionTouches({ side: 'new', start: 3, end: 3, anchorLine: 3 }, del)).toBe(false);
+  expect(selectionTouches({ side: 'new', start: 4, end: 9, anchorLine: 4 }, h.lines)).toBe(true);
+  expect(selectionTouches({ side: 'new', start: 6, end: 9, anchorLine: 6 }, h.lines)).toBe(false);
+  expect(selectionTouches(null, h.lines)).toBe(false);
 });

@@ -2,6 +2,7 @@ import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { expect, test, vi } from 'vitest';
 import { diffFile, fileState, message, review, thread } from '@/test/fixtures';
+import { parseRoute } from '@/lib/route';
 import { ctxValue } from '@/test/renderCtx';
 import { stubFetch } from '@/test/stubFetch';
 import type { ComparedThread, UnplacedThread } from '@/lib/types';
@@ -149,4 +150,26 @@ test('the Outdated tab shows each thread\'s location link', async () => {
   render(<ReviewProvider value={ctxValue({ files, outdatedThreads: [t], fileDiff: { file: undefined } as never })}><ThreadPanel /></ReviewProvider>);
   await userEvent.setup().click(screen.getByRole('tab', { name: /^Outdated/ }));
   expect(screen.getByRole('button', { name: 'src/a.ts:3' })).toBeTruthy();
+});
+
+// Invariant: Focus on a thread the comparison does not place only focuses it: its anchor's side means the base there,
+// not round A's head, so navigating to file and lines would highlight the wrong snapshot.
+test('in a comparison, Focus on an unplaced thread adds only the thread to the route', async () => {
+  history.replaceState(null, '', '?review=r-1&compare=1..2');
+  render(<ReviewProvider value={comparison()}><ThreadPanel /></ReviewProvider>);
+  const user = userEvent.setup();
+  await user.click(screen.getByRole('tab', { name: /^Not in diff/ }));
+  await user.click(screen.getByRole('button', { name: 'Focus' }));
+  expect(parseRoute(location.search)).toEqual({ review: 'r-1', compare: '1..2', thread: 't-3' });
+});
+
+// Invariant: Focus on a placed thread inside a comparison stays in it: `compare` is never cleared.
+test('in a comparison, Focus on a thread of another file keeps the comparison open', async () => {
+  history.replaceState(null, '', '?review=r-1&compare=1..2&file=src%2Fb.ts');
+  render(<ReviewProvider value={comparison()}><ThreadPanel /></ReviewProvider>);
+  const user = userEvent.setup();
+  await user.click(screen.getByRole('tab', { name: /^All/ }));
+  const t2 = screen.getAllByRole('article')[1];
+  await user.click(within(t2).getByRole('button', { name: 'Focus' }));
+  expect(parseRoute(location.search)).toMatchObject({ compare: '1..2', file: 'src/a.ts', thread: 't-2' });
 });

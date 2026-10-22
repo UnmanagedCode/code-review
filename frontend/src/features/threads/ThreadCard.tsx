@@ -28,8 +28,8 @@ const at = (t: Thread): Route => {
   return { compare: `${round}..${round + 1}`, round: undefined, commit: undefined, file, side: 'old', lines, thread: t.id };
 };
 
-/** One thread. `dropped`: a session-local tombstone of an uncommitted thread whose lines changed. `note`: shown under the header. */
-export function ThreadCard({ thread, dropped = false, showLocation = false, note }: { thread: Thread; dropped?: boolean; showLocation?: boolean; note?: ReactNode }) {
+/** One thread. `unplaced`: a comparison has no place for it, so Focus never moves the file position. `dropped`: a session-local tombstone of an uncommitted thread whose lines changed. `note`: shown under the header. */
+export function ThreadCard({ thread, dropped = false, showLocation = false, unplaced = false, note }: { thread: Thread; dropped?: boolean; showLocation?: boolean; unplaced?: boolean; note?: ReactNode }) {
   const { readOnly, compare } = useReviewCtx();
   const actions = useReviewActions();
   const route = useRoute();
@@ -65,7 +65,7 @@ export function ThreadCard({ thread, dropped = false, showLocation = false, note
             {thread.anchor.file}:{thread.anchor.startLine}
           </Button>
         )}
-        {!dropped && !focused && <Button variant="ghost" size="sm" className="ml-auto h-6 px-2 text-xs" onClick={() => (outdated || thread.anchor.file !== route.file ? jump() : navigate({ thread: thread.id }))}>Focus</Button>}
+        {!dropped && !focused && <Button variant="ghost" size="sm" className="ml-auto h-6 px-2 text-xs" onClick={() => (!unplaced && (outdated || thread.anchor.file !== route.file) ? jump() : navigate({ thread: thread.id }))}>Focus</Button>}
       </header>
       {note}
       {dropped && <p className="text-xs text-muted-foreground">dropped: its lines changed</p>}

@@ -23,7 +23,7 @@ const compareList = (shown: ShownThread[], compare: { from: number; to: number }
     {shown.map(({ thread: t, other }) => {
       const reason = (t as Partial<UnplacedThread>).reason;
       const note = reason ? <UnplacedNote reason={reason} /> : <CompareNote thread={t} other={other} compare={compare} />;
-      return <ThreadCard key={t.id} thread={t} note={note} showLocation={showLocation && !reason} />;
+      return <ThreadCard key={t.id} thread={t} note={note} showLocation={showLocation && !reason} unplaced={!!reason} />;
     })}
   </div>
 );

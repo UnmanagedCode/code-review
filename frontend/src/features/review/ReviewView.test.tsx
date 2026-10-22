@@ -285,7 +285,6 @@ test('cross-file Focus loads the other file and focuses its thread there', async
     await user.click(await screen.findByRole('tab', { name: /^All/ }));
     const t2 = await panelCardOf('src/b.ts:3');
     await user.click(within(t2).getByRole('button', { name: 'Focus' }));
-    await waitFor(() => expect(net.calls.some((c) => c.url.pathname.endsWith('/diff') && c.url.searchParams.get('file') === 'src/b.ts')).toBe(true));
     expect(parseRoute(location.search)).toMatchObject({ file: 'src/b.ts', thread: 't-2' });
     const grid = await screen.findByRole('grid', { name: 'Changes in src/b.ts' });
     await waitFor(() => expect(scrolled.some((el) => grid.contains(el) && el.getAttribute('aria-label') === 'comment thread')).toBe(true));
@@ -293,9 +292,9 @@ test('cross-file Focus loads the other file and focuses its thread there', async
 });
 
 /** A range review at round 3 whose t-9 went outdated in round 3 (its last located anchor is round 2). */
-function outdatedWorld(files: ReturnType<typeof diffFile>[]) {
+function outdatedWorld(files: ReturnType<typeof diffFile>[], unread = 0) {
   const rounds = [1, 2, 3].map((n) => ({ n, headSha: `${n}`.repeat(40), baseSha: 'b'.repeat(40), createdAt: '', submittedAt: null }));
-  const t9 = thread({ id: 't-9', status: 'outdated', anchor: { ...thread().anchor, round: 2, startLine: 3, endLine: 3 } });
+  const t9 = thread({ id: 't-9', status: 'outdated', unread, anchor: { ...thread().anchor, round: 2, startLine: 3, endLine: 3 } });
   const from = { ...thread({ id: 't-9', anchor: { ...thread().anchor, side: 'old', round: 2 } }), placement: 'from', outdatedIn: 3 };
   return stubFetch({
     'GET api/reviews/r-1': { review: review({ kind: 'range', round: 3 }), files: [fileState()], rounds, submissions: [], outdatedThreads: [t9] },
@@ -305,6 +304,7 @@ function outdatedWorld(files: ReturnType<typeof diffFile>[]) {
     }),
     'GET api/reviews/r-1/diff': { review: review({ kind: 'range', round: 3 }), files: [diffFile()] },
     'GET api/reviews/r-1/file': { path: 'src/a.ts', side: 'old', total: 4, lines: [{ n: 3, text: 'x' }] },
+    'POST api/reviews/r-1/read': { review: review() },
     'GET api/sessions': { sessions: [] },
   });
 }
@@ -339,19 +339,33 @@ test('an outdated thread whose file is not in the comparison shows the excerpt a
   expect(net.calls.some((c) => c.url.pathname.endsWith('/file') && c.url.searchParams.get('round') === '2')).toBe(true);
 });
 
-// Invariant: repeated Focus clicks add one history entry (navigate ignores an identical route).
-test('Focus twice pushes one history entry', async () => {
+// Invariant: repeating the same jump pushes one history entry (navigate ignores an identical route).
+// The location link stays mounted after the jump, unlike Focus, so it can be clicked twice.
+test('clicking a location link twice pushes one history entry', async () => {
   const push = vi.spyOn(history, 'pushState');
   twoFiles();
-  installMedia({ [WIDE_QUERY]: true, [XL_QUERY]: true }); // the thread panel is a column only at xl
+  installMedia({ [WIDE_QUERY]: true, [XL_QUERY]: true });
   history.replaceState(null, '', '?review=r-1&file=src%2Fa.ts');
   render(<ReviewView id="r-1" />);
   const user = userEvent.setup();
   await user.click(await screen.findByRole('tab', { name: /^All/ }));
-  const t2 = await panelCardOf('src/b.ts:3');
-  const focus = within(t2).getByRole('button', { name: 'Focus' });
-  await user.click(focus);
-  focus.isConnected && await user.click(focus);
+  const link = within(await panelCardOf('src/b.ts:3')).getByRole('button', { name: 'src/b.ts:3' });
+  await user.click(link);
+  await waitFor(() => expect(parseRoute(location.search)).toMatchObject({ file: 'src/b.ts', thread: 't-2' }));
+  await user.click(link);
   expect(push).toHaveBeenCalledTimes(1);
   push.mockRestore();
+});
+
+// Invariant: in the real Outdated tab the card unmounts on the jump (the panel becomes the comparison's), and the unread
+// outdated thread is still marked read.
+test('jumping from the Outdated tab to an unread outdated thread marks it read', async () => {
+  const net = outdatedWorld([diffFile()], 2);
+  installMedia({ [WIDE_QUERY]: true, [XL_QUERY]: true });
+  history.replaceState(null, '', '?review=r-1');
+  render(<ReviewView id="r-1" />);
+  const user = userEvent.setup();
+  await user.click(await screen.findByRole('tab', { name: /^Outdated/ }));
+  await user.click(await screen.findByRole('button', { name: 'src/a.ts:3' }));
+  await waitFor(() => expect(net.calls.find((c) => c.method === 'POST' && c.url.pathname.endsWith('/read'))?.body).toEqual({ threadId: 't-9' }));
 });

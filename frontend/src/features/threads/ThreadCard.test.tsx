@@ -206,12 +206,3 @@ test('an outdated base-side thread opens its round view', async () => {
   await userEvent.setup().click(screen.getByRole('button', { name: 'src/a.ts:10' }));
   expect(parseRoute(location.search)).toEqual({ review: 'r-1', round: '2', file: 'src/a.ts', side: 'old', lines: '10-14', thread: 't-1' });
 });
-
-// Invariant: jumping to an unread outdated thread marks it read, though its card unmounts before any mount effect can.
-test('jumping to an unread outdated thread marks it read', async () => {
-  history.replaceState(null, '', '?review=r-1');
-  const net = stubFetch({ 'POST api/reviews/r-1/read': { review: review() } });
-  renderInReview(<ThreadCard thread={{ ...outdatedAt('new'), unread: 2 }} />);
-  await userEvent.setup().click(screen.getByRole('button', { name: 'Focus' }));
-  await waitFor(() => expect(net.calls.find((c) => c.method === 'POST')?.body).toEqual({ threadId: 't-1' }));
-});

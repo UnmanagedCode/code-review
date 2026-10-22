@@ -21,6 +21,6 @@
 - **round** — one snapshot epoch of a review; refresh adds one.
 - **hunk id** — hash of path + a hunk's +/- lines; the verdict key.
 - **anchor** — a thread's lines plus context, re-located on refresh; **linesHash** — whitespace-normalised hash of them.
-- **thread / finding / disposition** — a discussion on lines; a `finding` carries a severity and is closed by the human's disposition (`fixed`/`dismissed`).
+- **thread / finding / disposition** — a discussion on lines; a `finding` carries a severity and is closed with a disposition (`fixed`/`dismissed`) by the human, the conductor or its opening agent.
 - **submission** — the prompt composed from the human's activity and sent to the recipient session.
 - **mergeBlockers** — rejected hunks + open question threads; what the conductor holds a merge on.

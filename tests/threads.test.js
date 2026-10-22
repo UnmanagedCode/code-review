@@ -133,6 +133,26 @@ test('resolve: the opener resolves its own non-finding thread; anyone else only 
   assert.deepEqual([onCond.status, onCond.resolveProposed], ['open', true]);
 });
 
+test('resolve: a conductor reply without resolve never closes, and a close clears an earlier proposal', async () => {
+  roster();
+  const { review } = await rangeReview(undefined, { recipient: 's-author' });
+  const t = ok(await say(review.id, at('a.js', 2), {}, reviewer)).thread;
+  const plain = ok(await threads.reply(review.id, conductor, t.id, { body: 'hm' })).thread;
+  assert.deepEqual([plain.status, plain.resolveProposed], ['open', false]);
+  assert.equal(ok(await threads.reply(review.id, author, t.id, { body: 'fixed', resolve: true })).thread.resolveProposed, true);
+  const closed = ok(await threads.reply(review.id, conductor, t.id, { body: 'ok', resolve: true })).thread;
+  assert.deepEqual([closed.status, closed.resolveProposed], ['resolved', false]);
+});
+
+test('resolve: on an already resolved thread the conductor\'s resolve only proposes, so resolveProposed is the signal', async () => {
+  roster();
+  const { review } = await rangeReview(undefined, { recipient: 's-author' });
+  const t = ok(await say(review.id, at('a.js', 2))).thread;
+  ok(await threads.setThreadStatus(review.id, t.id, { status: 'resolved' }));
+  const res = ok(await threads.reply(review.id, conductor, t.id, { body: 'ok', resolve: true })).thread;
+  assert.equal(res.resolveProposed, true);
+});
+
 test('resolve: the conductor closes a thread it opened itself', async () => {
   roster();
   const { review } = await rangeReview(undefined, { recipient: 's-author' });
@@ -141,6 +161,7 @@ test('resolve: the conductor closes a thread it opened itself', async () => {
   assert.deepEqual([done.status, done.resolveProposed], ['resolved', false]);
   const stored = (await store.read(review.id)).threads.find((x) => x.id === t.id);
   assert.deepEqual(stored.resolution.by, { kind: 'session', sessionId: 's-cond', role: 'conductor' });
+  assert.equal(stored.disposition, null);
 });
 
 test('resolve: the conductor closes threads other agents opened, a finding only with a disposition', async () => {

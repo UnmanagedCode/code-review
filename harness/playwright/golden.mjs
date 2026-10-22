@@ -79,14 +79,17 @@ try {
     await allPanel.getByLabel('Status').selectOption('all');
     const cards = allPanel.getByRole('article');
     await cards.first().waitFor();
-    const everyone = await cards.count();
+    const everyone = (await cards.allTextContents()).length;
+    const agents = ['Missing guard', 'Does r7 still need changed8 after it?'];
     await allPanel.getByLabel('Owner').selectOption('agents');
-    await page.waitForFunction((n) => document.querySelectorAll('[role=tabpanel] article').length < n, everyone);
-    const agents = await cards.count();
+    await page.waitForFunction((n) => document.querySelectorAll('[role=tabpanel]:not([hidden]) article').length === n, agents.length);
+    const shownAgents = await allPanel.getByRole('article').allTextContents();
+    assert.equal(shownAgents.length, agents.length);
+    for (const a of agents) assert.ok(shownAgents.some((t) => t.includes(a)), `agents list has ${a}`);
     await shot('1c-owner-agents');
     await allPanel.getByLabel('Owner').selectOption('user');
-    await page.waitForFunction((n) => document.querySelectorAll('[role=tabpanel] article').length !== n, agents);
-    assert.ok(agents > 0 && await cards.count() > 0 && agents + await cards.count() === everyone, 'owner splits the All list into agents + user');
+    await page.waitForFunction((n) => document.querySelectorAll('[role=tabpanel]:not([hidden]) article').length === n, everyone - agents.length);
+    assert.ok((await allPanel.getByRole('article').allTextContents()).every((t) => !agents.some((a) => t.includes(a))), 'user list has no agent thread');
     await shot('1c-owner-user');
 
     // 2. Accept a hunk; the tree tally follows.

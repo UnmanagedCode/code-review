@@ -86,6 +86,9 @@ try {
         await page.getByRole('tab', { name: /^All/ }).click();
         await page.getByRole('tabpanel').getByRole('article').first().waitFor();
         await shot('threads-all');
+        await page.getByRole('tabpanel').getByLabel('Owner').selectOption('agents');
+        await shot('threads-owner-agents');
+        await page.getByRole('tabpanel').getByLabel('Owner').selectOption('all');
         await page.getByRole('tab', { name: /Outdated/ }).click();
         await page.getByText(/outdated · was/).first().waitFor();
         await shot('threads-outdated');

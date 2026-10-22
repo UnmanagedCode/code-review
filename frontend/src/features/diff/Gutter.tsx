@@ -1,3 +1,4 @@
+import type { CSSProperties } from 'react';
 import { markNote, type RangeMark } from '@/lib/ranges';
 import type { Side } from '@/lib/types';
 import { cn } from '@/lib/utils';
@@ -7,17 +8,18 @@ import type { LineSelection } from './useLineSelection';
  * Thread range rails: one bar per range the line sits in, in its lane, capped on the range's first and last line.
  * Never a background on the cell or row: it must combine with the add/del, target and selection tints. Light `primary`
  * misses 3:1 against those tints, so the active rail takes the darker same-hue `accent-foreground` there. A bar is a
- * background on an empty span, which forced colours would paint as Canvas, so it opts out and takes system colours.
+ * background on an empty span, which forced colours would paint as Canvas, so it opts out and takes system colours,
+ * `!important` so the `dark:` rule (higher specificity) can't win; the focused bar is also wider there.
  */
 function Rails({ marks }: { marks: RangeMark[] }) {
   if (!marks.length) return null;
   return (
-    <span aria-hidden data-rails="" data-active={marks.some((m) => m.active) ? '' : undefined} className="pointer-events-none absolute inset-y-0 left-0.5">
+    <span aria-hidden data-rails="" data-active={marks.some((m) => m.active) ? '' : undefined} className="pointer-events-none absolute inset-y-0 left-0.5 forced-colors:left-0">
       {marks.map((m) => (
         <span
           key={m.threadId}
-          style={{ left: m.lane * 4 }}
-          className={cn('absolute inset-y-0 forced-color-adjust-none', m.active ? 'w-[3px] bg-accent-foreground dark:bg-primary forced-colors:bg-[Highlight]' : 'w-0.5 bg-muted-foreground forced-colors:bg-[CanvasText]', m.first && 'top-0.5 rounded-t-full', m.last && 'bottom-0.5 rounded-b-full')}
+          style={{ '--lane': m.lane } as CSSProperties}
+          className={cn('absolute inset-y-0 left-[calc(var(--lane)*4px)] forced-color-adjust-none forced-colors:left-[calc(var(--lane)*5px)]', m.active ? 'w-[3px] bg-accent-foreground dark:bg-primary forced-colors:w-1 forced-colors:bg-[Highlight]!' : 'w-0.5 bg-muted-foreground forced-colors:bg-[CanvasText]!', m.first && 'top-0.5 rounded-t-full', m.last && 'bottom-0.5 rounded-b-full')}
         />
       ))}
     </span>

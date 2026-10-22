@@ -299,6 +299,10 @@ try {
     assert.equal(await viewGroup.count(), 0, 'no view toggle on a phone');
     assert.equal(await isSplit(), false, 'a phone shows inline rows');
     await shot('9-phone-inline');
+    // The resolved finding's summary keeps a readable preview at phone width: its range and badges wrap instead.
+    const phoneSummary = page.getByRole('button', { name: /Missing guard.*resolved/ });
+    const previewWidth = (await phoneSummary.getByText('## Missing guard', { exact: true }).boundingBox()).width;
+    assert.ok(previewWidth >= 100, `the phone summary preview keeps its width (${previewWidth}px)`);
 
     // 9b. A comparison on a phone: inline rows, round 1's question under its round-1 line 4.
     await page.goto(q({ review: range, compare: '1..2', file: 'a.js' }));
@@ -329,6 +333,10 @@ try {
     await viewGroup.waitFor({ state: 'detached' });
     assert.equal(await isSplit(), false, 'the narrower diff pane falls back to inline');
     await shot('10-wide-panel-inline');
+    // With room, the resolved summary stays on one line: preview and range share a row.
+    const wideSummary = page.getByRole('button', { name: /Missing guard.*resolved/ });
+    const [preview, rangeTag] = [await wideSummary.getByText('## Missing guard', { exact: true }).boundingBox(), await wideSummary.getByText('L8 (old)').boundingBox()];
+    assert.equal(rangeTag.y + rangeTag.height / 2, preview.y + preview.height / 2, 'the wide summary is one line');
     await drag(200);
     await viewGroup.waitFor();
     assert.ok(await isSplit(), 'narrowing the panel brings split back');
@@ -417,7 +425,7 @@ try {
       assert.deepEqual(await inRange(QUESTION, ['new:6', 'new:7', 'new:8', 'new:9', 'new:10']), [false, true, true, true, false]);
       assert.deepEqual(await inRange(SUGGESTION, ['old:5', 'old:6', 'old:7']), [false, false, false], 'a new-side range marks no old gutter');
       assert.deepEqual(await inRange('finding thread L8 (old)', ['old:8']), [true], 'the old-side finding marks old 8');
-      const lanes = await page.locator('[data-cell="new:7"] [data-rails] > span').evaluateAll((rs) => rs.map((r) => r.style.left));
+      const lanes = await page.locator('[data-cell="new:7"] [data-rails] > span').evaluateAll((rs) => rs.map((r) => getComputedStyle(r).left));
       assert.deepEqual(lanes, ['0px', '4px'], 'touching ranges sit in separate lanes on their shared line');
       assert.equal(await page.locator('[data-line-target]').count(), 0, 'no thread paints a row target');
       await measure('add (new 6)', '[data-cell="new:6"]');
@@ -477,21 +485,39 @@ try {
       }
     }
 
-    // Forced colours (Windows High Contrast): the rails keep a system colour instead of being painted as Canvas, and the
-    // focused thread's rail stays distinct from the others.
-    await page.emulateMedia({ colorScheme: 'light', forcedColors: 'active' });
-    await page.goto(q({ review: range, file: 'a.js' }));
-    await page.getByRole('button', { name: ACCEPTED_SUMMARY }).click();
-    await page.locator('[data-cell="new:7"] [data-rails]').waitFor({ state: 'attached' });
-    await page.locator('[role=rowgroup] article', { hasText: 'Split the long line' }).getByRole('button', { name: 'Focus' }).click();
-    await page.locator('[data-cell="new:7"] [data-rails][data-active]').waitFor({ state: 'attached' });
-    const forced = await railContrast('[data-cell="new:7"]');
-    const railColors = await page.locator('[data-cell="new:7"] [data-rails] > span').evaluateAll((rs) => rs.map((r) => getComputedStyle(r).backgroundColor));
-    console.log('rail contrast (forced colors):', JSON.stringify(forced), JSON.stringify(railColors));
-    assert.ok(forced.length === 2 && forced.every((r) => r >= 3), `forced colours: both rails on new 7 reach 3:1 (${forced})`);
-    assert.notEqual(railColors[0], railColors[1], 'forced colours: the active rail has its own colour');
-    await page.locator('[data-cell="new:6"]').scrollIntoViewIfNeeded();
-    await shotter(page)('12-ranges-forced-colors');
+    // Forced colours (Windows High Contrast), under both schemes: the rails take the system colours (CanvasText, and
+    // Highlight for the focused thread) rather than Canvas or a theme colour, and the focused rail is also wider, with
+    // lanes still apart.
+    for (const scheme of ['light', 'dark']) {
+      await page.emulateMedia({ colorScheme: scheme, forcedColors: 'active' });
+      await page.goto(q({ review: range, file: 'a.js' }));
+      await page.getByRole('button', { name: ACCEPTED_SUMMARY }).click();
+      await page.locator('[data-cell="new:7"] [data-rails]').waitFor({ state: 'attached' });
+      await page.locator('[role=rowgroup] article', { hasText: 'Split the long line' }).getByRole('button', { name: 'Focus' }).click();
+      await page.locator('[data-cell="new:7"] [data-rails][data-active]').waitFor({ state: 'attached' });
+      // What the system colours resolve to in this palette, from a sentinel element.
+      const system = await page.evaluate(() => Object.fromEntries(['CanvasText', 'Highlight'].map((c) => {
+        const el = Object.assign(document.createElement('div'), { style: `forced-color-adjust: none; background-color: ${c}` });
+        document.body.append(el);
+        const v = getComputedStyle(el).backgroundColor;
+        el.remove();
+        return [c, v];
+      })));
+      const rails = await page.locator('[data-cell="new:7"] [data-rails] > span').evaluateAll((rs) => rs.map((r) => {
+        const b = r.getBoundingClientRect();
+        return { color: getComputedStyle(r).backgroundColor, left: b.left, right: b.right, width: b.width };
+      }));
+      const forced = await railContrast('[data-cell="new:7"]');
+      console.log(`rail contrast (forced colors, ${scheme}):`, JSON.stringify(forced), JSON.stringify(rails), JSON.stringify(system));
+      // new 7: the focused suggestion in lane 0, the question in lane 1.
+      assert.equal(rails[0].color, system.Highlight, `forced ${scheme}: the focused rail is Highlight`);
+      assert.equal(rails[1].color, system.CanvasText, `forced ${scheme}: other rails are CanvasText`);
+      assert.ok(rails[0].width >= 2 * rails[1].width, `forced ${scheme}: the focused rail is at least twice as wide (${rails[0].width} vs ${rails[1].width})`);
+      assert.ok(rails[0].right < rails[1].left, `forced ${scheme}: the wider rail leaves a gap before the next lane`);
+      assert.ok(forced.length === 2 && forced.every((r) => r >= 3), `forced ${scheme}: both rails on new 7 reach 3:1 (${forced})`);
+      await page.locator('[data-cell="new:6"]').scrollIntoViewIfNeeded();
+      await shotter(page)(`12-ranges-forced-colors-${scheme}`);
+    }
     assert.deepEqual(errors, []);
   }, { headless: true, viewport: { width: 1100, height: 800 }, deviceScaleFactor: 2 });
   console.log('golden path ok');

@@ -6,7 +6,8 @@ import type { LineSelection } from './useLineSelection';
 /**
  * Thread range rails: one bar per range the line sits in, in its lane, capped on the range's first and last line.
  * Never a background on the cell or row: it must combine with the add/del, target and selection tints. Light `primary`
- * misses 3:1 against those tints, so the active rail takes the darker same-hue `accent-foreground` there.
+ * misses 3:1 against those tints, so the active rail takes the darker same-hue `accent-foreground` there. A bar is a
+ * background on an empty span, which forced colours would paint as Canvas, so it opts out and takes system colours.
  */
 function Rails({ marks }: { marks: RangeMark[] }) {
   if (!marks.length) return null;
@@ -16,7 +17,7 @@ function Rails({ marks }: { marks: RangeMark[] }) {
         <span
           key={m.threadId}
           style={{ left: m.lane * 4 }}
-          className={cn('absolute inset-y-0', m.active ? 'w-[3px] bg-accent-foreground dark:bg-primary' : 'w-0.5 bg-muted-foreground', m.first && 'top-0.5 rounded-t-full', m.last && 'bottom-0.5 rounded-b-full')}
+          className={cn('absolute inset-y-0 forced-color-adjust-none', m.active ? 'w-[3px] bg-accent-foreground dark:bg-primary forced-colors:bg-[Highlight]' : 'w-0.5 bg-muted-foreground forced-colors:bg-[CanvasText]', m.first && 'top-0.5 rounded-t-full', m.last && 'bottom-0.5 rounded-b-full')}
         />
       ))}
     </span>

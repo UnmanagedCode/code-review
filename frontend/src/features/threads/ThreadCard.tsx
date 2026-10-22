@@ -29,6 +29,14 @@ const at = (t: Thread): Route => {
   return { compare: `${round}..${round + 1}`, round: undefined, commit: undefined, file, side: 'old', lines, thread: t.id };
 };
 
+/**
+ * The range a thread's card names (`L3–L5 (new)`), or null: an outdated card's "was …" line names its last range, a
+ * dropped one has none, and in a comparison the note names each copy's lines per round.
+ */
+export function cardRange(thread: Thread, { dropped = false, compare }: { dropped?: boolean; compare?: unknown }): string | null {
+  return thread.status === 'outdated' || dropped || compare ? null : rangeLabel(thread.anchor);
+}
+
 /** One thread. `unplaced`: a comparison has no place for it, so Focus never moves the file position. `dropped`: a session-local tombstone of an uncommitted thread whose lines changed. `note`: shown under the header. */
 export function ThreadCard({ thread, dropped = false, showLocation = false, unplaced = false, note }: { thread: Thread; dropped?: boolean; showLocation?: boolean; unplaced?: boolean; note?: ReactNode }) {
   const { readOnly, compare } = useReviewCtx();
@@ -48,8 +56,7 @@ export function ThreadCard({ thread, dropped = false, showLocation = false, unpl
     if (outdated && thread.unread > 0) void actions.markRead(thread.id); // this card unmounts before the focus effect can
     navigate(at(thread));
   };
-  // A comparison note names each copy's lines per round; an outdated card's "was …" line names its last range.
-  const range = !outdated && !dropped && !compare && rangeLabel(thread.anchor);
+  const range = cardRange(thread, { dropped, compare });
   return (
     <article
       ref={ref}

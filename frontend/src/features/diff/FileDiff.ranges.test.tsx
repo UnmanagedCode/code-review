@@ -100,15 +100,18 @@ test('focusing a thread keeps the accepted hunk holding its range open', () => {
   expect(screen.queryByRole('gridcell', { name: /^new line 2/ })).toBeNull();
 });
 
-// Invariant: a range never takes over a row's add/del/selection/target state: rows inside it carry no target and no
-// selection, and the range is exposed only through the gutter's accessible name.
-test('a range over added, deleted and context lines changes no row state', () => {
-  show('inline', diffFile({ threads: [at('t-1', 'old', 2, 3), at('t-2', 'new', 2, 4)] }));
-  for (const text of ['c2', 'd3', 'a3', 'c4']) {
-    const row = rowWith(text);
-    expect(row.getAttribute('aria-selected')).toBe('false');
-    expect(row.hasAttribute('data-line-target')).toBe(false);
-  }
+/** Every line row's classes and its cells' classes, in order: what a row looks like, without naming any style. */
+const rowLooks = () => screen.getAllByRole('row').map((r) => [r.className, ...[...r.querySelectorAll('[role="gridcell"]')].map((c) => c.className)]);
+
+// Invariant: a thread adds nothing to a row or its cells (no tint over the add/del colours, in either view): the same
+// file renders identically with and without threads over its added, deleted and context lines, and the range is
+// exposed only through the gutter's rails and accessible name.
+test.each(['inline', 'split'] as const)('%s: a thread adds nothing to the rows it spans', (view) => {
+  const { unmount } = show(view, diffFile());
+  const bare = rowLooks();
+  unmount();
+  show(view, diffFile({ threads: [at('t-1', 'old', 2, 3), at('t-2', 'new', 2, 4)] }));
+  expect(rowLooks()).toEqual(bare);
   expect(document.querySelector('[data-line-target]')).toBeNull();
   expect(marked('comment thread L2–L3 (old)')).toEqual(['old:2', 'old:3']);
   expect(marked('comment thread L2–L4 (new)')).toEqual(['new:2', 'new:3', 'new:4']);

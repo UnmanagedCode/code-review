@@ -476,6 +476,22 @@ try {
         assert.ok(ratios.length && ratios.every((r) => r >= 3), `${scheme}: every rail on ${where} reaches 3:1 (${ratios})`);
       }
     }
+
+    // Forced colours (Windows High Contrast): the rails keep a system colour instead of being painted as Canvas, and the
+    // focused thread's rail stays distinct from the others.
+    await page.emulateMedia({ colorScheme: 'light', forcedColors: 'active' });
+    await page.goto(q({ review: range, file: 'a.js' }));
+    await page.getByRole('button', { name: ACCEPTED_SUMMARY }).click();
+    await page.locator('[data-cell="new:7"] [data-rails]').waitFor({ state: 'attached' });
+    await page.locator('[role=rowgroup] article', { hasText: 'Split the long line' }).getByRole('button', { name: 'Focus' }).click();
+    await page.locator('[data-cell="new:7"] [data-rails][data-active]').waitFor({ state: 'attached' });
+    const forced = await railContrast('[data-cell="new:7"]');
+    const railColors = await page.locator('[data-cell="new:7"] [data-rails] > span').evaluateAll((rs) => rs.map((r) => getComputedStyle(r).backgroundColor));
+    console.log('rail contrast (forced colors):', JSON.stringify(forced), JSON.stringify(railColors));
+    assert.ok(forced.length === 2 && forced.every((r) => r >= 3), `forced colours: both rails on new 7 reach 3:1 (${forced})`);
+    assert.notEqual(railColors[0], railColors[1], 'forced colours: the active rail has its own colour');
+    await page.locator('[data-cell="new:6"]').scrollIntoViewIfNeeded();
+    await shotter(page)('12-ranges-forced-colors');
     assert.deepEqual(errors, []);
   }, { headless: true, viewport: { width: 1100, height: 800 }, deviceScaleFactor: 2 });
   console.log('golden path ok');

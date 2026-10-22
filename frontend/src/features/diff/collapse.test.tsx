@@ -8,9 +8,10 @@ import { ReviewProvider } from '@/state/reviewContext';
 import { installMedia } from '@/test/fakeMedia';
 import { installResizeObserver } from '@/test/fakeResizeObserver';
 import { diffFile, fileState, hunk, message, thread } from '@/test/fixtures';
-import { ctxValue, renderDiff } from '@/test/renderCtx';
+import { ctxValue, renderDiff, renderInReview } from '@/test/renderCtx';
 import { stubFetch } from '@/test/stubFetch';
 import { FileDiff } from './FileDiff';
+import { SettledThread } from './SettledThread';
 
 let ro: ReturnType<typeof installResizeObserver>;
 beforeEach(() => {
@@ -178,4 +179,17 @@ describe.each(['inline', 'split'])('%s view', (view) => {
     const summary = screen.getByRole('button', { name: /resolved/ });
     expect(within(summary).getByText('<img src=x onerror=alert(1)>')).toBeTruthy();
   });
+});
+
+// Invariant: a collapsed resolved thread still names the lines it spans, as its live card does.
+test('a resolved summary names its range', () => {
+  localStorage.setItem('code-review:diffView', 'inline');
+  mount(diffFile({ threads: [resolved({ anchor: { ...thread().anchor, startLine: 2, endLine: 3 } })] }));
+  expect(within(screen.getByRole('button', { name: /first line.*resolved/ })).getByText('L2–L3 (new)')).toBeTruthy();
+});
+
+// Invariant: in a comparison the summary leaves the lines to the comparison note, as the live card does.
+test('in a comparison a resolved summary shows no side label', () => {
+  renderInReview(<SettledThread thread={resolved()} collapsed toggleable onToggle={() => {}} />, { compare: { from: 1, to: 2 }, readOnly: true });
+  expect(screen.getByRole('button', { name: /first line.*resolved/ }).textContent).not.toMatch(/\(new\)/);
 });

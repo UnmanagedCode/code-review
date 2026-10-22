@@ -4,7 +4,8 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import type { Thread } from '@/lib/types';
 import { KindBadge } from '@/features/threads/KindBadge';
-import { ThreadCard } from '@/features/threads/ThreadCard';
+import { cardRange, ThreadCard } from '@/features/threads/ThreadCard';
+import { useReviewCtx } from '@/state/reviewContext';
 
 const firstLine = (t: Thread) => (t.messages[0]?.body ?? '').split('\n').map((l) => l.trim()).find(Boolean) ?? '';
 
@@ -15,6 +16,7 @@ const firstLine = (t: Thread) => (t.messages[0]?.body ?? '').split('\n').map((l)
  */
 export function SettledThread({ thread, collapsed, toggleable, onToggle, note }: { thread: Thread; collapsed: boolean; toggleable: boolean; onToggle: (open: boolean) => void; note?: ReactNode }) {
   const id = useId();
+  const range = cardRange(thread, { compare: useReviewCtx().compare });
   return (
     <div className="flex flex-col gap-1">
       {toggleable && (
@@ -22,6 +24,7 @@ export function SettledThread({ thread, collapsed, toggleable, onToggle, note }:
           {collapsed ? <ChevronRightIcon /> : <ChevronDownIcon />}
           <KindBadge kind={thread.kind} severity={thread.severity} />
           <span className="min-w-0 flex-1 truncate text-left">{firstLine(thread)}</span>
+          {range && <span className="shrink-0 font-mono text-xs text-muted-foreground">{range}</span>}
           <Badge variant="secondary">resolved</Badge>
           {thread.disposition && <Badge variant="success">{thread.disposition}</Badge>}
         </Button>

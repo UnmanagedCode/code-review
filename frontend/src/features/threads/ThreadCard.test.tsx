@@ -194,7 +194,7 @@ const outdatedAt = (side: 'old' | 'new') => thread({ status: 'outdated', anchor:
 // Invariant: an outdated thread's place is the comparison of its last located round with the next, at its old lines
 // (`lines=` stays: the excerpt fallback reads it);
 // commit= and round= are cleared because commit beats compare.
-test.each(['src/a.ts', 'Focus'])('%s on an outdated thread opens comparison R..R+1 at its old lines', async (name) => {
+test.each(['src/a.ts · L10–L14 (new)', 'Focus'])('%s on an outdated thread opens comparison R..R+1 at its old lines', async (name) => {
   history.replaceState(null, '', '?review=r-1&round=1&commit=abc');
   renderInReview(<ThreadCard thread={outdatedAt('new')} showLocation />);
   await userEvent.setup().click(screen.getByRole('button', { name }));
@@ -205,7 +205,7 @@ test.each(['src/a.ts', 'Focus'])('%s on an outdated thread opens comparison R..R
 test('an outdated base-side thread opens its round view', async () => {
   history.replaceState(null, '', '?review=r-1&compare=1..3&commit=abc');
   renderInReview(<ThreadCard thread={outdatedAt('old')} showLocation />);
-  await userEvent.setup().click(screen.getByRole('button', { name: 'src/a.ts' }));
+  await userEvent.setup().click(screen.getByRole('button', { name: 'src/a.ts · L10–L14 (old)' }));
   expect(parseRoute(location.search)).toEqual({ review: 'r-1', round: '2', file: 'src/a.ts', side: 'old', lines: '10-14', thread: 't-1' });
 });
 
@@ -245,4 +245,23 @@ test('in a comparison the card shows no side label', () => {
   renderInReview(<ThreadCard thread={ranged()} note={<p>round 2 L3–L5</p>} />, { compare: { from: 1, to: 2 }, readOnly: true });
   expect(screen.queryByText('L3–L5 (new)')).toBeNull();
   expect(screen.getByText('round 2 L3–L5')).toBeTruthy();
+});
+
+// Invariant: a location link is navigation, so it always names its anchor's range: two outdated threads in one file get
+// distinguishable link names (each its last located range, as its "was …" line says).
+test('two outdated threads in one file have distinguishable location links', () => {
+  renderInReview(<>
+    <ThreadCard thread={thread({ id: 't-1', status: 'outdated', anchor: anchorAt({ startLine: 3, endLine: 3 }) })} showLocation />
+    <ThreadCard thread={thread({ id: 't-2', status: 'outdated', anchor: anchorAt({ startLine: 10, endLine: 14 }) })} showLocation />
+  </>);
+  expect(screen.getByRole('button', { name: 'src/a.ts · L3 (new)' })).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'src/a.ts · L10–L14 (new)' })).toBeTruthy();
+});
+
+// Invariant: in a comparison a copy's side is a round's head, so its link names the round, as the comparison note does.
+test('in a comparison the location link names the copy\'s round and lines', () => {
+  const copy = (placement: 'from' | 'to', n: number) => ({ ...thread({ id: `t-${placement}`, anchor: anchorAt({ side: placement === 'from' ? 'old' : 'new', startLine: n, endLine: n + 2 }) }), placement, outdatedIn: null });
+  renderInReview(<><ThreadCard thread={copy('from', 3)} showLocation /><ThreadCard thread={copy('to', 5)} showLocation /></>, { compare: { from: 1, to: 2 }, readOnly: true });
+  expect(screen.getByRole('button', { name: 'src/a.ts · round 1 L3–L5' })).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'src/a.ts · round 2 L5–L7' })).toBeTruthy();
 });

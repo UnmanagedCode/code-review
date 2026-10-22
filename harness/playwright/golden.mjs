@@ -372,7 +372,7 @@ try {
     await page.goto(q({ review: range, file: 'a.js' }));
     await page.getByRole('tab', { name: /^Outdated/ }).click();
     await shot('12a-outdated-link');
-    await page.getByRole('button', { name: 'a.js', exact: true }).click(); // an outdated card's link names no live range
+    await page.getByRole('button', { name: 'a.js · L3–L4 (new)' }).click(); // the outdated question's last located range
     await page.getByText('Exit comparison').waitFor();
     assert.match(page.url(), /compare=1\.\.2/, 'the outdated thread opens its round and the next');
     await page.locator('article[aria-label$="thread"]').first().waitFor();

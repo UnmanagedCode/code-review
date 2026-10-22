@@ -151,7 +151,7 @@ test('the Outdated tab shows each thread\'s location link', async () => {
   const files = [fileState({ threads: { open: 0, resolved: 0, outdated: 1 } })];
   render(<ReviewProvider value={ctxValue({ files, outdatedThreads: [t], fileDiff: { file: undefined } as never })}><ThreadPanel /></ReviewProvider>);
   await userEvent.setup().click(screen.getByRole('tab', { name: /^Outdated/ }));
-  expect(screen.getByRole('button', { name: 'src/a.ts' })).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'src/a.ts · L3 (new)' })).toBeTruthy();
 });
 
 // Invariant: Focus on a thread the comparison does not place only focuses it: its anchor's side means the base there,

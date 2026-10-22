@@ -317,7 +317,7 @@ test('an outdated thread\'s link opens comparison 2..3 with the thread in place'
   render(<ReviewView id="r-1" />);
   const user = userEvent.setup();
   await user.click(await screen.findByRole('tab', { name: /^Outdated/ }));
-  await user.click(await screen.findByRole('button', { name: 'src/a.ts' }));
+  await user.click(await screen.findByRole('button', { name: 'src/a.ts · L3 (new)' }));
   expect(await screen.findByText('Exit comparison')).toBeTruthy();
   expect(parseRoute(location.search)).toMatchObject({ compare: '2..3', file: 'src/a.ts', side: 'old', thread: 't-9' });
   const cmp = net.calls.filter((c) => c.url.pathname.endsWith('/compare'));
@@ -334,7 +334,7 @@ test('an outdated thread whose file is not in the comparison shows the excerpt a
   render(<ReviewView id="r-1" />);
   const user = userEvent.setup();
   await user.click(await screen.findByRole('tab', { name: /^Outdated/ }));
-  await user.click(await screen.findByRole('button', { name: 'src/a.ts' }));
+  await user.click(await screen.findByRole('button', { name: 'src/a.ts · L3 (new)' }));
   expect(await screen.findByRole('table', { name: 'Excerpt of src/a.ts' })).toBeTruthy();
   expect(net.calls.some((c) => c.url.pathname.endsWith('/file') && c.url.searchParams.get('round') === '2')).toBe(true);
 });
@@ -366,6 +366,6 @@ test('jumping from the Outdated tab to an unread outdated thread marks it read',
   render(<ReviewView id="r-1" />);
   const user = userEvent.setup();
   await user.click(await screen.findByRole('tab', { name: /^Outdated/ }));
-  await user.click(await screen.findByRole('button', { name: 'src/a.ts' }));
+  await user.click(await screen.findByRole('button', { name: 'src/a.ts · L3 (new)' }));
   await waitFor(() => expect(net.calls.find((c) => c.method === 'POST' && c.url.pathname.endsWith('/read'))?.body).toEqual({ threadId: 't-9' }));
 });

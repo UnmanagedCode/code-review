@@ -2,9 +2,9 @@ import { useEffect, useRef, type ReactNode } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { rangeLabel } from '@/lib/ranges';
+import { lineSpan, rangeLabel } from '@/lib/ranges';
 import { formatLines, navigate, useRoute, type Route } from '@/lib/route';
-import type { Thread } from '@/lib/types';
+import type { ComparedThread, Thread } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import { useReviewCtx } from '@/state/reviewContext';
 import { useReviewActions } from '@/state/threads';
@@ -36,6 +36,16 @@ const at = (t: Thread): Route => {
 export function cardRange(thread: Thread, { dropped = false, compare }: { dropped?: boolean; compare?: unknown }): string | null {
   return thread.status === 'outdated' || dropped || compare ? null : rangeLabel(thread.anchor);
 }
+
+/**
+ * What a location link names after the file: always the anchor's range (an outdated thread's is its last located one), so
+ * two links in one file never share a name. In a comparison a copy's side is a round's head, so it names the round.
+ */
+const linkRange = (t: Thread, compare?: { from: number; to: number }): string => {
+  const placement = (t as Partial<ComparedThread>).placement;
+  if (!compare || !placement) return rangeLabel(t.anchor);
+  return `round ${placement === 'from' ? compare.from : compare.to} ${lineSpan(t.anchor.startLine, t.anchor.endLine)}`;
+};
 
 /** One thread. `unplaced`: a comparison has no place for it, so Focus never moves the file position. `dropped`: a session-local tombstone of an uncommitted thread whose lines changed. `note`: shown under the header. */
 export function ThreadCard({ thread, dropped = false, showLocation = false, unplaced = false, note }: { thread: Thread; dropped?: boolean; showLocation?: boolean; unplaced?: boolean; note?: ReactNode }) {
@@ -72,7 +82,7 @@ export function ThreadCard({ thread, dropped = false, showLocation = false, unpl
         {showLocation && !dropped ? (
           <Button variant="link" size="sm" className="h-auto p-0 font-mono text-xs"
             onClick={jump}>
-            {thread.anchor.file}{range && ` · ${range}`}
+            {thread.anchor.file} · {linkRange(thread, compare)}
           </Button>
         ) : range && <span className="font-mono text-xs text-muted-foreground">{range}</span>}
         {!dropped && !focused && <Button variant="ghost" size="sm" className="ml-auto h-6 px-2 text-xs" onClick={() => (!unplaced && (outdated || thread.anchor.file !== route.file) ? jump() : navigate({ thread: thread.id }))}>Focus</Button>}

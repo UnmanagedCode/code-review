@@ -421,3 +421,27 @@ test('phone: Back from the diff keeps the pane tab', async () => {
   expect((await screen.findByRole('tab', { name: /^Threads/ })).getAttribute('aria-selected')).toBe('true');
   expect(screen.queryByRole('dialog', { hidden: true })).toBeNull();
 });
+
+// Invariant: a focused unread thread is shown twice on a wide layout (inline, and in the force-mounted Threads tab, here
+// hidden behind Files), yet marking it read posts once.
+test('wide: focusing an unread thread posts exactly one read mark, though two cards show it', async () => {
+  installMedia({ [WIDE_QUERY]: true });
+  let read = false;
+  const t1 = () => thread({ unread: read ? 0 : 1 });
+  const net = stubFetch({
+    'GET api/reviews/r-1': () => ({ review: review(), files: [fileState()], rounds: [], submissions: [], outdatedThreads: [] }),
+    'GET api/reviews/r-1/diff': () => ({ review: review(), files: [diffFile({ threads: [t1()] })] }),
+    'GET api/reviews/r-1/commits': { commits: [] },
+    'POST api/reviews/r-1/read': () => { read = true; return { review: review() }; },
+    'GET api/sessions': { sessions: [] },
+  });
+  history.replaceState(null, '', '?review=r-1&file=src%2Fa.ts&thread=t-1');
+  render(<ReviewView id="r-1" />);
+  await screen.findByRole('grid');
+  expect(screen.getByRole('tab', { name: 'Files' }).getAttribute('aria-selected')).toBe('true');
+  expect(screen.getAllByRole('article', { name: 'comment thread', hidden: true })).toHaveLength(2);
+  // The mark's reload refetches the review and the diff; by then any second mark would have been sent.
+  await waitFor(() => expect(net.count('GET api/reviews/r-1')).toBeGreaterThan(1));
+  await waitFor(() => expect(net.count('GET api/reviews/r-1/diff')).toBeGreaterThan(1));
+  expect(net.calls.filter((c) => c.method === 'POST' && c.url.pathname.endsWith('/read')).map((c) => c.body)).toEqual([{ threadId: 't-1' }]);
+});

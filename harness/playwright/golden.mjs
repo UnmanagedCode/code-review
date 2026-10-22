@@ -409,18 +409,18 @@ try {
     assert.equal(await threadsTab.getAttribute('aria-selected'), 'true', 'the jump keeps the Threads tab');
     await shot('12c-cross-file-focus');
 
-    // 14. The scope line opens History and focuses its tab.
+    // 13. The scope line opens History and focuses its tab.
     await page.getByRole('button', { name: /^Round 2 · .* — show history$/ }).click();
     const historyTab = page.getByRole('tablist', { name: 'Review pane' }).getByRole('tab', { name: 'History' });
     await page.getByRole('navigation', { name: 'History' }).waitFor();
     assert.equal(await historyTab.getAttribute('aria-selected'), 'true');
     assert.ok(await historyTab.evaluate((t) => t === document.activeElement), 'the History tab has focus');
     await page.getByRole('navigation', { name: 'History' }).getByRole('link', { name: /^[0-9a-f]{7} / }).first().waitFor(); // the current round's commits
-    await shot('14-history');
+    await shot('13-history');
     assert.deepEqual(errors, []);
   }, { headless: true, viewport: { width: 1400, height: 900 } });
 
-  // 15. Phone: the review opens on the pane's tabs; a thread's Focus opens the diff; Back returns to the Threads tab;
+  // 14. Phone: the review opens on the pane's tabs; a thread's Focus opens the diff; Back returns to the Threads tab;
   // the diff's Threads button opens it too.
   await withPage(async (page) => {
     const errors = watchErrors(page);
@@ -429,14 +429,14 @@ try {
     await page.goto(q({ review: range }));
     await tabs.waitFor();
     assert.equal(await page.getByRole('grid').count(), 0, 'no diff without a file');
-    await shot('15-phone-pane');
+    await shot('14-phone-pane');
     await tabs.getByRole('tab', { name: /^Threads/ }).click();
     await page.getByRole('tab', { name: /^All/ }).click();
     const card = page.getByRole('article').filter({ has: page.getByRole('button', { name: /^a\.js · L/ }) }).first();
     await card.getByRole('button', { name: 'Focus' }).click();
     await page.getByRole('grid', { name: 'Changes in a.js' }).waitFor();
     assert.equal(await tabs.count(), 0, 'the diff replaces the pane');
-    await shot('15-phone-diff');
+    await shot('14-phone-diff');
     await page.getByRole('button', { name: 'Back to files' }).click();
     await tabs.waitFor();
     assert.equal(await tabs.getByRole('tab', { name: /^Threads/ }).getAttribute('aria-selected'), 'true', 'Back returns to the Threads tab');
@@ -447,11 +447,11 @@ try {
     await tabs.waitFor();
     assert.equal(await tabs.getByRole('tab', { name: /^Threads/ }).getAttribute('aria-selected'), 'true', 'the diff\'s Threads button opens the Threads tab');
     assert.equal(await page.getByRole('dialog').count(), 0, 'no dialog');
-    await shot('15-phone-threads');
+    await shot('14-phone-threads');
     assert.deepEqual(errors, []);
   }, { headless: true, viewport: { width: 390, height: 844 } });
 
-  // 13: thread range rails, in light and dark. a.js (round 2) carries a suggestion on new L5–L7 and a question on new
+  // 15: thread range rails, in light and dark. a.js (round 2) carries a suggestion on new L5–L7 and a question on new
   // L7–L9 (touching: two lanes), the resolved comment on L9, step 1's question on L10–L11 and the old-side L8 finding.
   await withPage(async (page) => {
     const errors = watchErrors(page);
@@ -501,14 +501,14 @@ try {
       await measure('ctx (new 9)', '[data-cell="new:9"]');
       await measure('del (old 8)', '[data-cell="old:8"]');
       await page.locator('[data-cell="new:6"]').scrollIntoViewIfNeeded();
-      await shot('13-ranges-inline');
+      await shot('15-ranges-inline');
 
       // A selection over a rail (info tint): click a marked gutter, measure, then cancel the composer.
       await page.locator('[data-cell="new:6"]').click();
       const form = page.getByRole('form', { name: 'Comment on L6 (new)' });
       await form.waitFor();
       await measure('selected (new 6)', '[data-cell="new:6"]');
-      await shot('13-ranges-selection');
+      await shot('15-ranges-selection');
       await form.getByRole('button', { name: 'Cancel' }).click();
 
       // Split: the same rails in the right half; the wrapped line 6 rail spans its full row height.
@@ -519,7 +519,7 @@ try {
       assert.ok(cellH > 30 && railH === cellH, `the wrapped row's rail spans its full height (${railH}px of ${cellH}px)`);
       await measure('split add (new 6)', '[data-cell="new:6"]');
       await page.locator('[data-cell="new:6"]').scrollIntoViewIfNeeded();
-      await shot('13-ranges-split');
+      await shot('15-ranges-split');
 
       // Focus the suggestion: its rails turn active, the question's do not; on a reload its accepted hunk opens by itself.
       await page.locator('[role=rowgroup] article', { hasText: 'Split the long line' }).getByRole('button', { name: 'Focus' }).click();
@@ -531,14 +531,14 @@ try {
       await measure('active add (new 5)', '[data-cell="new:5"]');
       await measure('active ctx (new 7, two lanes)', '[data-cell="new:7"]');
       await page.locator('[data-cell="new:6"]').scrollIntoViewIfNeeded();
-      await shot('13-ranges-active');
+      await shot('15-ranges-active');
 
       // A citation target (warning wash) under the rails.
       await page.goto(q({ review: range, file: 'a.js', side: 'new', lines: '5-9' }));
       await page.locator('[data-line-target]').waitFor();
       await measure('target add (new 6)', '[data-cell="new:6"]');
       await measure('target ctx (new 9)', '[data-cell="new:9"]');
-      await shot('13-ranges-target');
+      await shot('15-ranges-target');
 
       // Compare 1 → 2 (read-only, split): round 2's copies mark the right half.
       await page.goto(q({ review: range, compare: '1..2', file: 'a.js' }));
@@ -546,7 +546,7 @@ try {
       const rightGutter = (n) => page.locator('[role=row].grid').filter({ has: page.locator('[role=gridcell]:nth-child(4)', { hasText: new RegExp(`^${n}\\b`) }) }).locator('[role=gridcell]:nth-child(4)').first();
       assert.equal(await rightGutter(6).textContent(), `6 · in ${SUGGESTION}`, 'round 2\'s copy marks the right half');
       await rightGutter(6).scrollIntoViewIfNeeded();
-      await shot('13-ranges-compare');
+      await shot('15-ranges-compare');
 
       console.log(`rail contrast (${scheme}):`, JSON.stringify(contrasts));
       for (const [where, ratios] of Object.entries(contrasts)) {
@@ -585,7 +585,7 @@ try {
       assert.ok(rails[0].right < rails[1].left, `forced ${scheme}: the wider rail leaves a gap before the next lane`);
       assert.ok(forced.length === 2 && forced.every((r) => r >= 3), `forced ${scheme}: both rails on new 7 reach 3:1 (${forced})`);
       await page.locator('[data-cell="new:6"]').scrollIntoViewIfNeeded();
-      await shotter(page)(`13-ranges-forced-colors-${scheme}`);
+      await shotter(page)(`15-ranges-forced-colors-${scheme}`);
     }
     assert.deepEqual(errors, []);
   }, { headless: true, viewport: { width: 1100, height: 800 }, deviceScaleFactor: 2 });

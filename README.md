@@ -50,7 +50,7 @@ The review store is `$CODE_REVIEW_STORE`, else `$PROJECTS_ROOT/.code-review`; wi
 
 ### Diagnostics
 
-Every `CONDUCTOR_UNAVAILABLE` (and every cc request that only succeeded after a retry) is appended as a JSON line to `<store>/logs/cc.log`: route, elapsed time, attempts, cause. Retry rules and settings: [docs/protocol.md](docs/protocol.md#cc-routes-consumed).
+The cc connection log is `<store>/logs/cc.log`; what it records and the retry rules are in [docs/protocol.md](docs/protocol.md#cc-routes-consumed).
 
 ### Test
 

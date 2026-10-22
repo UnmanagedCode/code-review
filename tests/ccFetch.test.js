@@ -8,7 +8,7 @@ import { tempStore } from './_store.js';
 import { makeRepo, localPlace } from './_git.js';
 import { projects, ccTimeoutMs, DEFAULT_TIMEOUT_MS } from '../src/cc.js';
 import { exec } from '../src/exec.js';
-import { MAX_ATTEMPTS } from '../src/ccFetch.js';
+import { MAX_ATTEMPTS, ccFetch } from '../src/ccFetch.js';
 import { logEvent, logPath, LOG_MAX_BYTES } from '../src/opsLog.js';
 import * as git from '../src/git.js';
 
@@ -35,8 +35,9 @@ const hits = (route) => cc.state.hits.filter((h) => h === route).length;
 const here = localPlace('/');
 const reset = (n = Infinity) => { cc.state.execHook = () => (n-- > 0 ? 'reset' : undefined); };
 
-test('default GET budget is DEFAULT_TIMEOUT_MS and the env overrides it', () => {
-  assert.equal(ccTimeoutMs(), DEFAULT_TIMEOUT_MS);
+test('the default GET budget is 15 s and the env overrides it', () => {
+  assert.equal(DEFAULT_TIMEOUT_MS, 15_000);
+  assert.equal(ccTimeoutMs(), 15_000);
   process.env.CODE_REVIEW_CC_TIMEOUT_MS = '250';
   assert.equal(ccTimeoutMs(), 250);
 });
@@ -230,9 +231,27 @@ test('a log write failure never changes the refusal', async () => {
   cc.state.mode = 'error';
   try {
     assert.equal(await code(projects()), 'CONDUCTOR_UNAVAILABLE');
-    assert.ok(console.error.mock.calls.length > 0);
+    assert.ok(console.error.mock.calls.some((c) => /could not write the operator log/.test(String(c.arguments[0]))));
   } finally {
     process.env.CODE_REVIEW_STORE = saved.s;
     if (saved.p !== undefined) process.env.PROJECTS_ROOT = saved.p;
   }
+});
+
+test('a ccFetch call without a retry option never repeats a request', async () => {
+  cc.state.resetNext = Infinity;
+  await assert.rejects(ccFetch('/api/projects', {}, { timeoutMs: 500 }), { code: 'CONDUCTOR_UNAVAILABLE' });
+  assert.equal(hits('GET /api/projects'), 1);
+});
+
+test('a connect timeout is a connection failure: a GET and a read-only exec retry it', async () => {
+  const real = globalThis.fetch;
+  let n = 0;
+  mock.method(globalThis, 'fetch', (...a) => {
+    if (n++ % 2 === 0) return Promise.reject(Object.assign(new TypeError('fetch failed'), { cause: { code: 'UND_ERR_CONNECT_TIMEOUT' } }));
+    return real(...a);
+  });
+  assert.equal((await projects()).length, 1);
+  assert.equal((await exec(here, ['true'], { readOnly: true })).code, 0);
+  assert.equal(n, 4);
 });

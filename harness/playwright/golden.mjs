@@ -72,6 +72,26 @@ try {
     assert.ok((await rowBefore(posted)).cells.includes('new:11'), 'the question renders directly under line 11');
     await shot('1-posted');
 
+    // 1c. Threads tab → All: the Owner filter splits the list into the user's threads and the agents'.
+    await page.getByRole('tablist', { name: 'Review pane' }).getByRole('tab', { name: /^Threads/ }).click();
+    const allPanel = page.getByRole('tabpanel', { name: /^Threads/ });
+    await allPanel.getByRole('tab', { name: /^All/ }).click();
+    await allPanel.getByLabel('Status').selectOption('all');
+    const cards = allPanel.getByRole('article');
+    await cards.first().waitFor();
+    const everyone = (await cards.allTextContents()).length;
+    const agents = ['Missing guard', 'Does r7 still need changed8 after it?'];
+    await allPanel.getByLabel('Owner').selectOption('agents');
+    await page.waitForFunction((n) => document.querySelectorAll('[role=tabpanel]:not([hidden]) article').length === n, agents.length);
+    const shownAgents = await allPanel.getByRole('article').allTextContents();
+    assert.equal(shownAgents.length, agents.length);
+    for (const a of agents) assert.ok(shownAgents.some((t) => t.includes(a)), `agents list has ${a}`);
+    await shot('1c-owner-agents');
+    await allPanel.getByLabel('Owner').selectOption('user');
+    await page.waitForFunction((n) => document.querySelectorAll('[role=tabpanel]:not([hidden]) article').length === n, everyone - agents.length);
+    assert.ok((await allPanel.getByRole('article').allTextContents()).every((t) => !agents.some((a) => t.includes(a))), 'user list has no agent thread');
+    await shot('1c-owner-user');
+
     // 2. Accept a hunk; the tree tally follows.
     await page.goto(q({ review: range, file: 'c.js' }));
     const tree = page.getByRole('link', { name: /c\.js/ }).first();

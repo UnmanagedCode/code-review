@@ -5,6 +5,7 @@ import { threadView, tally } from './rollup.js';
 import { citationsForMessage } from './citations.js';
 import { bump, summaryById } from './reviews.js';
 import { isBinaryFile } from './snapshot.js';
+import { isConductorProject } from './checkouts.js';
 
 const KINDS = ['comment', 'question', 'suggestion', 'finding'];
 const SEVERITIES = ['blocker', 'major', 'minor', 'nit'];
@@ -27,7 +28,10 @@ function findThread(review, tid) {
   throw new Refusal('THREAD_UNKNOWN', `unknown thread: ${tid}`);
 }
 
-const isOpener = (thread, actor) => actor.kind === 'agent' && thread.openedBy.sessionId === actor.sessionId;
+// The conductor closes any thread an agent opened; any other agent only a non-finding thread it opened. Only an open thread closes: an agent never overrides a human's close, and an outdated thread is frozen.
+const mayClose = (thread, actor) => thread.status === 'open' && (
+  isConductorProject(actor.project) ? thread.openedBy.kind === 'session'
+    : thread.openedBy.sessionId === actor.sessionId && thread.kind !== 'finding');
 
 // Annotated files are always in the diff, so the binary decision never needs their content.
 const noContent = async () => null;
@@ -87,23 +91,32 @@ export const annotate = (id, actor, { anchor, kind, severity, body }) => attempt
   return { ok: true, thread: threadView(thread) };
 }));
 
-/** Adds a message. `resolve` closes the caller's own non-finding thread, otherwise it proposes resolution. */
-export const reply = (id, actor, tid, { body, resolve = false }) => attempt(() => inReview(id, async (review) => {
+/** Adds a message. `resolve` closes a thread the caller may close (`mayClose`), otherwise it proposes resolution. */
+export const reply = (id, actor, tid, { body, resolve = false, disposition }) => attempt(() => inReview(id, async (review) => {
   assertOpen(review);
   needBody(body);
   const thread = findThread(review, tid);
+  const needsDisposition = () => invalid(`resolving a finding needs a disposition: ${DISPOSITIONS.join(', ')}`);
+  let closes = false;
+  if (actor.kind === 'agent') {
+    if (disposition !== undefined) {
+      if (!isConductorProject(actor.project) || !resolve || thread.kind !== 'finding') throw invalid('disposition is for a conductor resolving a finding');
+      if (!DISPOSITIONS.includes(disposition)) throw needsDisposition();
+    }
+    closes = resolve && mayClose(thread, actor);
+    if (closes && thread.kind === 'finding' && !disposition) throw needsDisposition();
+  }
   const msg = message(review, actor, body);
   if (actor.kind === 'human') thread.humanReadSeq = msg.seq;
-  else if (resolve) {
-    if (isOpener(thread, actor) && thread.kind !== 'finding' && thread.status !== 'outdated') {
-      thread.status = 'resolved';
-      thread.resolution = { by: msg.author, seq: msg.seq };
-      thread.statusSeq = msg.seq;
-      thread.resolveProposed = false;
-    } else {
-      msg.proposeResolve = true;
-      thread.resolveProposed = true;
-    }
+  else if (closes) {
+    thread.status = 'resolved';
+    thread.resolution = { by: msg.author, seq: msg.seq };
+    thread.statusSeq = msg.seq;
+    thread.resolveProposed = false;
+    thread.disposition = thread.kind === 'finding' ? disposition : null;
+  } else if (resolve) {
+    msg.proposeResolve = true;
+    thread.resolveProposed = true;
   }
   thread.messages.push(msg);
   return { ok: true, thread: threadView(thread) };
@@ -148,9 +161,11 @@ export const markRead = (id, { threadId } = {}) => attempt(async () => {
 });
 
 /** Threads (default: open ones) with their anchored text and every message's cited code resolved. */
-export const listThreads = (id, { status = 'open', file } = {}) => attempt(() => viewReview(id, async (review, env) => {
+export const listThreads = (id, { status = 'open', file, owner } = {}) => attempt(() => viewReview(id, async (review, env) => {
   if (!['open', 'resolved', 'outdated', 'all'].includes(status)) throw invalid('status must be open, resolved, outdated or all');
-  const picked = review.threads.filter((t) => (status === 'all' || t.status === status) && (!file || t.anchor.file === file));
+  if (owner !== undefined && !['user', 'agents'].includes(owner)) throw invalid('owner must be user or agents');
+  const picked = review.threads.filter((t) => (status === 'all' || t.status === status) && (!file || t.anchor.file === file)
+    && (!owner || (t.openedBy.kind === 'human') === (owner === 'user')));
   const out = [];
   for (const t of picked) {
     const view = threadView(t);

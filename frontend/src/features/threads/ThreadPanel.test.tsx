@@ -1,7 +1,7 @@
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { expect, test, vi } from 'vitest';
-import { diffFile, fileState, message, review, thread } from '@/test/fixtures';
+import { agent, diffFile, fileState, HUMAN, message, review, thread } from '@/test/fixtures';
 import { parseRoute } from '@/lib/route';
 import { ctxValue } from '@/test/renderCtx';
 import { stubFetch } from '@/test/stubFetch';
@@ -183,4 +183,43 @@ test('in a comparison, Focus on a thread of another file keeps the comparison op
   const t2 = screen.getAllByRole('article')[1];
   await user.click(within(t2).getByRole('button', { name: 'Focus' }));
   expect(parseRoute(location.search)).toMatchObject({ compare: '1..2', file: 'src/a.ts', thread: 't-2' });
+});
+
+// Invariant: the owner filter keeps the threads the user (human) or agents opened, and composes with the status filter.
+test('the All list filters by owner, composed with the status filter', async () => {
+  const threads = [
+    thread({ id: 't-1', openedBy: HUMAN }),
+    thread({ id: 't-2', openedBy: agent('s-rev') }),
+    thread({ id: 't-3', openedBy: agent('s-cond', 'conductor'), status: 'resolved' }),
+  ];
+  stubFetch({ 'GET api/reviews/r-1/diff': { review: review(), files: [diffFile({ threads })] } });
+  const files = [fileState({ threads: { open: 2, resolved: 1, outdated: 0 } })];
+  const user = userEvent.setup();
+  render(<ReviewProvider value={ctxValue({ files, fileDiff: { file: undefined } as never })}><ThreadPanel /></ReviewProvider>);
+  await user.click(screen.getByRole('tab', { name: /^All/ }));
+  const owner = await screen.findByRole('combobox', { name: 'Owner' });
+  const status = screen.getByRole('combobox', { name: 'Status' });
+  const shown = () => screen.getAllByRole('article').length;
+  await waitFor(() => expect(shown()).toBe(2));
+  await user.selectOptions(owner, 'agents');
+  await waitFor(() => expect(shown()).toBe(1));
+  await user.selectOptions(status, 'all');
+  await waitFor(() => expect(shown()).toBe(2));
+  await user.selectOptions(owner, 'user');
+  await waitFor(() => expect(shown()).toBe(1));
+  await user.selectOptions(owner, 'all');
+  await waitFor(() => expect(shown()).toBe(3));
+});
+
+// Invariant: a comparison's All list has the same owner filter.
+test('a comparison\'s All list filters by owner', async () => {
+  const user = userEvent.setup();
+  render(<ReviewProvider value={comparison()}><ThreadPanel /></ReviewProvider>);
+  await user.click(screen.getByRole('tab', { name: /^All/ }));
+  const owner = screen.getByRole('combobox', { name: 'Owner' });
+  await user.selectOptions(owner, 'user');
+  expect(screen.getAllByRole('article')).toHaveLength(3);
+  await user.selectOptions(owner, 'agents');
+  expect(screen.queryAllByRole('article')).toHaveLength(0);
+  expect(screen.getByText('No threads')).toBeTruthy();
 });

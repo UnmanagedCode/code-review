@@ -128,9 +128,133 @@ test('resolve: the opener resolves its own non-finding thread; anyone else only 
   assert.equal(proposed.resolveProposed, true);
   assert.equal(proposed.messages[1].proposeResolve, true);
   assert.equal(ok(await threads.reply(review.id, author, theirs.id, { body: 'more' })).thread.status, 'open', 'a plain reply never changes status');
+  const cond = ok(await say(review.id, at('a.js', 4), {}, conductor)).thread;
+  const onCond = ok(await threads.reply(review.id, reviewer, cond.id, { body: 'done', resolve: true })).thread;
+  assert.deepEqual([onCond.status, onCond.resolveProposed], ['open', true]);
 });
 
-test('resolve: a finding is closed only by the human with a disposition; the human can reopen', async () => {
+test('resolve: a conductor reply without resolve never closes, and a close clears an earlier proposal', async () => {
+  roster();
+  const { review } = await rangeReview(undefined, { recipient: 's-author' });
+  const t = ok(await say(review.id, at('a.js', 2), {}, reviewer)).thread;
+  const plain = ok(await threads.reply(review.id, conductor, t.id, { body: 'hm' })).thread;
+  assert.deepEqual([plain.status, plain.resolveProposed], ['open', false]);
+  assert.equal(ok(await threads.reply(review.id, author, t.id, { body: 'fixed', resolve: true })).thread.resolveProposed, true);
+  const closed = ok(await threads.reply(review.id, conductor, t.id, { body: 'ok', resolve: true })).thread;
+  assert.deepEqual([closed.status, closed.resolveProposed], ['resolved', false]);
+});
+
+test('resolve: on an already resolved user-opened thread the conductor\'s resolve only proposes, so resolveProposed is the signal', async () => {
+  roster();
+  const { review } = await rangeReview(undefined, { recipient: 's-author' });
+  const t = ok(await say(review.id, at('a.js', 2))).thread;
+  ok(await threads.setThreadStatus(review.id, t.id, { status: 'resolved' }));
+  const res = ok(await threads.reply(review.id, conductor, t.id, { body: 'ok', resolve: true })).thread;
+  assert.equal(res.resolveProposed, true);
+});
+
+test('resolve: an agent never overrides a human\'s close of an agent thread, nor re-resolves its own resolved one', async () => {
+  roster();
+  const { review } = await rangeReview(undefined, { recipient: 's-author' });
+  const f = ok(await say(review.id, at('a.js', 2), { kind: 'finding', severity: 'major' }, reviewer)).thread;
+  ok(await threads.setThreadStatus(review.id, f.id, { status: 'resolved', disposition: 'fixed' }));
+  const before = (await store.read(review.id)).threads.find((x) => x.id === f.id).resolution;
+  const res = ok(await threads.reply(review.id, conductor, f.id, { body: 'no', resolve: true, disposition: 'dismissed' })).thread;
+  assert.deepEqual([res.disposition, res.resolveProposed], ['fixed', true]);
+  assert.deepEqual((await store.read(review.id)).threads.find((x) => x.id === f.id).resolution, before);
+  const c = ok(await say(review.id, at('a.js', 3), {}, reviewer)).thread;
+  ok(await threads.reply(review.id, reviewer, c.id, { body: 'ok', resolve: true }));
+  const again = ok(await threads.reply(review.id, reviewer, c.id, { body: 'again', resolve: true })).thread;
+  assert.deepEqual([again.status, again.resolveProposed], ['resolved', true]);
+});
+
+test('resolve: the conductor closes a thread it opened itself', async () => {
+  roster();
+  const { review } = await rangeReview(undefined, { recipient: 's-author' });
+  const t = ok(await say(review.id, at('a.js', 2), {}, conductor)).thread;
+  const done = ok(await threads.reply(review.id, conductor, t.id, { body: 'ok', resolve: true })).thread;
+  assert.deepEqual([done.status, done.resolveProposed], ['resolved', false]);
+  const stored = (await store.read(review.id)).threads.find((x) => x.id === t.id);
+  assert.deepEqual(stored.resolution.by, { kind: 'session', sessionId: 's-cond', role: 'conductor' });
+  assert.equal(stored.disposition, null);
+});
+
+test('resolve: the conductor closes threads other agents opened, a finding only with a disposition', async () => {
+  roster();
+  const { review } = await rangeReview(undefined, { recipient: 's-author' });
+  const c = ok(await say(review.id, at('a.js', 2), {}, reviewer)).thread;
+  const q = ok(await say(review.id, at('a.js', 3), { kind: 'question' }, author)).thread;
+  const blockers = async () => ok(await reviews.getReview(review.id)).review.mergeBlockers;
+  assert.equal(await blockers(), 1);
+  assert.equal(ok(await threads.reply(review.id, conductor, c.id, { body: 'ok', resolve: true })).thread.status, 'resolved');
+  assert.equal(ok(await threads.reply(review.id, conductor, q.id, { body: 'ok', resolve: true })).thread.status, 'resolved');
+  assert.equal(await blockers(), 0);
+  const f = ok(await say(review.id, at('a.js', 4), { kind: 'finding', severity: 'major' }, reviewer)).thread;
+  assert.equal(codeOf(await threads.reply(review.id, conductor, f.id, { body: 'done', resolve: true })), 'INVALID_ARGUMENT');
+  assert.equal(ok(await reviews.diff(review.id, {})).files[0].threads.find((x) => x.id === f.id).messages.length, 1);
+  const closed = ok(await threads.reply(review.id, conductor, f.id, { body: 'done', resolve: true, disposition: 'dismissed' })).thread;
+  assert.deepEqual([closed.status, closed.disposition, closed.resolveProposed], ['resolved', 'dismissed', false]);
+  const reopened = ok(await threads.setThreadStatus(review.id, f.id, { status: 'open' })).thread;
+  assert.deepEqual([reopened.status, reopened.disposition], ['open', null]);
+});
+
+test('resolve: the conductor only proposes on a user-opened thread, even a finding with a disposition', async () => {
+  roster();
+  const { review } = await rangeReview(undefined, { recipient: 's-author' });
+  const c = ok(await say(review.id, at('a.js', 2))).thread;
+  const onC = ok(await threads.reply(review.id, conductor, c.id, { body: 'ok', resolve: true })).thread;
+  assert.deepEqual([onC.status, onC.resolveProposed, onC.messages.at(-1).proposeResolve], ['open', true, true]);
+  const f = ok(await say(review.id, at('a.js', 3), { kind: 'finding', severity: 'minor' })).thread;
+  const onF = ok(await threads.reply(review.id, conductor, f.id, { body: 'ok', resolve: true, disposition: 'fixed' })).thread;
+  assert.deepEqual([onF.status, onF.resolveProposed, onF.disposition], ['open', true, null]);
+});
+
+test('resolve: the conductor only proposes on an outdated agent thread', async () => {
+  roster();
+  const wt = w.addWorktree();
+  wt.commit({ 'a.js': editLines({ 2: 'top-edit', 18: 'bottom-edit' }) });
+  const review = await open({ recipient: 's-author' });
+  const t = ok(await say(review.id, at('a.js', 10), {}, reviewer)).thread;
+  wt.commit({ 'a.js': editLines({ 2: 'top-edit-again', 18: 'bottom-edit', 7: 'q7', 8: 'q8', 9: 'q9', 10: 'q10', 11: 'q11', 12: 'q12', 13: 'q13' }) });
+  ok(await reviews.refreshReview(review.id));
+  const res = ok(await threads.reply(review.id, conductor, t.id, { body: 'ok', resolve: true })).thread;
+  assert.deepEqual([res.status, res.resolveProposed], ['outdated', true]);
+  assert.equal((await store.read(review.id)).threads.find((x) => x.id === t.id).resolution, null);
+});
+
+test('disposition is refused unless the conductor resolves a finding, and nothing is posted', async () => {
+  roster();
+  const { review } = await rangeReview(undefined, { recipient: 's-author' });
+  const f = ok(await say(review.id, at('a.js', 2), { kind: 'finding', severity: 'major' }, reviewer)).thread;
+  const c = ok(await say(review.id, at('a.js', 3), {}, reviewer)).thread;
+  const refused = async (actor, tid, args) => {
+    assert.equal(codeOf(await threads.reply(review.id, actor, tid, { body: 'x', ...args })), 'INVALID_ARGUMENT');
+  };
+  await refused(reviewer, f.id, { resolve: true, disposition: 'fixed' });
+  await refused(conductor, f.id, { disposition: 'fixed' });
+  await refused(conductor, c.id, { resolve: true, disposition: 'fixed' });
+  await refused(conductor, f.id, { resolve: true, disposition: 'maybe' });
+  const stored = (await store.read(review.id)).threads;
+  assert.deepEqual(stored.map((x) => x.messages.length), [1, 1]);
+});
+
+test('listThreads filters by owner: user, agents, both when absent; it composes with status; another owner is refused', async () => {
+  roster();
+  const { review } = await rangeReview(undefined, { recipient: 's-author' });
+  const h = ok(await say(review.id, at('a.js', 2))).thread;
+  const r = ok(await say(review.id, at('a.js', 3), { kind: 'finding', severity: 'minor' }, reviewer)).thread;
+  const c = ok(await say(review.id, at('a.js', 4), {}, conductor)).thread;
+  const ids = async (args) => ok(await threads.listThreads(review.id, args)).threads.map((t) => t.id);
+  assert.deepEqual(await ids({ owner: 'user' }), [h.id]);
+  assert.deepEqual(await ids({ owner: 'agents' }), [r.id, c.id]);
+  assert.deepEqual(await ids({}), [h.id, r.id, c.id]);
+  ok(await threads.reply(review.id, conductor, c.id, { body: 'ok', resolve: true }));
+  assert.deepEqual(await ids({ status: 'open', owner: 'agents' }), [r.id]);
+  assert.deepEqual(await ids({ status: 'resolved', owner: 'agents' }), [c.id]);
+  assert.equal(codeOf(await threads.listThreads(review.id, { owner: 'bots' })), 'INVALID_ARGUMENT');
+});
+
+test('resolve: a non-conductor agent never closes a finding, even its own; the human closes it with a disposition and can reopen', async () => {
   roster();
   const { review } = await rangeReview(undefined, { recipient: 's-author' });
   const f = ok(await say(review.id, at('a.js', 2), { kind: 'finding', severity: 'major' }, reviewer)).thread;

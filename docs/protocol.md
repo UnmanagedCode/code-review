@@ -41,6 +41,7 @@ REST under `/api` (JSON), an SSE stream, and the cc MCP endpoint. Behaviour behi
 - **`anchor.drifted`:** true only if the latest re-anchoring found the thread by surrounding context; finding the exact lines again clears it.
 - **Author:** `{kind:'human'}` or `{kind:'session', sessionId, role: author|reviewer|conductor}`.
 - **Session:** `sessionId, project, worktree, label, status, live, conductor, conducted, attached`. `label` is cc's `displayLabel`, else its `title`, else `null`; the UI then shows the session id.
+- **SessionPlace:** `project, main, worktrees` — `main`: a live row of the session is on the project's main checkout, or a spawn-history entry records no worktrees; `worktrees`: sorted names.
 
 ## Endpoints
 
@@ -50,6 +51,7 @@ REST under `/api` (JSON), an SSE stream, and the cc MCP endpoint. Behaviour behi
 | `GET /checkout` | `?project&worktree` (omit `worktree` for main) | `{checkout:{project, worktree, path, branch, headSha, dirty, exists}, forkPoints:[{ref,label,forkSha}], worktrees:[{worktreeName,branch}]}` | `INVALID_ARGUMENT`, `PROJECT_*`, `CHECKOUT_UNKNOWN`, `SYSTEM_UNREACHABLE` `GIT_TIMEOUT` `GIT_UNAVAILABLE` |
 | `GET /checkout/commits` | `?project&worktree&limit` (default 50, max 500) | `{commits:[{sha, short, author, date, subject, merge}]}` | as above, `CHECKOUT_GONE` |
 | `GET /sessions` | `?project&worktree` | `{sessions:[Session]}` (all cc sessions; `attached` is relative to the checkout) | `INVALID_ARGUMENT`, `CONDUCTOR_UNAVAILABLE` |
+| `GET /sessions/:sessionId/places` | | `{places:[SessionPlace]}`: the session's own checkout, then the checkouts of the workers it owns (live, by project name), then those it has spawned workers into (`lastSpawnAt` (ISO string) newest first, then project name); `.conduct` omitted; an unknown id gives `[]` | `CONDUCTOR_UNAVAILABLE` (instances route only: a failing history route is logged and the places come from live rows alone) |
 | `GET /reviews` | `?project&worktree&status` (`open`, `closed` or `all`; `all` or no `status` = every status); no `worktree` = every checkout, empty `worktree=` = main | `{reviews:[ReviewSummary]}` newest first | |
 | `POST /reviews` | `{project, worktree|null, kind?, base?, sha?, recipient?, title?}` (`author` is refused `INVALID_ARGUMENT`: the human path takes none) | `{review, reused}` | `INVALID_ARGUMENT` `BAD_REF` `REF_UNKNOWN` `BASE_REQUIRED` `NO_COMMON_ANCESTOR` `UNBORN_HEAD` `PROJECT_*` `CHECKOUT_*` `RECIPIENT_UNKNOWN` |
 | `GET /reviews/:id` | | `{review, files:[FileState], rounds, submissions, outdatedThreads:[Thread]}` | `REVIEW_UNKNOWN` |
@@ -106,13 +108,14 @@ REST under `/api` (JSON), an SSE stream, and the cc MCP endpoint. Behaviour behi
 
 ## cc routes consumed
 
-All through `CONDUCTOR_URL`. The GET routes time out after `CODE_REVIEW_CC_TIMEOUT_MS`; any failure there is `CONDUCTOR_UNAVAILABLE`.
+All through `CONDUCTOR_URL`. The GET routes time out after `CODE_REVIEW_CC_TIMEOUT_MS`; any failure there is `CONDUCTOR_UNAVAILABLE`, except the spawn-history route's, which `GET /sessions/:sessionId/places` logs and degrades past.
 
 | Route | Fields used |
 |---|---|
 | `GET /api/projects` | `name`, `path`, `system` (absent = `local`), `remoteId` (absent = the provider's default target) |
 | `GET /api/projects/:name/worktrees` | `worktreeName`, `worktreePath`, `branch`, `baseBranch`, `baseSha`, `baseWorktree?` (absent = forked from the main checkout) |
-| `GET /api/instances` | `sessionId`, `project`, `status`, `title`, `displayLabel` (may be absent: a cc without it), `conducted`, `worktree.worktreeName` |
+| `GET /api/instances` | `sessionId`, `project`, `status`, `title`, `displayLabel` (may be absent: a cc without it), `conducted`, `worktree.worktreeName`, `ownerSessionId` (root owner of the spawn chain; live conducted workers only) |
+| `GET /api/conductors/projects` | `[rootSessionId][].project`, `.lastSpawnAt`, `.worktrees` (absent or `null` = none recorded) |
 | `POST /api/exec` | every git command and checkout read (`src/exec.js`). Sent: `system`, `remoteId` (omitted when `null`), `cwd: "/"`, `argv`, `env`, `stdinB64?`, `encoding: "base64"`, `timeoutMs`, `maxOutputBytes`. Read: `exitCode`, `stdout`, `stderr`; on a refusal `code`, `error`, `errno` |
 
 **`POST /api/exec` refusals → code-review** (mapped in `exec` in `src/exec.js`, the only place cc's exec codes are read):

@@ -9,5 +9,8 @@ export const useCheckout = (project: string | undefined, worktree: string | null
 export const useCheckoutCommits = (project: string | undefined, worktree: string | null, limit: number, enabled = true) =>
   useFetch(project && enabled ? () => ep.checkoutCommits(project, worktree, limit) : null, [project, worktree, limit, enabled]);
 
+export const useSessionPlaces = (sessionId: string | undefined) =>
+  useFetch(sessionId ? () => ep.sessionPlaces(sessionId) : null, [sessionId]);
+
 export const useSessions = (project: string | undefined, worktree: string | null) =>
   useFetch(project ? () => ep.sessions(project, worktree) : null, [project, worktree]);

@@ -202,6 +202,30 @@ try {
     await page.getByText(/following/).waitFor();
     await shot('4-followed-session');
 
+    // 4b: the active session's checkouts lead each select; New review prefills from it, and a typed title survives a session change.
+    const groups = (id) => page.evaluate((i) => [...document.querySelectorAll(`#${i} optgroup`)].map((g) => [g.label, [...g.querySelectorAll('option')].map((o) => o.textContent)]), id);
+    assert.deepEqual(await groups('cb-project'), [['Active session', ['app']], ['Other projects', ['other']]]);
+    assert.deepEqual(await groups('cb-worktree'), [['Active session', ['feature']], ['Other worktrees', ['Main checkout']]]);
+    await page.getByRole('button', { name: 'New review' }).click();
+    const title = page.getByLabel('Title (optional)');
+    const recipient = page.getByLabel('Recipient session');
+    await page.waitForFunction(() => document.querySelector('#nr-recipient')?.value === 's-author');
+    assert.equal(await title.inputValue(), 's-author');
+    for (const scheme of ['light', 'dark']) {
+      await page.emulateMedia({ colorScheme: scheme });
+      await shot(`4b-new-review-prefilled-${scheme}`);
+    }
+    await page.emulateMedia({ colorScheme: 'light' });
+    await title.fill('My title');
+    await page.evaluate(() => window.__emit({ sessionId: 's-rev', project: 'app', worktree: 'feature' }));
+    await page.waitForFunction(() => document.querySelector('#nr-recipient')?.value === 's-rev');
+    assert.equal(await title.inputValue(), 'My title');
+    assert.equal(await recipient.inputValue(), 's-rev');
+    await shot('4b-new-review-title-kept');
+    await page.keyboard.press('Escape');
+    assert.deepEqual(await groups('cb-project'), [['Active session', ['app', 'other']]]);
+    assert.deepEqual(await groups('cb-worktree'), [['Active session', ['Main checkout']], ['Other worktrees', ['feature']]]);
+
     await page.goto(q({ review: uncommitted }));
     // The stub is re-installed on navigation (no session emitted); make the first send fail.
     await page.evaluate(() => { window.ccBridge.results.push({ ok: false, code: 'SESSION_NOT_READY' }); });

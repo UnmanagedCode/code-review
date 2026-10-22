@@ -61,6 +61,8 @@ export interface ReviewSummary {
 }
 
 export interface Session { sessionId: string; project: string; worktree: string | null; label: string | null; status: string; live: boolean; conductor: boolean; conducted: boolean; attached: boolean }
+/** A project the active session is working on; `main` = something of it is on the main checkout. */
+export interface SessionPlace { project: string; main: boolean; worktrees: string[] }
 export interface Commit { sha: string; short: string; author: string; date: string; subject: string; merge: boolean }
 export interface ForkPoint { ref: string; label: string; forkSha: string }
 export interface CheckoutInfo { project: string; worktree: string | null; path: string; branch: string | null; headSha: string | null; dirty: boolean; exists: boolean }

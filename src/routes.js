@@ -6,7 +6,7 @@ import * as rounds from './rounds.js';
 import * as compare from './compare.js';
 import * as threads from './threads.js';
 import * as submissions from './submissions.js';
-import { sessions, checkoutInfo, checkoutCommits } from './checkouts.js';
+import { sessions, sessionPlaces, checkoutInfo, checkoutCommits } from './checkouts.js';
 import { handle as handleMcp } from './mcp.js';
 import { HTTP_STATUS, attempt, refuse } from './refusals.js';
 import { errorLine, oneLine, stackFrames } from './text.js';
@@ -57,6 +57,7 @@ export function apiRouter() {
   r.get('/checkout', route(withCheckout(async (co) => ({ ok: true, ...(await checkoutInfo(co)) }))));
   r.get('/checkout/commits', route(withCheckout(async (co, req) => ({ ok: true, commits: await checkoutCommits({ ...co, limit: req.query.limit }) }))));
   r.get('/sessions', route(withCheckout(async (co) => ({ ok: true, sessions: await sessions(co) }))));
+  r.get('/sessions/:sessionId/places', route(async (req) => ({ ok: true, places: await sessionPlaces(req.params.sessionId) })));
 
   r.get('/reviews', route((req) => reviews.listReviews({
     project: req.query.project,

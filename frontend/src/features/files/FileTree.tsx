@@ -33,7 +33,7 @@ function Node({ node, depth, selected }: { node: TreeNode; depth: number; select
   return (
     <li>
       <RouteLink
-        to={{ file: f.path, lines: undefined, side: undefined, thread: undefined, view: undefined }}
+        to={{ file: f.path, lines: undefined, side: undefined, thread: undefined }}
         aria-current={selected === f.path ? 'true' : undefined}
         title={f.oldPath ? `${f.oldPath} → ${f.path}` : f.path}
         className={cn('flex min-h-9 flex-wrap items-center gap-x-2 py-1 pr-3 text-sm hover:bg-accent', selected === f.path && 'bg-accent')}

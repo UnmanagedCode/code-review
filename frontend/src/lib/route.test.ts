@@ -1,6 +1,6 @@
 import { act, renderHook } from '@testing-library/react';
 import { expect, test, vi } from 'vitest';
-import { navigate, parseCompare, parseRoute, REVIEW_SCOPED, toSearch, useRoute, type Route } from './route';
+import { LEAVE_FILE, navigate, parseCompare, parseRoute, REVIEW_SCOPED, toSearch, useRoute, type Route } from './route';
 
 test('parse∘serialise round-trips every param', () => {
   const full: Route = { project: 'app', worktree: 'feature', review: 'r-1', file: 'src/a b.ts', side: 'old', lines: '10-20', thread: 't-3', commit: 'abc1234', round: '12', compare: '1..3', view: 'threads' };
@@ -9,6 +9,12 @@ test('parse∘serialise round-trips every param', () => {
 
 test('unknown params and malformed values are dropped', () => {
   expect(parseRoute('?project=app&evil=1&side=sideways&lines=a-b&view=other')).toEqual({ project: 'app' });
+});
+
+// Invariant: every pane tab but Files has a view= value, and only those values parse.
+test('view keeps new, threads and history only', () => {
+  for (const v of ['new', 'threads', 'history'] as const) expect(parseRoute(toSearch({ review: 'r-1', view: v })).view, v).toBe(v);
+  expect(parseRoute('?review=r-1&view=bogus')).toEqual({ review: 'r-1' });
 });
 
 test('navigate pushes a ?… URL and never assigns the hash', () => {
@@ -55,4 +61,11 @@ test('REVIEW_SCOPED resets every key but the checkout and the review itself', ()
   history.replaceState(null, '', toSearch({ project: 'app', worktree: 'feature', review: 'r-1', file: 'a.js', side: 'old', lines: '3', thread: 't-1', commit: 'abc1234', round: '1', compare: '1..2', view: 'threads' }));
   navigate({ review: 'r-2', ...REVIEW_SCOPED });
   expect(parseRoute(location.search)).toEqual({ project: 'app', worktree: 'feature', review: 'r-2' });
+});
+
+// Invariant: leaving the open file keeps the pane tab, the filters and the views.
+test('LEAVE_FILE clears exactly the file position', () => {
+  history.replaceState(null, '', toSearch({ project: 'app', review: 'r-1', file: 'a.js', side: 'old', lines: '3', thread: 't-1', commit: 'abc1234', round: '1', compare: '1..2', view: 'history' }));
+  navigate(LEAVE_FILE);
+  expect(parseRoute(location.search)).toEqual({ project: 'app', review: 'r-1', commit: 'abc1234', round: '1', compare: '1..2', view: 'history' });
 });

@@ -13,5 +13,5 @@
 - `harness/playwright/snap.mjs` and `golden.mjs` write screenshots to `harness/playwright/out/` (gitignored). They tolerate exactly the two host-URL 404s, plus 502s during `snap.mjs`'s system-down step (`seed().systemDown(true)` makes the fake cc refuse every exec).
 - Mutation `baseline` needs a clean tree and `CC_PROJECTS_ROOT` exported.
 - UI tests: vitest + happy-dom with shared fakes in `frontend/src/test/` (fetch route table, EventSource, `ccBridge`, fixtures); see [ui.md](ui.md).
-- **Scope harness waits to the pane you shot.** The diff's inline thread cards are `article`s too, so a bare `getByRole('article')` resolves before the thread panel has loaded; `snap.mjs` waits inside the `tabpanel`.
+- **Scope harness waits to the pane you shot.** The diff's inline thread cards are `article`s too, so a bare `getByRole('article')` resolves before the Threads tab's list has loaded; `snap.mjs` waits inside the `tabpanel`.
 - `harness/playwright/seed.mjs` seeds one world through the REST/MCP API using `tests/_world.js`; `snap.mjs` and `golden.mjs` use it. Run `npm run prepare` first so `frontend/dist` is current.

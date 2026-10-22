@@ -66,9 +66,9 @@ test('the selection stops before a collapsed hunk and crosses an expanded one', 
 // Invariant: the keep-open and target predicates match a range on its own side only.
 test('selectionTouches is true when any line on the selection side falls in the range', () => {
   const del = h.lines.filter((l) => l.t === 'del');
-  expect(selectionTouches({ side: 'old', start: 3, end: 3, anchorLine: 3 }, del)).toBe(true);
-  expect(selectionTouches({ side: 'new', start: 3, end: 3, anchorLine: 3 }, del)).toBe(false);
-  expect(selectionTouches({ side: 'new', start: 4, end: 9, anchorLine: 4 }, h.lines)).toBe(true);
-  expect(selectionTouches({ side: 'new', start: 6, end: 9, anchorLine: 6 }, h.lines)).toBe(false);
+  expect(selectionTouches({ side: 'old', start: 3, end: 3 }, del)).toBe(true);
+  expect(selectionTouches({ side: 'new', start: 3, end: 3 }, del)).toBe(false);
+  expect(selectionTouches({ side: 'new', start: 4, end: 9 }, h.lines)).toBe(true);
+  expect(selectionTouches({ side: 'new', start: 6, end: 9 }, h.lines)).toBe(false);
   expect(selectionTouches(null, h.lines)).toBe(false);
 });

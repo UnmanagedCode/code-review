@@ -2,6 +2,7 @@ import type { Row } from './diffRows';
 import type { DiffLine, Side } from './types';
 
 export interface Selection { side: Side; start: number; end: number; anchorLine: number }
+type Span = Pick<Selection, 'side' | 'start' | 'end'>;
 
 /** The line number a row carries on `side`, or null (hunk header, gap, or a row without that side). */
 export function lineOn(row: Row, side: Side): number | null {
@@ -30,9 +31,10 @@ export function extendSelection(rows: Row[], sel: Selection, n: number): Selecti
   return { side: sel.side, start: Math.min(sel.anchorLine, reached), end: Math.max(sel.anchorLine, reached), anchorLine: sel.anchorLine };
 }
 
-export const contains = (sel: Selection | null, side: Side, n: number | null): boolean =>
+/** Whether line `n` on `side` is inside `sel` (a selection, or any span on one side such as a thread's range). */
+export const contains = (sel: Span | null, side: Side, n: number | null): boolean =>
   !!sel && sel.side === side && n != null && n >= sel.start && n <= sel.end;
 
 /** Whether any of `lines` carries, on the selection's side, a number inside it. */
-export const selectionTouches = (sel: Selection | null, lines: DiffLine[]): boolean =>
+export const selectionTouches = (sel: Span | null, lines: DiffLine[]): boolean =>
   !!sel && lines.some((l) => contains(sel, sel.side, l[sel.side]));

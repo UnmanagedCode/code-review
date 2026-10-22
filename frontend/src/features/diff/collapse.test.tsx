@@ -20,6 +20,8 @@ beforeEach(() => {
 });
 
 const SUMMARY = /@@ -1,4 \+1,4 @@.*accepted/;
+// The fixture thread sits on new L3, so that cell's name also says which thread range it is in.
+const LINE3 = /^new line 3( ·|$)/;
 const accepted = (over: Partial<DiffFile> = {}) => diffFile({ hunks: [hunk({ verdict: 'accepted' })], ...over });
 const resolved = (over = {}) => thread({ status: 'resolved', messages: [message({ body: 'first line\nsecond' })], ...over });
 
@@ -42,7 +44,7 @@ describe.each(['inline', 'split'])('%s view', (view) => {
   test('an accepted hunk renders as a collapsed summary without its lines', () => {
     mount(accepted());
     expect(screen.getByRole('button', { name: SUMMARY }).getAttribute('aria-expanded')).toBe('false');
-    expect(screen.queryByRole('gridcell', { name: 'new line 3' })).toBeNull();
+    expect(screen.queryByRole('gridcell', { name: LINE3 })).toBeNull();
   });
 
   // Invariant: expand is view-only, never a verdict write.
@@ -50,10 +52,10 @@ describe.each(['inline', 'split'])('%s view', (view) => {
     const net = stubFetch({});
     mount(accepted());
     fireEvent.click(screen.getByRole('button', { name: SUMMARY }));
-    expect(screen.getByRole('gridcell', { name: 'new line 3' })).toBeTruthy();
+    expect(screen.getByRole('gridcell', { name: LINE3 })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Collapse hunk' }).getAttribute('aria-expanded')).toBe('true');
     fireEvent.click(screen.getByRole('button', { name: 'Collapse hunk' }));
-    expect(screen.queryByRole('gridcell', { name: 'new line 3' })).toBeNull();
+    expect(screen.queryByRole('gridcell', { name: LINE3 })).toBeNull();
     expect(net.calls).toEqual([]);
   });
 
@@ -64,7 +66,7 @@ describe.each(['inline', 'split'])('%s view', (view) => {
     update(accepted());
     expect(screen.getByRole('button', { name: SUMMARY })).toBeTruthy();
     update(diffFile());
-    expect(screen.getByRole('gridcell', { name: 'new line 3' })).toBeTruthy();
+    expect(screen.getByRole('gridcell', { name: LINE3 })).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Collapse hunk' })).toBeNull();
     update(accepted());
     fireEvent.click(screen.getByRole('button', { name: SUMMARY }));
@@ -76,10 +78,10 @@ describe.each(['inline', 'split'])('%s view', (view) => {
   // Invariant: settling never unmounts an open selection/composer.
   test('accepting a hunk holding the selection keeps it expanded with its toolbar', () => {
     const { update } = mount(diffFile());
-    fireEvent.pointerDown(screen.getByRole('gridcell', { name: 'new line 3' }), { button: 0, pointerType: 'touch' });
+    fireEvent.pointerDown(screen.getByRole('gridcell', { name: LINE3 }), { button: 0, pointerType: 'touch' });
     expect(screen.getByRole('toolbar', { name: 'Selection' })).toBeTruthy();
     update(accepted());
-    expect(screen.getByRole('gridcell', { name: 'new line 3' })).toBeTruthy();
+    expect(screen.getByRole('gridcell', { name: LINE3 })).toBeTruthy();
     expect(screen.getByRole('toolbar', { name: 'Selection' })).toBeTruthy();
   });
 
@@ -126,14 +128,14 @@ describe.each(['inline', 'split'])('%s view', (view) => {
     expect(screen.getByRole('button', { name: SUMMARY }).getAttribute('aria-expanded')).toBe('false');
     expect((screen.getByLabelText('Reply') as HTMLTextAreaElement).value).toBe('half typed');
     fireEvent.click(screen.getByRole('button', { name: SUMMARY }));
-    expect(screen.getByRole('gridcell', { name: 'new line 3' })).toBeTruthy();
+    expect(screen.getByRole('gridcell', { name: LINE3 })).toBeTruthy();
     expect((screen.getByLabelText('Reply') as HTMLTextAreaElement).value).toBe('half typed');
   });
 
   // Invariant: a hunk can't be collapsed over the selection (which would leave it hidden and inert).
   test('a hunk holding the selection offers no collapse control until the selection is cleared', () => {
     const { update } = mount(diffFile());
-    fireEvent.pointerDown(screen.getByRole('gridcell', { name: 'new line 3' }), { button: 0, pointerType: 'touch' });
+    fireEvent.pointerDown(screen.getByRole('gridcell', { name: LINE3 }), { button: 0, pointerType: 'touch' });
     update(accepted());
     expect(screen.getByRole('toolbar', { name: 'Selection' })).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Collapse hunk' })).toBeNull();
@@ -151,7 +153,7 @@ describe.each(['inline', 'split'])('%s view', (view) => {
     unmount();
     history.replaceState(null, '', '?file=src%2Fa.ts&lines=3');
     mount(accepted());
-    expect(screen.getByRole('gridcell', { name: 'new line 3' })).toBeTruthy();
+    expect(screen.getByRole('gridcell', { name: LINE3 })).toBeTruthy();
     expect(screen.queryByRole('button', { name: SUMMARY })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Collapse hunk' })).toBeNull();
   });

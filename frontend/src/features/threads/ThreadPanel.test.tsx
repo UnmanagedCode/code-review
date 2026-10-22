@@ -5,6 +5,7 @@ import { diffFile, fileState, message, review, thread } from '@/test/fixtures';
 import { parseRoute } from '@/lib/route';
 import { ctxValue } from '@/test/renderCtx';
 import { stubFetch } from '@/test/stubFetch';
+import { parseRoute } from '@/lib/route';
 import type { ComparedThread, UnplacedThread } from '@/lib/types';
 import { ReviewProvider } from '@/state/reviewContext';
 import { ThreadPanel } from './ThreadPanel';
@@ -24,7 +25,9 @@ test('the All list refreshes when the review reloads, even with no file open', a
   expect(net.count('GET api/reviews/r-1/diff')).toBe(2);
 });
 
+// Invariant: Next unread focuses the thread by route (file, side, thread) and sets no `lines=` row wash.
 test('"Next unread" focuses the first unread thread, which posts read {threadId}', async () => {
+  history.replaceState(null, '', '?review=r-1&lines=9');
   const unread = thread({ id: 't-7', unread: 1 });
   const net = stubFetch({
     'GET api/reviews/r-1/diff': { review: review(), files: [diffFile({ threads: [thread({ id: 't-1' }), unread] })] },
@@ -37,7 +40,7 @@ test('"Next unread" focuses the first unread thread, which posts read {threadId}
   await user.click(screen.getByRole('tab', { name: /^All/ }));
   await waitFor(() => expect((screen.getByRole('button', { name: 'Next unread' }) as HTMLButtonElement).disabled).toBe(false));
   await user.click(screen.getByRole('button', { name: 'Next unread' }));
-  expect(location.search).toContain('thread=t-7');
+  expect(parseRoute(location.search)).toEqual({ review: 'r-1', file: 'src/a.ts', side: 'new', thread: 't-7' });
   await waitFor(() => expect(net.calls.filter((c) => c.method === 'POST').map((c) => c.body)).toEqual([{ threadId: 't-7' }]));
 });
 
@@ -149,7 +152,7 @@ test('the Outdated tab shows each thread\'s location link', async () => {
   const files = [fileState({ threads: { open: 0, resolved: 0, outdated: 1 } })];
   render(<ReviewProvider value={ctxValue({ files, outdatedThreads: [t], fileDiff: { file: undefined } as never })}><ThreadPanel /></ReviewProvider>);
   await userEvent.setup().click(screen.getByRole('tab', { name: /^Outdated/ }));
-  expect(screen.getByRole('button', { name: 'src/a.ts:3' })).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'src/a.ts', exact: true })).toBeTruthy();
 });
 
 // Invariant: Focus on a thread the comparison does not place only focuses it: its anchor's side means the base there,

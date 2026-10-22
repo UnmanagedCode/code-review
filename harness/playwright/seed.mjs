@@ -61,6 +61,9 @@ export async function seed() {
     const long6 = `r6 ${'a long line that has to wrap in the split view '.repeat(5)}`;
     wt.commit({ 'a.js': editLines({ 1: 'r1', 2: 'r2', 3: 'rewritten3', 4: 'rewritten4', 5: 'r5', 6: long6, 7: 'r7', 8: 'changed8', 19: 'changed19' }) }, 'third');
     await call('POST', `reviews/${id}/refresh`);
+    // Two current-round ranges that touch at line 7 (separate rail lanes); the first spans the wrapping line 6.
+    await call('POST', `reviews/${id}/threads`, { anchor: { file: 'a.js', side: 'new', startLine: 5, endLine: 7 }, kind: 'suggestion', body: 'Split the long line into a list.' });
+    await mcp('annotate', { review: id, kind: 'question', body: 'Does r7 still need changed8 after it?', file: 'a.js', side: 'new', startLine: 7, endLine: 9 }, rev);
     const diff = await call('GET', `reviews/${id}/diff?file=a.js`);
     const [h1, h2] = diff.files[0].hunks;
     await call('PUT', `reviews/${id}/hunks/${h1.id}/verdict`, { verdict: 'accepted' });

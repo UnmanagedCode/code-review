@@ -2,6 +2,7 @@ import { useEffect, useRef, type ReactNode } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { rangeLabel } from '@/lib/ranges';
 import { formatLines, navigate, useRoute, type Route } from '@/lib/route';
 import type { Thread } from '@/lib/types';
 import { cn } from '@/lib/utils';
@@ -13,17 +14,17 @@ import { MessageBody } from './MessageBody';
 import { ReplyBox } from './ReplyBox';
 import { ResolveControls } from './ResolveControls';
 
-const place = (t: Thread) => `L${formatLines(t.anchor.startLine, t.anchor.endLine).replace('-', '–L')} (${t.anchor.side})`;
-
 /**
  * The route that shows `t` in place. An outdated thread's anchor is its last located one, so round `anchor.round` still holds
  * it and it went outdated in the next: that comparison puts it on the left at its old lines. A base-side anchor has no place
- * in a comparison, so it opens that round's own view. `commit` is cleared because it beats `compare`.
+ * in a comparison, so it opens that round's own view. `commit` is cleared because it beats `compare`. A live thread gets no
+ * `lines=` (its range rail marks it; the wash is for citations) and a stale one is cleared; an outdated thread keeps
+ * `lines=`, which the read-only excerpt needs when its file is not in that comparison.
  */
 const at = (t: Thread): Route => {
   const { file, side, startLine, endLine, round } = t.anchor;
+  if (t.status !== 'outdated') return { file, side, lines: undefined, thread: t.id };
   const lines = formatLines(startLine, endLine);
-  if (t.status !== 'outdated') return { file, side, lines, thread: t.id };
   if (side === 'old') return { round: String(round), compare: undefined, commit: undefined, file, side, lines, thread: t.id };
   return { compare: `${round}..${round + 1}`, round: undefined, commit: undefined, file, side: 'old', lines, thread: t.id };
 };
@@ -47,6 +48,8 @@ export function ThreadCard({ thread, dropped = false, showLocation = false, unpl
     if (outdated && thread.unread > 0) void actions.markRead(thread.id); // this card unmounts before the focus effect can
     navigate(at(thread));
   };
+  // A comparison note names each copy's lines per round; an outdated card's "was …" line names its last range.
+  const range = !outdated && !dropped && !compare && rangeLabel(thread.anchor);
   return (
     <article
       ref={ref}
@@ -59,17 +62,17 @@ export function ThreadCard({ thread, dropped = false, showLocation = false, unpl
         {thread.disposition && <Badge variant="success">{thread.disposition}</Badge>}
         {thread.anchor.drifted && <Badge variant="info" title="Found again by its surrounding context">re-anchored by context</Badge>}
         {thread.unread > 0 && <Badge variant="default">{thread.unread} unread</Badge>}
-        {showLocation && !dropped && (
+        {showLocation && !dropped ? (
           <Button variant="link" size="sm" className="h-auto p-0 font-mono text-xs"
             onClick={jump}>
-            {thread.anchor.file}:{thread.anchor.startLine}
+            {thread.anchor.file}{range && ` · ${range}`}
           </Button>
-        )}
+        ) : range && <span className="font-mono text-xs text-muted-foreground">{range}</span>}
         {!dropped && !focused && <Button variant="ghost" size="sm" className="ml-auto h-6 px-2 text-xs" onClick={() => (!unplaced && (outdated || thread.anchor.file !== route.file) ? jump() : navigate({ thread: thread.id }))}>Focus</Button>}
       </header>
       {note}
       {dropped && <p className="text-xs text-muted-foreground">dropped: its lines changed</p>}
-      {outdated && <p className="text-xs text-muted-foreground">outdated · was {place(thread)} at round {thread.anchor.round}</p>}
+      {outdated && <p className="text-xs text-muted-foreground">outdated · was {rangeLabel(thread.anchor)} at round {thread.anchor.round}</p>}
       {thread.resolveProposed && thread.status === 'open' && (
         <Alert variant="info"><AlertDescription>An agent proposes resolving this thread.</AlertDescription></Alert>
       )}

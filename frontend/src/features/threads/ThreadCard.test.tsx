@@ -172,12 +172,13 @@ test('outside a comparison a citation link adds no round', async () => {
 
 const anchorAt = (over: Partial<ReturnType<typeof thread>['anchor']>) => ({ ...thread().anchor, ...over });
 
-// Invariant: Focus on a thread of another file opens that file at the thread, dropping the old file's side and lines.
+// Invariant: Focus on a thread of another file opens that file at the thread, dropping the old file's side and lines
+// (no `lines=` of its own: its range rail marks it).
 test('Focus on a thread in another file opens that file at the thread', async () => {
   history.replaceState(null, '', '?review=r-1&file=src%2Fb.ts&lines=9&side=old');
   renderInReview(<ThreadCard thread={thread({ anchor: anchorAt({ startLine: 3, endLine: 4 }) })} />);
   await userEvent.setup().click(screen.getByRole('button', { name: 'Focus' }));
-  expect(parseRoute(location.search)).toEqual({ review: 'r-1', file: 'src/a.ts', side: 'new', lines: '3-4', thread: 't-1' });
+  expect(parseRoute(location.search)).toEqual({ review: 'r-1', file: 'src/a.ts', side: 'new', thread: 't-1' });
 });
 
 // Invariant: Focus within the open file only marks the thread focused; the file position is left alone.
@@ -190,9 +191,10 @@ test('Focus on a thread in the open file only adds the thread to the route', asy
 
 const outdatedAt = (side: 'old' | 'new') => thread({ status: 'outdated', anchor: anchorAt({ side, startLine: 10, endLine: 14, round: 2 }) });
 
-// Invariant: an outdated thread's place is the comparison of its last located round with the next, at its old lines;
+// Invariant: an outdated thread's place is the comparison of its last located round with the next, at its old lines
+// (`lines=` stays: the excerpt fallback reads it);
 // commit= and round= are cleared because commit beats compare.
-test.each(['src/a.ts:10', 'Focus'])('%s on an outdated thread opens comparison R..R+1 at its old lines', async (name) => {
+test.each(['src/a.ts', 'Focus'])('%s on an outdated thread opens comparison R..R+1 at its old lines', async (name) => {
   history.replaceState(null, '', '?review=r-1&round=1&commit=abc');
   renderInReview(<ThreadCard thread={outdatedAt('new')} showLocation />);
   await userEvent.setup().click(screen.getByRole('button', { name }));
@@ -203,6 +205,44 @@ test.each(['src/a.ts:10', 'Focus'])('%s on an outdated thread opens comparison R
 test('an outdated base-side thread opens its round view', async () => {
   history.replaceState(null, '', '?review=r-1&compare=1..3&commit=abc');
   renderInReview(<ThreadCard thread={outdatedAt('old')} showLocation />);
-  await userEvent.setup().click(screen.getByRole('button', { name: 'src/a.ts:10' }));
+  await userEvent.setup().click(screen.getByRole('button', { name: 'src/a.ts' }));
   expect(parseRoute(location.search)).toEqual({ review: 'r-1', round: '2', file: 'src/a.ts', side: 'old', lines: '10-14', thread: 't-1' });
+});
+
+const ranged = (over: Partial<ReturnType<typeof thread>> = {}) => thread({ ...over, anchor: { ...thread().anchor, startLine: 3, endLine: 5 } });
+
+// Invariant: a live card names the lines it is anchored to, with their side.
+test('a live card names its range', () => {
+  renderInReview(<ThreadCard thread={ranged()} />);
+  expect(screen.getByText('L3–L5 (new)')).toBeTruthy();
+});
+
+// Invariant: with a location link the link itself carries the range, so the card names it once.
+test('the location link names the file and the range, with no second label', () => {
+  renderInReview(<ThreadCard thread={ranged()} showLocation />);
+  expect(screen.getByRole('button', { name: 'src/a.ts · L3–L5 (new)' })).toBeTruthy();
+  expect(screen.queryByText('L3–L5 (new)')).toBeNull();
+});
+
+// Invariant: a thread's location link focuses the thread and sets no `lines=`, clearing a stale citation target, so
+// no row wash is painted for a thread (its range is marked in the gutter).
+test('the location link focuses the thread without a lines target', async () => {
+  history.replaceState(null, '', '?review=r-1&file=b.ts&lines=9');
+  renderInReview(<ThreadCard thread={ranged()} showLocation />);
+  await userEvent.setup().click(screen.getByRole('button', { name: 'src/a.ts · L3–L5 (new)' }));
+  expect(parseRoute(location.search)).toEqual({ review: 'r-1', file: 'src/a.ts', side: 'new', thread: 't-1' });
+});
+
+// Invariant: an outdated card names its last range only in its "was …" line, never as a live range.
+test('an outdated card shows no live range label', () => {
+  renderInReview(<ThreadCard thread={ranged({ status: 'outdated' })} />);
+  expect(screen.getByText('outdated · was L3–L5 (new) at round 1')).toBeTruthy();
+  expect(screen.queryByText('L3–L5 (new)')).toBeNull();
+});
+
+// Invariant: in a comparison the side is a round, so the card leaves naming the range to the comparison note.
+test('in a comparison the card shows no side label', () => {
+  renderInReview(<ThreadCard thread={ranged()} note={<p>round 2 L3–L5</p>} />, { compare: { from: 1, to: 2 }, readOnly: true });
+  expect(screen.queryByText('L3–L5 (new)')).toBeNull();
+  expect(screen.getByText('round 2 L3–L5')).toBeTruthy();
 });

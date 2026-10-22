@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import { hunk, lines } from '@/test/fixtures';
-import { buildRows, collapseRows, gapHolding, gapSpans } from './diffRows';
+import { buildRows, collapseRows, gapNeeds, gapSpans } from './diffRows';
 
 // Hunk 1 replaces old line 12 by new lines 12–13 (so later lines shift +1); hunk 2 sits further down.
 const h1 = hunk({ id: 'a', oldStart: 11, oldLines: 3, newStart: 11, newLines: 4, lines: lines('c1 d2 a2 a3 c4').map((l, i) => ({ ...l, old: l.old == null ? null : 11 + (i > 2 ? i - 2 : i) , new: l.new == null ? null : 11 + i })) });
@@ -46,9 +46,16 @@ test('a deleted file expands on the old side', () => {
   expect(gapSpans([del], 8, 'old').map((s) => [s.gapKey, s.from, s.to])).toEqual([['pre', 1, 4], ['after:d', 7, 8]]);
 });
 
-test('gapHolding finds the span around a line and its distance from each edge', () => {
-  expect(gapHolding([h1, h2], 50, 'new', 20)).toMatchObject({ gapKey: 'after:a', fromTop: 6, fromBottom: 12 });
-  expect(gapHolding([h1, h2], 50, 'new', 12)).toBeNull();
+// Invariant: revealing a thread opens each gap its range overlaps far enough to show the whole overlap, from the edge
+// that needs fewer lines; a single line (start = end) opens exactly as far as its distance from the nearer edge.
+test('gapNeeds opens every gap a range overlaps, from the nearer edge, far enough for the whole range', () => {
+  // Gaps: pre new 1–10; after:a new 15–31 (old = new − 1); after:b new 34–50.
+  expect(gapNeeds([h1, h2], 50, 'new', 20, 20)).toEqual([{ gapKey: 'after:a', top: 6 }]);
+  expect(gapNeeds([h1, h2], 50, 'new', 12, 13)).toEqual([]);
+  expect(gapNeeds([h1, h2], 50, 'new', 25, 29)).toEqual([{ gapKey: 'after:a', bottom: 7 }]);
+  expect(gapNeeds([h1, h2], 50, 'new', 8, 16)).toEqual([{ gapKey: 'pre', bottom: 3 }, { gapKey: 'after:a', top: 2 }]);
+  // Old 20–21 is new 21–22 after h1's shift.
+  expect(gapNeeds([h1, h2], 50, 'old', 20, 21)).toEqual([{ gapKey: 'after:a', top: 8 }]);
 });
 
 describe('collapseRows', () => {

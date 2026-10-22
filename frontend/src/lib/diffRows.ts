@@ -74,15 +74,21 @@ export function buildRows({ hunks, expansions, texts, total, side = 'new' }: Bui
   return rows;
 }
 
-/** The gap row (or expanded span) holding line `n` on `side`, for auto-expanding around a thread. */
-export function gapHolding(hunks: Hunk[], total: number | null, side: Side, n: number, fileSide: Side = 'new'): (GapSpan & { size: number; fromTop: number; fromBottom: number }) | null {
+/**
+ * How far to open each gap that lines `start`–`end` on `side` overlap, so the whole overlap shows: from the top or the
+ * bottom, whichever opens fewer lines. A single line is `start === end`.
+ */
+export function gapNeeds(hunks: Hunk[], total: number | null, side: Side, start: number, end: number, fileSide: Side = 'new'): ({ gapKey: string; top: number } | { gapKey: string; bottom: number })[] {
   // Anchors on the old side of a modified file are always inside hunks (deleted lines) or shifted context.
-  const spans = gapSpans(hunks, total, fileSide);
-  for (const s of spans) {
-    const m = side === fileSide ? n : n - s.offset;
-    if (m >= s.from && m <= s.to) return { ...s, size: s.to - s.from + 1, fromTop: m - s.from + 1, fromBottom: s.to - m + 1 };
-  }
-  return null;
+  return gapSpans(hunks, total, fileSide).flatMap((s) => {
+    const shift = side === fileSide ? 0 : s.offset;
+    const lo = Math.max(start - shift, s.from);
+    const hi = Math.min(end - shift, s.to);
+    if (lo > hi) return [];
+    const top = hi - s.from + 1;
+    const bottom = s.to - lo + 1;
+    return [top <= bottom ? { gapKey: s.gapKey, top } : { gapKey: s.gapKey, bottom }];
+  });
 }
 
 /** The rows with each collapsed hunk reduced to its header (marked `collapsed`): its own lines are dropped, context after it stays. */

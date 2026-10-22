@@ -19,7 +19,8 @@ beforeEach(() => {
 
 const rowWith = (text: string) => screen.getAllByRole('row').find((r) => within(r).queryByText(text));
 const isSplit = () => !!within(rowWith('d3')!).queryByText('a3');
-const rowOf = (name: string) => screen.getByRole('gridcell', { name }).closest('[role="row"]')!;
+// A cell's name also lists the thread ranges it sits in.
+const rowOf = (name: string) => screen.getByRole('gridcell', { name: new RegExp(`^${name}( ·|$)`) }).closest('[role="row"]')!;
 const gutterNames = () => screen.queryAllByRole('gridcell', { name: /^(old|new) line \d+$/ }).map((c) => c.getAttribute('aria-label')).sort();
 const show = (ui = <FileDiff />, file = diffFile(), over = {}, total: number | null = null, width = 1000) => {
   const r = renderDiff(ui, file, over, total);

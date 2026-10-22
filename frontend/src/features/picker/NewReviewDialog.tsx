@@ -94,7 +94,7 @@ export function NewReviewDialog({ project, worktree, onClose }: { project: strin
           <Label htmlFor="nr-recipient">Recipient session</Label>
           <NativeSelect className="w-full" id="nr-recipient" value={recipient} onChange={(e) => setRecipient(e.target.value)}>
             <option value="">Default</option>
-            {sessions.data?.sessions.filter((s) => s.live).map((s) => <option key={s.sessionId} value={s.sessionId}>{s.title || s.sessionId}</option>)}
+            {sessions.data?.sessions.filter((s) => s.live).map((s) => <option key={s.sessionId} value={s.sessionId}>{s.label || s.sessionId}</option>)}
           </NativeSelect>
         </div>
         <DialogFooter>

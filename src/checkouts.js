@@ -43,13 +43,13 @@ export async function forkPoints(checkout) {
   return out;
 }
 
-/** Every cc session; `attached` = live and on the given checkout. */
+/** Every cc session; `attached` = live and on the given checkout. `label` is cc's sidebar label; a cc without `displayLabel` falls back to its `title`. */
 export async function sessions({ project, worktree }) {
   return (await cc.instances()).map((i) => {
     const wt = i.worktree?.worktreeName ?? null;
     const live = !DEAD.has(i.status);
     return {
-      sessionId: i.sessionId, project: i.project, worktree: wt, title: i.title, status: i.status, live,
+      sessionId: i.sessionId, project: i.project, worktree: wt, label: i.displayLabel || i.title || null, status: i.status, live,
       conductor: isConductorProject(i.project), conducted: Boolean(i.conducted),
       attached: live && i.project === project && wt === (worktree ?? null),
     };

@@ -59,8 +59,8 @@ test('deleting a review leaves every review-scoped key behind', async () => {
   await waitFor(() => expect(parseRoute(location.search)).toEqual({ project: 'app' }));
 });
 
-test('a review that names an author shows the author’s session title; one without shows no Author text', () => {
-  const worker = { sessionId: 's-w', project: 'app', worktree: null, title: 'Worker', status: 'idle', live: true, conductor: false, conducted: false, attached: false };
+test('a review that names an author shows the author’s session label; one without shows no Author text', () => {
+  const worker = { sessionId: 's-w', project: 'app', worktree: null, label: 'Worker', status: 'idle', live: true, conductor: false, conducted: false, attached: false };
   const { unmount } = renderInReview(<ReviewHeader />, { review: review({ author: 's-w' }), sessions: [worker] });
   expect(screen.getByText('Author: Worker')).toBeTruthy();
   unmount();

@@ -26,7 +26,7 @@ export function ReviewHeader() {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const round = rounds.find((r) => r.n === review.round);
   const recipient = sessions.find((s) => s.sessionId === review.recipient);
-  const recipientLabel = recipient?.title || review.recipient || 'none';
+  const recipientLabel = recipient?.label || review.recipient || 'none';
   const author = review.author ? sessions.find((s) => s.sessionId === review.author) : undefined;
   const bridge = getBridge();
   const canOpenAgent = !!bridge && !!review.recipient;
@@ -55,7 +55,7 @@ export function ReviewHeader() {
             Recipient: {recipientLabel}
           </button>
         ) : <span className="px-2 py-1 text-xs">Recipient: {recipientLabel}</span>}
-        {review.author && <span className="text-xs text-muted-foreground">Author: {author?.title || review.author}</span>}
+        {review.author && <span className="text-xs text-muted-foreground">Author: {author?.label || review.author}</span>}
         <span className="flex-1" />
         {(writable || canOpenAgent) && (
           <DropdownMenu>

@@ -45,8 +45,8 @@ export async function world({ system, remoteId } = {}) {
       };
       return wt;
     },
-    session(sessionId, { worktree = null, project = 'app', status = 'idle' } = {}) {
-      cc.state.instances.push({ sessionId, project, status, title: sessionId, conducted: false, worktree: worktree ? { worktreeName: worktree } : null });
+    session(sessionId, { worktree = null, project = 'app', status = 'idle', title = sessionId, firstPrompt = null } = {}) {
+      cc.state.instances.push({ sessionId, project, status, title, firstPrompt, conducted: false, worktree: worktree ? { worktreeName: worktree } : null });
     },
     cleanup() {
       cc.close();

@@ -60,7 +60,7 @@ export interface ReviewSummary {
   snapshotError?: 'CHECKOUT_GONE' | 'SNAPSHOT_GONE' | 'DIFF_TOO_LARGE' | 'SYSTEM_UNREACHABLE' | 'GIT_TIMEOUT' | 'GIT_UNAVAILABLE' | 'TEMP_UNUSABLE';
 }
 
-export interface Session { sessionId: string; project: string; worktree: string | null; title: string; status: string; live: boolean; conductor: boolean; conducted: boolean; attached: boolean }
+export interface Session { sessionId: string; project: string; worktree: string | null; label: string | null; status: string; live: boolean; conductor: boolean; conducted: boolean; attached: boolean }
 export interface Commit { sha: string; short: string; author: string; date: string; subject: string; merge: boolean }
 export interface ForkPoint { ref: string; label: string; forkSha: string }
 export interface CheckoutInfo { project: string; worktree: string | null; path: string; branch: string | null; headSha: string | null; dirty: boolean; exists: boolean }

@@ -108,12 +108,16 @@ function run(state, spec, req, res) {
 /**
  * A fake cc REST host. `fixture` is mutable: {projects, worktrees:{project:[rows]}, instances, systems, execEnv, execHook}.
  * `mode` is 'ok' | 'error' | 'hang'. Sets CONDUCTOR_URL; `close()` restores it.
+ * `GET /api/instances` fills each row's `displayLabel` the row doesn't set with a stand-in, `title || firstPrompt || <id prefix>…`.
+ * That is not cc's rule (cc gives `(new session)`, never the id prefix, for a session with no title or prompt):
+ * a test that asserts a label sets `displayLabel` on its row. `displayLabel: false` sends rows without the field,
+ * as a cc that does not serve it. Rows are copied, so `instances` stays as the test wrote it.
  * `POST /api/exec` runs the command for real on this machine. `systems` maps a non-local system id to
  * `{root, dir, remoteId?}`: argv elements, cwd and env values under the virtual `root` run under `dir`.
  * Every exec body lands in `execCalls`; `execHook(body)` may answer instead: `{status, body}`, `{status, raw}` (a non-JSON body) or `'hang'`.
  */
 export async function fakeCc(fixture = {}) {
-  const state = { projects: [], worktrees: {}, instances: [], systems: {}, execEnv: {}, execHook: null, execCalls: [], mode: 'ok', ...fixture };
+  const state = { projects: [], worktrees: {}, instances: [], systems: {}, execEnv: {}, execHook: null, execCalls: [], mode: 'ok', displayLabel: true, ...fixture };
   const sockets = new Set();
   const server = http.createServer((req, res) => {
     if (state.mode === 'hang') return;
@@ -141,7 +145,11 @@ export async function fakeCc(fixture = {}) {
       return;
     }
     if (url.pathname === '/api/projects') return send(state.projects);
-    if (url.pathname === '/api/instances') return send(state.instances);
+    if (url.pathname === '/api/instances') {
+      return send(state.instances.map(({ displayLabel, ...i }) => (state.displayLabel
+        ? { ...i, displayLabel: displayLabel ?? (i.title || i.firstPrompt || `${i.sessionId.slice(0, 8)}…`) }
+        : i)));
+    }
     const m = url.pathname.match(/^\/api\/projects\/([^/]+)\/worktrees$/);
     if (m) return send(state.worktrees[decodeURIComponent(m[1])] ?? []);
     res.statusCode = 404; res.end('{}');

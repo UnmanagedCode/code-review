@@ -19,7 +19,7 @@ export function RecipientPicker({ onClose }: { onClose: () => void }) {
         <label className="sr-only" htmlFor="rp-session">Session</label>
         <NativeSelect className="w-full" id="rp-session" value={value} onChange={(e) => setValue(e.target.value)}>
           <option value="">No recipient</option>
-          {sessions.filter((s) => s.live || s.sessionId === review.recipient).map((s) => <option key={s.sessionId} value={s.sessionId}>{s.title || s.sessionId}{s.attached ? ' (attached)' : ''}</option>)}
+          {sessions.filter((s) => s.live || s.sessionId === review.recipient).map((s) => <option key={s.sessionId} value={s.sessionId}>{s.label || s.sessionId}{s.attached ? ' (attached)' : ''}</option>)}
         </NativeSelect>
         <DialogFooter>
           <Button variant="ghost" onClick={onClose}>Cancel</Button>

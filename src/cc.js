@@ -25,5 +25,5 @@ async function get(route) {
 export const projects = () => get('/api/projects');
 /** Rows {worktreeName, worktreePath, branch, baseBranch, baseSha, baseWorktree?, parentPath} */
 export const worktrees = (project) => get(`/api/projects/${encodeURIComponent(project)}/worktrees`);
-/** Rows {sessionId, project, status, cwd, title, conducted, worktree} */
+/** Rows {sessionId, project, status, cwd, title, displayLabel?, conducted, worktree} */
 export const instances = () => get('/api/instances');

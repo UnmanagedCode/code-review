@@ -115,7 +115,7 @@ function ReviewThreadPanel() {
                 : allThreads.length ? list(allThreads, { showLocation: true }) : <Empty title="No threads" />}
           </TabsContent>
           <TabsContent value="outdated">
-            {ctx.outdatedThreads.length ? list(ctx.outdatedThreads, { showLocation: false }) : <Empty title="No outdated threads" />}
+            {ctx.outdatedThreads.length ? list(ctx.outdatedThreads, { showLocation: true }) : <Empty title="No outdated threads" />}
           </TabsContent>
           <TabsContent value="dropped">{list(dropped, { dropped: true })}</TabsContent>
         </div>

@@ -141,3 +141,12 @@ test('a loaded comparison whose reload failed still lists its threads in every t
     expect(within(panel).getAllByRole('article'), String(tab)).toHaveLength(n);
   }
 });
+
+// Invariant: the Outdated tab lists each thread with its location link (it opens the thread's comparison).
+test('the Outdated tab shows each thread\'s location link', async () => {
+  const t = thread({ status: 'outdated' });
+  const files = [fileState({ threads: { open: 0, resolved: 0, outdated: 1 } })];
+  render(<ReviewProvider value={ctxValue({ files, outdatedThreads: [t], fileDiff: { file: undefined } as never })}><ThreadPanel /></ReviewProvider>);
+  await userEvent.setup().click(screen.getByRole('tab', { name: /^Outdated/ }));
+  expect(screen.getByRole('button', { name: 'src/a.ts:3' })).toBeTruthy();
+});

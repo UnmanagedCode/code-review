@@ -318,6 +318,28 @@ try {
     await shot('11-md-sheet');
     assert.deepEqual(errors, []);
   }, { headless: true, viewport: { width: 1100, height: 800 } }); // md–xl: a 320px file column leaves a split-wide pane
+  // 12: an outdated thread's link opens its comparison; Focus on a thread of another file opens that file.
+  await withPage(async (page) => {
+    const errors = watchErrors(page);
+    const shot = shotter(page);
+    await page.goto(q({ review: range, file: 'a.js' }));
+    await page.getByRole('tab', { name: /^Outdated/ }).click();
+    await shot('12a-outdated-link');
+    await page.getByRole('button', { name: /^a\.js:\d+$/ }).click();
+    await page.getByText('Exit comparison').waitFor();
+    assert.match(page.url(), /compare=1\.\.2/, 'the outdated thread opens its round and the next');
+    await page.locator('article[aria-label$="thread"]').first().waitFor();
+    await shot('12b-outdated-comparison');
+    await page.getByRole('button', { name: 'Exit comparison' }).click();
+    await page.goto(q({ review: range, file: 'c.js' }));
+    await page.getByRole('tab', { name: /^All/ }).click();
+    const card = page.getByRole('article').filter({ has: page.getByRole('button', { name: /^a\.js:\d+$/ }) }).first();
+    await card.getByRole('button', { name: 'Focus' }).click();
+    await page.getByRole('grid', { name: 'Changes in a.js' }).waitFor();
+    assert.match(page.url(), /file=a\.js/);
+    await shot('12c-cross-file-focus');
+    assert.deepEqual(errors, []);
+  }, { headless: true, viewport: { width: 1400, height: 900 } });
   console.log('golden path ok');
 } finally {
   await world.close();

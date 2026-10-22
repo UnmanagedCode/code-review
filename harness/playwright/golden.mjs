@@ -109,6 +109,15 @@ try {
     await page.getByText(/Round 2 · submitted/).waitFor();
     await shot('3-submitted');
 
+    // 3b. The recipient picker names the untitled s-rev by cc's label; choosing it puts that label in the header.
+    await page.getByRole('button', { name: /^Recipient:/ }).click();
+    const recipientSelect = page.getByRole('dialog').getByLabel('Session');
+    await recipientSelect.getByRole('option', { name: 'Review the feature branch' }).waitFor({ state: 'attached' });
+    await recipientSelect.selectOption({ label: 'Review the feature branch' });
+    await page.getByRole('button', { name: 'Save' }).click();
+    await page.getByRole('button', { name: 'Recipient: Review the feature branch' }).waitFor();
+    await shot('3b-recipient-untitled');
+
     // 5. Pick round 1: read-only, and the question that is outdated now sits under its round-1 lines again.
     // Back to the current round, it is gone from the diff.
     await page.getByRole('combobox', { name: 'Round' }).selectOption('1');

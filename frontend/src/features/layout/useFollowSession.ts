@@ -44,7 +44,7 @@ export function useFollowSession(route: Route) {
 
   const followed = known ? sessions.data?.sessions.find((s) => s.sessionId === session!.sessionId) : undefined;
   return {
-    followingTitle: known && session!.project === routeProject && (session!.worktree ?? undefined) === route.worktree ? (followed?.title || session!.sessionId.slice(0, 8)) : undefined,
+    followingTitle: known && session!.project === routeProject && (session!.worktree ?? undefined) === route.worktree ? (followed?.label || session!.sessionId.slice(0, 8)) : undefined,
     unfollowable: !!session && !!names && !known,
   };
 }

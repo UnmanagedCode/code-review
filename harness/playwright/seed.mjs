@@ -22,7 +22,7 @@ export async function seed() {
     }, 'first');
     wt.commit({ 'a.js': editLines({ 3: 'changed3', 4: 'changed4', 8: 'changed8', 19: 'changed19' }) }, 'second');
     w.session('s-author', { worktree: 'feature' });
-    w.session('s-rev', { worktree: null });
+    w.session('s-rev', { worktree: null, title: null, firstPrompt: 'Review the feature branch' }); // untitled: the fake cc labels it by its prompt
     w.session('s-cond', { project: '.conduct' });
 
     srv = await bootServer({ cwd: projectRoot, entry: 'server.js', silent: true, env: { CODE_REVIEW_STORE: w.store.dir, CONDUCTOR_URL: process.env.CONDUCTOR_URL } });

@@ -40,7 +40,7 @@ REST under `/api` (JSON), an SSE stream, and the cc MCP endpoint. Behaviour behi
   - **Unplaced copy:** `+ reason`, anchor unchanged. `base-side` (a `side:'old'` anchor has no place between two heads), `unchanged-file` (no comparison file holds it: from-copies match `oldPath ?? path` and skip `added` files, to-copies match `path` and skip `deleted` ones), `no-lines` (binary or too large).
 - **`anchor.drifted`:** true only if the latest re-anchoring found the thread by surrounding context; finding the exact lines again clears it.
 - **Author:** `{kind:'human'}` or `{kind:'session', sessionId, role: author|reviewer|conductor}`.
-- **Session:** `sessionId, project, worktree, title, status, live, conductor, conducted, attached`.
+- **Session:** `sessionId, project, worktree, label, status, live, conductor, conducted, attached`. `label` is cc's `displayLabel`, else its `title`, else `null`; the UI then shows the session id.
 
 ## Endpoints
 
@@ -112,7 +112,7 @@ All through `CONDUCTOR_URL`. The GET routes time out after `CODE_REVIEW_CC_TIMEO
 |---|---|
 | `GET /api/projects` | `name`, `path`, `system` (absent = `local`), `remoteId` (absent = the provider's default target) |
 | `GET /api/projects/:name/worktrees` | `worktreeName`, `worktreePath`, `branch`, `baseBranch`, `baseSha`, `baseWorktree?` (absent = forked from the main checkout) |
-| `GET /api/instances` | `sessionId`, `project`, `status`, `title`, `conducted`, `worktree.worktreeName` |
+| `GET /api/instances` | `sessionId`, `project`, `status`, `title`, `displayLabel` (may be absent: a cc without it), `conducted`, `worktree.worktreeName` |
 | `POST /api/exec` | every git command and checkout read (`src/exec.js`). Sent: `system`, `remoteId` (omitted when `null`), `cwd: "/"`, `argv`, `env`, `stdinB64?`, `encoding: "base64"`, `timeoutMs`, `maxOutputBytes`. Read: `exitCode`, `stdout`, `stderr`; on a refusal `code`, `error`, `errno` |
 
 **`POST /api/exec` refusals → code-review** (mapped in `exec` in `src/exec.js`, the only place cc's exec codes are read):

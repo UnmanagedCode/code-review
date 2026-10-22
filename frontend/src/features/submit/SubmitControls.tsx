@@ -17,7 +17,7 @@ export function SubmitControls({ onNoRecipient }: { onNoRecipient: () => void })
   const ctx = useReviewCtx();
   const { review } = ctx;
   const recipient = ctx.sessions.find((s) => s.sessionId === review.recipient);
-  const sub = useSubmission({ reviewId: ctx.id, recipientLabel: recipient?.title || review.recipient || 'the session', onRecorded: ctx.reload, onNoRecipient });
+  const sub = useSubmission({ reviewId: ctx.id, recipientLabel: recipient?.label || review.recipient || 'the session', onRecorded: ctx.reload, onNoRecipient });
   const textRef = useRef<HTMLTextAreaElement>(null);
   const uncommitted = review.kind === 'uncommitted';
   const busy = sub.state.phase === 'composing' || sub.state.phase === 'sending';

@@ -9,6 +9,7 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import * as ep from '@/lib/endpoints';
 import { errorText } from '@/lib/refusals';
 import { navigate, REVIEW_SCOPED } from '@/lib/route';
+import { sessionOptions } from '@/lib/sessionOptions';
 import type { Kind } from '@/lib/types';
 import { useCheckout, useCheckoutCommits, useSessions } from '@/state/checkout';
 import { Empty, Spinner } from '@/features/common/States';
@@ -94,7 +95,7 @@ export function NewReviewDialog({ project, worktree, onClose }: { project: strin
           <Label htmlFor="nr-recipient">Recipient session</Label>
           <NativeSelect className="w-full" id="nr-recipient" value={recipient} onChange={(e) => setRecipient(e.target.value)}>
             <option value="">Default</option>
-            {sessions.data?.sessions.filter((s) => s.live).map((s) => <option key={s.sessionId} value={s.sessionId}>{s.title || s.sessionId}</option>)}
+            {sessionOptions(sessions.data?.sessions.filter((s) => s.live) ?? []).map(({ session: s, name }) => <option key={s.sessionId} value={s.sessionId}>{name}</option>)}
           </NativeSelect>
         </div>
         <DialogFooter>

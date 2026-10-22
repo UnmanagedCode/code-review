@@ -10,7 +10,7 @@ export function AuthorBadge({ author }: { author: Author }) {
   return (
     <span className="inline-flex items-center gap-1.5">
       <Badge variant={variant}>{author.role}</Badge>
-      <span className="text-xs text-muted-foreground">{session?.title || author.sessionId.slice(0, 8)}</span>
+      <span className="text-xs text-muted-foreground">{session?.label || author.sessionId.slice(0, 8)}</span>
     </span>
   );
 }

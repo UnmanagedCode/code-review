@@ -10,11 +10,11 @@ import { ThreadCard } from './ThreadCard';
 
 const patchBody = (net: ReturnType<typeof stubFetch>) => net.calls.find((c) => c.method === 'PATCH')?.body;
 
-test('author, reviewer and conductor badges come from the frozen author.role, with the session title', () => {
+test('author, reviewer and conductor badges come from the frozen author.role, with the session label', () => {
   const t = thread({ messages: [
     message({ id: 1, author: agent('s-a', 'author') }), message({ id: 2, author: agent('s-r', 'reviewer') }), message({ id: 3, author: agent('s-c', 'conductor') }),
   ] });
-  renderInReview(<ThreadCard thread={t} />, { sessions: [{ sessionId: 's-a', project: 'app', worktree: null, title: 'Builder', status: 'idle', live: true, conductor: false, conducted: false, attached: true }] });
+  renderInReview(<ThreadCard thread={t} />, { sessions: [{ sessionId: 's-a', project: 'app', worktree: null, label: 'Builder', status: 'idle', live: true, conductor: false, conducted: false, attached: true }] });
   for (const role of ['author', 'reviewer', 'conductor']) expect(screen.getAllByText(role).length).toBeGreaterThan(0);
   expect(screen.getByText('Builder')).toBeTruthy();
   expect(screen.getByText('s-r')).toBeTruthy();

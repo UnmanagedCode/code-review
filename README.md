@@ -48,6 +48,10 @@ npm run dev            # Vite dev server, /api proxied to PLUGIN_BACKEND (defaul
 
 The review store is `$CODE_REVIEW_STORE`, else `$PROJECTS_ROOT/.code-review`; without either the API answers 503 `STORE_UNCONFIGURED` and the page still loads. Standalone the page follows the OS light/dark scheme; the two host URLs 404 and log the only expected console errors.
 
+### Diagnostics
+
+Every `CONDUCTOR_UNAVAILABLE` (and every cc request that only succeeded after a retry) is appended as a JSON line to `<store>/logs/cc.log`: route, elapsed time, attempts, cause. Retry rules and settings: [docs/protocol.md](docs/protocol.md#cc-routes-consumed).
+
 ### Test
 
 ```bash

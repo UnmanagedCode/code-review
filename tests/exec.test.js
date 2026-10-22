@@ -212,6 +212,6 @@ test('no backend module spawns processes, and only the store touches the filesys
   for (const name of fs.readdirSync(dir)) {
     const src = fs.readFileSync(new URL(name, dir), 'utf8');
     assert.doesNotMatch(src, /node:child_process|from 'child_process'/, name);
-    if (name !== 'store.js') assert.doesNotMatch(src, /from 'node:fs'|from 'fs'|node:fs\/promises/, name);
+    if (!['store.js', 'opsLog.js'].includes(name)) assert.doesNotMatch(src, /from 'node:fs'|from 'fs'|node:fs\/promises/, name);
   }
 });

@@ -1,4 +1,6 @@
 import http from 'node:http';
+import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 
@@ -114,16 +116,24 @@ function run(state, spec, req, res) {
  * as a cc that does not serve it. Rows are copied, so `instances` stays as the test wrote it.
  * `POST /api/exec` runs the command for real on this machine. `systems` maps a non-local system id to
  * `{root, dir, remoteId?}`: argv elements, cwd and env values under the virtual `root` run under `dir`.
- * Every exec body lands in `execCalls`; `execHook(body)` may answer instead: `{status, body}`, `{status, raw}` (a non-JSON body) or `'hang'`.
+ * Every exec body lands in `execCalls`; `execHook(body)` may answer instead: `{status, body}`, `{status, raw}` (a non-JSON body), `'hang'` or `'reset'` (the connection is destroyed unanswered).
+ * `state.hits` lists every request as `"<METHOD> <pathname>"`, hang and error modes included.
+ * `state.resetNext` (a count, `Infinity` = always) makes GET routes destroy the connection unanswered while it is above 0, counting down;
+ * `state.delayMs` makes GET routes answer after that many milliseconds.
+ * Sets `CODE_REVIEW_CC_RETRY_MS` to 1 unless already set, so retries are instant, and, when `CODE_REVIEW_STORE` is unset,
+ * points it at a temp dir so the operator log never lands in a real store; `close()` restores both and removes only a dir it made.
  */
 export async function fakeCc(fixture = {}) {
-  const state = { projects: [], worktrees: {}, instances: [], conductorProjects: {}, systems: {}, execEnv: {}, execHook: null, execCalls: [], mode: 'ok', displayLabel: true, ...fixture };
+  const state = { projects: [], worktrees: {}, instances: [], conductorProjects: {}, systems: {}, execEnv: {}, execHook: null, execCalls: [], hits: [], resetNext: 0, delayMs: 0, mode: 'ok', displayLabel: true, ...fixture };
   const sockets = new Set();
   const server = http.createServer((req, res) => {
+    state.hits.push(`${req.method} ${new URL(req.url, 'http://x').pathname}`);
     if (state.mode === 'hang') return;
     if (state.mode === 'error') { res.statusCode = 500; return res.end('{}'); }
     const url = new URL(req.url, 'http://x');
-    const send = (body, status = 200) => { res.statusCode = status; res.setHeader('content-type', 'application/json'); res.end(JSON.stringify(body)); };
+    const reply = (body, status = 200) => { res.statusCode = status; res.setHeader('content-type', 'application/json'); res.end(JSON.stringify(body)); };
+    const send = (body, status = 200) => (req.method === 'GET' && state.delayMs ? setTimeout(reply, state.delayMs, body, status) : reply(body, status));
+    if (req.method === 'GET' && state.resetNext > 0) { state.resetNext -= 1; return req.socket.destroy(); }
     if (req.method === 'POST' && url.pathname === '/api/exec') {
       const chunks = [];
       req.on('data', (c) => chunks.push(c));
@@ -133,6 +143,7 @@ export async function fakeCc(fixture = {}) {
         state.execCalls.push(body);
         const hooked = state.execHook?.(body);
         if (hooked === 'hang') return;
+        if (hooked === 'reset') return req.socket.destroy();
         if (hooked?.raw !== undefined) { res.statusCode = hooked.status; return res.end(hooked.raw); }
         if (hooked) return send(hooked.body, hooked.status);
         try {
@@ -159,11 +170,21 @@ export async function fakeCc(fixture = {}) {
   server.on('connection', (s) => { sockets.add(s); s.on('close', () => sockets.delete(s)); });
   await new Promise((r) => server.listen(0, '127.0.0.1', r));
   const prev = process.env.CONDUCTOR_URL;
+  const prevRetry = process.env.CODE_REVIEW_CC_RETRY_MS;
+  const prevStore = process.env.CODE_REVIEW_STORE;
+  if (prevRetry === undefined) process.env.CODE_REVIEW_CC_RETRY_MS = '1';
+  const ownStore = prevStore === undefined ? fs.mkdtempSync(path.join(os.tmpdir(), 'cr-fakecc-')) : null;
+  if (ownStore) process.env.CODE_REVIEW_STORE = ownStore;
   process.env.CONDUCTOR_URL = `http://127.0.0.1:${server.address().port}`;
   return {
     state,
     close() {
       if (prev === undefined) delete process.env.CONDUCTOR_URL; else process.env.CONDUCTOR_URL = prev;
+      if (prevRetry === undefined) delete process.env.CODE_REVIEW_CC_RETRY_MS;
+      if (ownStore) {
+        if (process.env.CODE_REVIEW_STORE === ownStore) delete process.env.CODE_REVIEW_STORE;
+        fs.rmSync(ownStore, { recursive: true, force: true });
+      }
       for (const s of sockets) s.destroy();
       server.close();
     },

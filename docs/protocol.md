@@ -9,7 +9,7 @@ REST under `/api` (JSON), an SSE stream, and the cc MCP endpoint. Behaviour behi
 - **Limits:** a message or thread body is at most `MAX_BODY_CHARS` (20 000, `src/threads.js`) characters, else `413 BODY_TOO_LARGE`. The SSE feed has no client cap (the store's change emitter has no listener limit; listeners are removed on disconnect).
 - `worktree: ""` means the main checkout, like an omitted or `null` one, in `POST /reviews` and MCP `open_review`.
 - Source of truth for codes and statuses: `HTTP_STATUS` in `src/refusals.js`.
-- Env: `CODE_REVIEW_STORE` (store dir) else `$PROJECTS_ROOT/.code-review`; `CONDUCTOR_URL` (cc base URL, injected by cc); `CODE_REVIEW_CC_TIMEOUT_MS` (timeout of the cc GET routes, default 3000); `CODE_REVIEW_GIT_TIMEOUT_MS` (per-command timeout of `POST /api/exec`, default 120000, capped at cc's `EXEC_MAX_TIMEOUT_MS`); `PORT` (default 7400).
+- Env: `CODE_REVIEW_STORE` (store dir) else `$PROJECTS_ROOT/.code-review`; `CONDUCTOR_URL` (cc base URL, injected by cc); `CODE_REVIEW_CC_TIMEOUT_MS` (per-attempt timeout of the cc GET routes, default `DEFAULT_TIMEOUT_MS` in `src/cc.js`); `CODE_REVIEW_CC_RETRY_MS` (base of the wait between cc attempts, default 1000; the wait triples per further retry); `CODE_REVIEW_GIT_TIMEOUT_MS` (per-command timeout of `POST /api/exec`, default 120000, capped at cc's `EXEC_MAX_TIMEOUT_MS`); `PORT` (default 7400).
 
 ## Refusal codes
 
@@ -108,7 +108,14 @@ REST under `/api` (JSON), an SSE stream, and the cc MCP endpoint. Behaviour behi
 
 ## cc routes consumed
 
-All through `CONDUCTOR_URL`. The GET routes time out after `CODE_REVIEW_CC_TIMEOUT_MS`; any failure there is `CONDUCTOR_UNAVAILABLE`, except the spawn-history route's, which `GET /sessions/:sessionId/places` logs and degrades past.
+All through `CONDUCTOR_URL`. Each GET attempt times out after `CODE_REVIEW_CC_TIMEOUT_MS`; any failure there is `CONDUCTOR_UNAVAILABLE`, except the spawn-history route's, which `GET /sessions/:sessionId/places` logs and degrades past.
+
+**Retries** (`ccFetch` in `src/ccFetch.js`, at most `MAX_ATTEMPTS` requests, waiting `CODE_REVIEW_CC_RETRY_MS` × 3^(n-1) after attempt n):
+- A GET retries a connection failure (`ECONNREFUSED`, `ECONNRESET`, `EPIPE`, `UND_ERR_SOCKET`) and a timeout once; a second timeout is final.
+- Any HTTP answer is final, never retried: a non-2xx status, a non-JSON body.
+- `POST /api/exec` retries only connection failures, and only when the call passes `readOnly` (see `git.js`); never a timeout or an answer.
+
+**Operator log:** every `CONDUCTOR_UNAVAILABLE`, and each request that succeeded only after a retry (`outcome: "recovered"`), is a JSON line in `<store>/logs/cc.log` (`logPath` in `src/opsLog.js`) and on stderr. Fields: `at`, `code` or `outcome`, `route` (`<METHOD> <path>`), `elapsedMs`, `attempts`, `cause`, `reason`. The file rotates to `cc.log.1` past `LOG_MAX_BYTES`. A log write failure is reported on stderr and never changes the refusal.
 
 | Route | Fields used |
 |---|---|
@@ -122,7 +129,7 @@ All through `CONDUCTOR_URL`. The GET routes time out after `CODE_REVIEW_CC_TIMEO
 
 | cc answer | code-review |
 |---|---|
-| fetch fails (refused, reset, deadline `timeoutMs + min(10 s, timeoutMs)`) or a non-JSON body | `CONDUCTOR_UNAVAILABLE` |
+| fetch fails (refused, reset, deadline `timeoutMs + min(10 s, timeoutMs)`) or a non-JSON body | `CONDUCTOR_UNAVAILABLE` (a refused or reset connection is retried first, for read-only commands only, up to `MAX_ATTEMPTS`) |
 | 404 without a `code` (a cc that predates the route) | `CONDUCTOR_UNAVAILABLE`, reason naming `POST /api/exec` |
 | `SYSTEM_UNREACHABLE` `REMOTE_NOT_FOUND` `SYSTEM_NOT_REGISTERED` `SYSTEM_NO_PROVIDER` `SYSTEM_NO_REMOTES` `SYSTEMS_UNAVAILABLE` | `SYSTEM_UNREACHABLE` (reason carries cc's code and error) |
 | `EXEC_TIMEOUT` | `GIT_TIMEOUT` |

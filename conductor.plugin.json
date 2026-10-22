@@ -110,6 +110,14 @@
             "file": {
               "type": "string",
               "description": "Only threads on this file."
+            },
+            "owner": {
+              "type": "string",
+              "enum": [
+                "user",
+                "agents"
+              ],
+              "description": "Only threads the user, or an agent, opened."
             }
           },
           "required": [
@@ -220,7 +228,7 @@
       },
       {
         "name": "reply",
-        "description": "Reply on a thread. resolve:true closes a thread you opened; otherwise (and always for a finding) it proposes resolution to the human.",
+        "description": "Reply on a thread. resolve:true closes a non-finding thread you opened (a conductor: any thread an agent opened, a finding with `disposition`; never an outdated one); otherwise it proposes resolution to the human. The returned thread's `status` says which.",
         "inputSchema": {
           "type": "object",
           "properties": {
@@ -242,6 +250,14 @@
             "resolve": {
               "type": "boolean",
               "description": "Close or propose closing the thread."
+            },
+            "disposition": {
+              "type": "string",
+              "enum": [
+                "fixed",
+                "dismissed"
+              ],
+              "description": "Conductor resolving an agent's finding."
             }
           },
           "required": [

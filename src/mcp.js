@@ -30,9 +30,9 @@ const handlers = {
   },
 
   list_threads: async (a) => {
-    const res = await threads.listThreads(a.review, { status: a.status, file: a.file });
+    const res = await threads.listThreads(a.review, { status: a.status, file: a.file, owner: a.owner });
     if (!res.ok) return res;
-    const text = res.threads.length ? renderThreads(res.threads) : `no ${a.status ?? 'open'} threads`;
+    const text = res.threads.length ? renderThreads(res.threads) : `no ${a.status ?? 'open'} threads${a.owner ? ` opened by ${a.owner === 'user' ? 'the user' : 'agents'}` : ''}`;
     return { text, meta: { review: res.review, count: res.threads.length, counts: res.counts } };
   },
 
@@ -54,7 +54,7 @@ const handlers = {
     return threads.annotate(a.review, actor, { anchor, kind: a.kind, severity: a.severity, body: a.body });
   }),
 
-  reply: (a, caller) => attempt(async () => threads.reply(a.review, needCaller(caller), a.thread, { body: a.body, resolve: a.resolve === true })),
+  reply: (a, caller) => attempt(async () => threads.reply(a.review, needCaller(caller), a.thread, { body: a.body, resolve: a.resolve === true, disposition: a.disposition })),
 
   refresh_review: (a, caller) => attempt(async () => {
     needCaller(caller);

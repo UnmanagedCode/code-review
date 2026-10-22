@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { world, HUMAN, editLines } from './_world.js';
 import * as reviews from '../src/reviews.js';
+import * as threads from '../src/threads.js';
 import { handle, _toolNames } from '../src/mcp.js';
 
 const manifest = JSON.parse(fs.readFileSync(new URL('../conductor.plugin.json', import.meta.url), 'utf8'));
@@ -66,6 +67,21 @@ test('roles: on an uncommitted review even the recipient is a reviewer', async (
   const out = await result('open_review', { kind: 'uncommitted' }, { sessionId: 's-author', project: 'app' });
   const t = await result('annotate', { review: out.review.id, kind: 'finding', severity: 'nit', body: 'x', file: 'a.js', startLine: 2 }, { sessionId: 's-author', project: 'app' });
   assert.equal(t.thread.openedBy.role, 'reviewer');
+});
+
+test('list_threads passes owner; reply passes disposition and returns whether the thread closed', async () => {
+  const { review } = await reviewOnFeature();
+  const cond = { sessionId: 's-cond', project: '.conduct' };
+  const finding = await result('annotate', { review: review.id, kind: 'finding', severity: 'minor', body: 'x', file: 'a.js', startLine: 2 });
+  const human = await threads.annotate(review.id, HUMAN, { anchor: { file: 'a.js', side: 'new', startLine: 18, endLine: 18 }, kind: 'comment', body: 'h' });
+  const count = (owner, status) => call('list_threads', { review: review.id, owner, status }, cond);
+  assert.equal((await count('agents')).meta.count, 1);
+  assert.equal((await count('user')).meta.count, 1);
+  assert.match((await count('agents', 'resolved')).text, /agents/);
+  const closed = await result('reply', { review: review.id, thread: finding.thread.id, body: 'ok', resolve: true, disposition: 'fixed' }, cond);
+  assert.deepEqual([closed.thread.status, closed.thread.disposition], ['resolved', 'fixed']);
+  const proposed = await result('reply', { review: review.id, thread: human.thread.id, body: 'ok', resolve: true }, cond);
+  assert.deepEqual([proposed.thread.status, proposed.thread.resolveProposed], ['open', true]);
 });
 
 test('no tool can set a verdict: no schema has a verdict property, and annotate/reply leave verdicts alone', async () => {

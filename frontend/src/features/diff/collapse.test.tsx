@@ -1,6 +1,7 @@
-import { fireEvent, screen, within } from '@testing-library/react';
+import { act, fireEvent, screen, within } from '@testing-library/react';
 import { beforeEach, describe, expect, test } from 'vitest';
 import { buildRows } from '@/lib/diffRows';
+import { navigate } from '@/lib/route';
 import type { DiffFile } from '@/lib/types';
 import { WIDE_QUERY } from '@/lib/useMediaQuery';
 import type { FileDiffState } from '@/state/fileDiff';
@@ -145,8 +146,26 @@ describe.each(['inline', 'split'])('%s view', (view) => {
     expect(screen.getByRole('button', { name: SUMMARY }).getAttribute('aria-expanded')).toBe('false');
   });
 
+  // Invariant: a focused thread collapses when it becomes resolved, whoever resolves it. Navigating to a resolved thread still shows it open.
+  test('resolving the focused thread collapses it; focusing it again shows it open', () => {
+    history.replaceState(null, '', '?file=src%2Fa.ts&thread=t-1');
+    const { update } = mount(diffFile({ threads: [thread()] }));
+    update(diffFile({ threads: [resolved()] }));
+    expect(screen.getByRole('button', { name: /first line.*resolved/ }).getAttribute('aria-expanded')).toBe('false');
+    expect(screen.queryByRole('article')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: /first line.*resolved/ }));
+    expect(screen.getByRole('article', { name: 'comment thread' })).toBeTruthy();
+    update(diffFile({ threads: [thread()] }));
+    update(diffFile({ threads: [resolved()] }));
+    expect(screen.getByRole('button', { name: /first line.*resolved/ }).getAttribute('aria-expanded')).toBe('false');
+    act(() => { navigate({ thread: undefined }); });
+    act(() => { navigate({ thread: 't-1' }); });
+    expect(screen.getByRole('article', { name: 'comment thread' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /resolved/ })).toBeNull();
+  });
+
   // Invariant: navigation never lands on hidden content.
-  test('a focused thread and a cited range are always expanded', () => {
+  test('navigating to a resolved thread or a cited range shows it expanded', () => {
     history.replaceState(null, '', '?file=src%2Fa.ts&thread=t-2');
     const { unmount } = mount(diffFile({ threads: [resolved({ id: 't-2' })] }));
     expect(screen.getByRole('article', { name: 'comment thread' })).toBeTruthy();

@@ -71,7 +71,7 @@ export function FileDiff({ onBack, extra }: { onBack?: () => void; extra?: React
   }, [route.lines, targetSide]);
   const diffView = useDiffView();
 
-  // Accepted hunks and resolved threads collapse; the routed thread and the hunks holding its range or the cited range never do.
+  // Accepted hunks and resolved threads collapse; the hunks holding the routed thread's range or the cited range never do. The routed thread is shown on arrival but collapses if it gets resolved while routed.
   const textHunks = useMemo(() => (file?.hunks ?? []).filter((h): h is TextHunk => h.kind === 'text'), [file]);
   const settled = useMemo(() => [
     ...textHunks.filter((h) => h.verdict === 'accepted').map((h) => `h:${h.id}`),
@@ -82,13 +82,12 @@ export function FileDiff({ onBack, extra }: { onBack?: () => void; extra?: React
     return a ? { side: a.side, start: a.startLine, end: a.endLine } : null;
   }, [file, route.thread]);
   const forced = useMemo(() => new Set([
-    ...(route.thread ? [`t:${route.thread}`] : []),
     ...textHunks.filter((h) => selectionTouches(targetSel, h.lines) || selectionTouches(routed, h.lines)).map((h) => `h:${h.id}`),
   ]), [route.thread, routed, targetSel, textHunks]);
   // The previous render's selection: a settle comes from a verdict change, which never changes the selection.
   const selRef = useRef<Selection | null>(null);
   const collapse = useCollapse({
-    settled, forced, resetKey,
+    settled, forced, pinned: route.thread ? `t:${route.thread}` : null, resetKey,
     keepOpen: (id) => textHunks.some((h) => `h:${h.id}` === id && selectionTouches(selRef.current, h.lines)),
   });
   const visible = useMemo(() => collapseRows(rows, (id) => collapse.collapsed.has(`h:${id}`)), [rows, collapse.collapsed]);

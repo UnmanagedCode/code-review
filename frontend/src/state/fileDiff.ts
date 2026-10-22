@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
-import { buildRows, gapHolding, gapSpans, type Expansions, type Row } from '@/lib/diffRows';
+import { buildRows, gapNeeds, gapSpans, type Expansions, type Row } from '@/lib/diffRows';
 import * as ep from '@/lib/endpoints';
 import { errorText } from '@/lib/refusals';
 import type { DiffFile, Side, Thread, Verdict } from '@/lib/types';
@@ -116,15 +116,15 @@ export function useFileDiff({ reviewId, path, version, uncommitted, commitFiles,
     return expandTo({ [gapKey]: next });
   }, [file, total, side, expansions, expandTo]);
 
-  /** Expand whatever collapsed context holds these lines (threads, a `lines=` target), from the nearer edge. */
-  const reveal = useCallback((targets: { side: Side; n: number }[]) => {
+  /** Expand whatever collapsed context holds these line spans (threads' ranges, a `lines=` target), each from the nearer edge. */
+  const reveal = useCallback((targets: { side: Side; start: number; end: number }[]) => {
     if (!file) return;
     const changes: Expansions = {};
     for (const t of targets) {
-      const g = gapHolding(file.hunks, total, t.side, t.n, side);
-      if (!g) continue;
-      const cur = changes[g.gapKey] ?? expansions[g.gapKey] ?? { top: 0, bottom: 0 };
-      changes[g.gapKey] = g.fromTop <= g.fromBottom ? { ...cur, top: Math.max(cur.top, g.fromTop) } : { ...cur, bottom: Math.max(cur.bottom, g.fromBottom) };
+      for (const g of gapNeeds(file.hunks, total, t.side, t.start, t.end, side)) {
+        const cur = changes[g.gapKey] ?? expansions[g.gapKey] ?? { top: 0, bottom: 0 };
+        changes[g.gapKey] = 'top' in g ? { ...cur, top: Math.max(cur.top, g.top) } : { ...cur, bottom: Math.max(cur.bottom, g.bottom) };
+      }
     }
     const need = Object.entries(changes).filter(([k, v]) => v.top !== (expansions[k]?.top ?? 0) || v.bottom !== (expansions[k]?.bottom ?? 0));
     if (need.length) void expandTo(Object.fromEntries(need));

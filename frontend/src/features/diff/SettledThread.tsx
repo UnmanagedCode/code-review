@@ -4,24 +4,28 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import type { Thread } from '@/lib/types';
 import { KindBadge } from '@/features/threads/KindBadge';
-import { ThreadCard } from '@/features/threads/ThreadCard';
+import { cardRange, ThreadCard } from '@/features/threads/ThreadCard';
+import { useReviewCtx } from '@/state/reviewContext';
 
 const firstLine = (t: Thread) => (t.messages[0]?.body ?? '').split('\n').map((l) => l.trim()).find(Boolean) ?? '';
 
 /**
  * A thread in the diff. When `toggleable` (resolved) it gets a one-line summary that discloses the card.
  * Every thread renders through here so its card keeps the same place in the tree as it resolves, and stays
- * mounted (hidden) while collapsed: a reply draft survives both.
+ * mounted (hidden) while collapsed: a reply draft survives both. Below a 26rem container (a phone, 412px ones included) the summary
+ * wraps, range and badges below, so the preview keeps its basis; wider, it stays one line.
  */
 export function SettledThread({ thread, collapsed, toggleable, onToggle, note }: { thread: Thread; collapsed: boolean; toggleable: boolean; onToggle: (open: boolean) => void; note?: ReactNode }) {
   const id = useId();
+  const range = cardRange(thread, { compare: useReviewCtx().compare });
   return (
-    <div className="flex flex-col gap-1">
+    <div className="@container flex flex-col gap-1">
       {toggleable && (
-        <Button variant="ghost" size="sm" aria-expanded={!collapsed} aria-controls={id} className="h-auto w-full min-w-0 justify-start gap-1.5 rounded-md border bg-card px-3 py-1.5 font-normal" onClick={() => onToggle(collapsed)}>
+        <Button variant="ghost" size="sm" aria-expanded={!collapsed} aria-controls={id} className="h-auto w-full min-w-0 justify-start gap-1.5 rounded-md @max-[26rem]:flex-wrap border bg-card px-3 py-1.5 font-normal" onClick={() => onToggle(collapsed)}>
           {collapsed ? <ChevronRightIcon /> : <ChevronDownIcon />}
           <KindBadge kind={thread.kind} severity={thread.severity} />
-          <span className="min-w-0 flex-1 truncate text-left">{firstLine(thread)}</span>
+          <span className="min-w-0 flex-1 truncate text-left @max-[26rem]:basis-40">{firstLine(thread)}</span>
+          {range && <span className="shrink-0 font-mono text-xs text-muted-foreground">{range}</span>}
           <Badge variant="secondary">resolved</Badge>
           {thread.disposition && <Badge variant="success">{thread.disposition}</Badge>}
         </Button>

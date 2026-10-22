@@ -4,7 +4,8 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { dedupeCopies } from '@/lib/compare';
 import { collapseRows, type Row } from '@/lib/diffRows';
-import { formatLines, navigate, parseLines, useRoute } from '@/lib/route';
+import { rangeLabel, rangeMarks } from '@/lib/ranges';
+import { navigate, parseLines, useRoute } from '@/lib/route';
 import { lineOn, selectionTouches, type Selection } from '@/lib/selection';
 import { pairLine, splitRows, type SplitRow as SplitRowT } from '@/lib/splitRows';
 import type { DiffFile, DiffLine, Side, TextHunk, Thread } from '@/lib/types';
@@ -70,16 +71,20 @@ export function FileDiff({ onBack, extra }: { onBack?: () => void; extra?: React
   }, [route.lines, targetSide]);
   const diffView = useDiffView();
 
-  // Accepted hunks and resolved threads collapse; the routed thread and the hunks holding the cited range never do.
+  // Accepted hunks and resolved threads collapse; the routed thread and the hunks holding its range or the cited range never do.
   const textHunks = useMemo(() => (file?.hunks ?? []).filter((h): h is TextHunk => h.kind === 'text'), [file]);
   const settled = useMemo(() => [
     ...textHunks.filter((h) => h.verdict === 'accepted').map((h) => `h:${h.id}`),
     ...(file?.threads ?? []).filter((t) => t.status === 'resolved').map((t) => `t:${t.id}`),
   ], [file, textHunks]);
+  const routed = useMemo(() => {
+    const a = route.thread ? file?.threads.find((t) => t.id === route.thread)?.anchor : undefined;
+    return a ? { side: a.side, start: a.startLine, end: a.endLine } : null;
+  }, [file, route.thread]);
   const forced = useMemo(() => new Set([
     ...(route.thread ? [`t:${route.thread}`] : []),
-    ...textHunks.filter((h) => selectionTouches(targetSel, h.lines)).map((h) => `h:${h.id}`),
-  ]), [route.thread, targetSel, textHunks]);
+    ...textHunks.filter((h) => selectionTouches(targetSel, h.lines) || selectionTouches(routed, h.lines)).map((h) => `h:${h.id}`),
+  ]), [route.thread, routed, targetSel, textHunks]);
   // The previous render's selection: a settle comes from a verdict change, which never changes the selection.
   const selRef = useRef<Selection | null>(null);
   const collapse = useCollapse({
@@ -89,6 +94,7 @@ export function FileDiff({ onBack, extra }: { onBack?: () => void; extra?: React
   const visible = useMemo(() => collapseRows(rows, (id) => collapse.collapsed.has(`h:${id}`)), [rows, collapse.collapsed]);
   const sel = useLineSelection(visible, textFile && !ctx.readOnly, resetKey);
   selRef.current = sel.selection;
+  const marks = useMemo(() => rangeMarks(file?.threads ?? [], route.thread), [file, route.thread]);
 
   const threadsByRow = useMemo(() => {
     const m = new Map<string, Thread[]>();
@@ -107,12 +113,12 @@ export function FileDiff({ onBack, extra }: { onBack?: () => void; extra?: React
     return m;
   }, [dropped, file?.path]);
 
-  // Open context that hides a thread, or the cited lines.
+  // Open context that hides any line of a thread's range, or of the cited lines.
   const revealKey = `${file?.path}|${file?.threads.map((t) => t.id).join()}|${route.lines}|${targetSide}|${ctx.fileDiff.total}`;
   useEffect(() => {
     if (!file) return;
-    const wanted = file.threads.map((t) => ({ side: t.anchor.side, n: t.anchor.endLine }));
-    if (target) wanted.push({ side: targetSide, n: target.start }, { side: targetSide, n: target.end });
+    const wanted = file.threads.map((t) => ({ side: t.anchor.side, start: t.anchor.startLine, end: t.anchor.endLine }));
+    if (target) wanted.push({ side: targetSide, start: target.start, end: target.end });
     reveal(wanted);
   }, [revealKey]);
 
@@ -171,7 +177,7 @@ export function FileDiff({ onBack, extra }: { onBack?: () => void; extra?: React
             {sel.composing ? (
               <Composer
                 anchor={{ file: file.path, side: sel.selection.side, startLine: sel.selection.start, endLine: sel.selection.end }}
-                label={`${selectionLabel(sel.selection)}`}
+                label={selectionLabel(sel.selection)}
                 onClose={sel.clear}
               />
             ) : (
@@ -206,14 +212,14 @@ export function FileDiff({ onBack, extra }: { onBack?: () => void; extra?: React
     if (r.kind === 'pair') {
       return (
         <Fragment key={r.key}>
-          <SplitRow pair={r} sel={sel} enabled={enabled} target={targetSel} />
+          <SplitRow pair={r} sel={sel} enabled={enabled} target={targetSel} marks={marks} />
           {belowRow([`old:${r.left?.old}`, `new:${r.right?.new}`], !!s && pairLine(r, s.side) === s.end)}
         </Fragment>
       );
     }
     return (
       <Fragment key={r.key}>
-        <InlineRow line={r.line} sel={sel} enabled={enabled} target={targetSel} />
+        <InlineRow line={r.line} sel={sel} enabled={enabled} target={targetSel} marks={marks} />
         {belowRow(keysOf([r.line]), !!s && lineOn(r, s.side) === s.end)}
       </Fragment>
     );
@@ -249,6 +255,4 @@ export function FileDiff({ onBack, extra }: { onBack?: () => void; extra?: React
 /** The thread keys of `lines`, in line order: each line's old side, then its new side (inline's order). */
 const keysOf = (lines: DiffLine[]) => lines.flatMap((l) => [`old:${l.old}`, `new:${l.new}`]);
 
-function selectionLabel(s: { side: Side; start: number; end: number }): string {
-  return `L${formatLines(s.start, s.end).replace('-', '–L')} (${s.side})`;
-}
+const selectionLabel = (s: { side: Side; start: number; end: number }) => rangeLabel({ side: s.side, startLine: s.start, endLine: s.end });

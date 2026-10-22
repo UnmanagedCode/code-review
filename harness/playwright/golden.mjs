@@ -27,7 +27,7 @@ function watchErrors(page) {
   return errors;
 }
 // The last row before `el` in document order (thread cards and composers render below their row): its gutter
-// `data-cell`s and its gridcell texts joined by `|`.
+// `data-cell`s and its gridcell texts joined by `|` (a read-only gutter's text includes the ranges it sits in).
 const rowBefore = (el) => el.evaluate((node) => {
   const row = [...document.querySelectorAll('[role="row"]')].filter((r) => r.compareDocumentPosition(node) & Node.DOCUMENT_POSITION_FOLLOWING).pop();
   return {
@@ -127,7 +127,7 @@ try {
     await question.waitFor();
     // Read-only rows carry no data-cell (no gutter selection): match the row by its new-side number and text.
     const atLine4 = (await rowBefore(question)).text;
-    assert.equal(atLine4, '|4|+|changed4', 'in round 1 the question renders under new line 4, its last line then');
+    assert.equal(atLine4, '|4 · in question thread L3–L4 (new)|+|changed4', 'in round 1 the question renders under new line 4, its last line then, and marks its range');
     assert.equal(await page.getByRole('group', { name: 'Hunk verdict' }).count(), 0, 'no verdict controls in a past round');
     assert.equal(await page.getByLabel('Reply').count(), 0, 'no reply box in a past round');
     await shot('5-round-1');
@@ -146,7 +146,7 @@ try {
     assert.equal(new URL(page.url()).searchParams.get('compare'), '1..2');
     await page.getByRole('link', { name: /a\.js/ }).first().click();
     await question.waitFor();
-    assert.equal((await rowBefore(question)).text, '4||−|changed4', 'inline, the question sits under round 1\'s line 4 (deleted in round 2)');
+    assert.equal((await rowBefore(question)).text, '4 · in question thread L3–L4 (old)||−|changed4', 'inline, the question sits under round 1\'s line 4 (deleted in round 2), marked on the old side');
     assert.match(await question.textContent(), /outdated in round 2/);
     assert.equal(await page.locator('[role=rowgroup] article', { hasText: 'Fine, but add a test.' }).count(), 1, 'the comment on a line both rounds share shows once');
     assert.equal(await page.getByRole('group', { name: 'Hunk verdict' }).count(), 0, 'no verdict controls in a comparison');
@@ -158,7 +158,7 @@ try {
     await page.setViewportSize({ width: 1100, height: 800 });
     await page.getByRole('group', { name: 'Diff view' }).getByRole('button', { name: 'Split' }).click();
     await page.locator('[role=row].grid').first().waitFor();
-    assert.match((await rowBefore(question)).text, /^4\|−\|changed4\|/, 'split, the question is under the pair whose left number is 4');
+    assert.match((await rowBefore(question)).text, /^4 · in question thread L3–L4 \(old\)\|−\|changed4\|/, 'split, the question is under the pair whose left number is 4');
     const compareOverflow = await page.getByRole('grid').evaluate((g) => g.scrollWidth - g.clientWidth);
     assert.ok(compareOverflow <= 0, `the split comparison has no horizontal overflow (${compareOverflow}px)`);
     await shot('5c-compare-split');
@@ -299,13 +299,23 @@ try {
     assert.equal(await viewGroup.count(), 0, 'no view toggle on a phone');
     assert.equal(await isSplit(), false, 'a phone shows inline rows');
     await shot('9-phone-inline');
+    // The resolved finding's summary keeps a readable preview at phone width: its range and badges wrap instead.
+    // Checked at 390px and at a common 412px phone, whose summary is just wider than 24rem.
+    const phoneSummary = page.getByRole('button', { name: /Missing guard.*resolved/ });
+    const previewWidth = async () => (await phoneSummary.getByText('## Missing guard', { exact: true }).boundingBox()).width;
+    for (const width of [390, 412]) {
+      await page.setViewportSize({ width, height: 844 });
+      const w = await previewWidth();
+      assert.ok(w >= 100, `the ${width}px phone summary preview keeps its width (${w}px)`);
+    }
+    await page.setViewportSize({ width: 390, height: 844 });
 
     // 9b. A comparison on a phone: inline rows, round 1's question under its round-1 line 4.
     await page.goto(q({ review: range, compare: '1..2', file: 'a.js' }));
     const phoneQuestion = page.locator('[role=rowgroup] article', { hasText: 'Why change both lines?' });
     await phoneQuestion.waitFor();
     assert.equal(await isSplit(), false, 'a phone comparison shows inline rows');
-    assert.equal((await rowBefore(phoneQuestion)).text, '4||−|changed4');
+    assert.equal((await rowBefore(phoneQuestion)).text, '4 · in question thread L3–L4 (old)||−|changed4');
     await shot('9b-phone-compare');
 
     // 10. xl: the thread column has a handle; widening it pushes split down to inline, narrowing brings it back.
@@ -329,6 +339,10 @@ try {
     await viewGroup.waitFor({ state: 'detached' });
     assert.equal(await isSplit(), false, 'the narrower diff pane falls back to inline');
     await shot('10-wide-panel-inline');
+    // With room, the resolved summary stays on one line: preview and range share a row.
+    const wideSummary = page.getByRole('button', { name: /Missing guard.*resolved/ });
+    const [preview, rangeTag] = [await wideSummary.getByText('## Missing guard', { exact: true }).boundingBox(), await wideSummary.getByText('L8 (old)').boundingBox()];
+    assert.equal(rangeTag.y + rangeTag.height / 2, preview.y + preview.height / 2, 'the wide summary is one line');
     await drag(200);
     await viewGroup.waitFor();
     assert.ok(await isSplit(), 'narrowing the panel brings split back');
@@ -358,7 +372,7 @@ try {
     await page.goto(q({ review: range, file: 'a.js' }));
     await page.getByRole('tab', { name: /^Outdated/ }).click();
     await shot('12a-outdated-link');
-    await page.getByRole('button', { name: /^a\.js:\d+$/ }).click();
+    await page.getByRole('button', { name: 'a.js · L3–L4 (new)' }).click(); // the outdated question's last located range
     await page.getByText('Exit comparison').waitFor();
     assert.match(page.url(), /compare=1\.\.2/, 'the outdated thread opens its round and the next');
     await page.locator('article[aria-label$="thread"]').first().waitFor();
@@ -366,13 +380,152 @@ try {
     await page.getByRole('button', { name: 'Exit comparison' }).click();
     await page.goto(q({ review: range, file: 'c.js' }));
     await page.getByRole('tab', { name: /^All/ }).click();
-    const card = page.getByRole('article').filter({ has: page.getByRole('button', { name: /^a\.js:\d+$/ }) }).first();
+    const card = page.getByRole('article').filter({ has: page.getByRole('button', { name: /^a\.js · L/ }) }).first();
     await card.getByRole('button', { name: 'Focus' }).click();
     await page.getByRole('grid', { name: 'Changes in a.js' }).waitFor();
     assert.match(page.url(), /file=a\.js/);
     await shot('12c-cross-file-focus');
     assert.deepEqual(errors, []);
   }, { headless: true, viewport: { width: 1400, height: 900 } });
+
+  // 13: thread range rails, in light and dark. a.js (round 2) carries a suggestion on new L5–L7 and a question on new
+  // L7–L9 (touching: two lanes), the resolved comment on L9, step 1's question on L10–L11 and the old-side L8 finding.
+  await withPage(async (page) => {
+    const errors = watchErrors(page);
+    const SUGGESTION = 'suggestion thread L5–L7 (new)';
+    const QUESTION = 'question thread L7–L9 (new)';
+    const label = (c) => page.locator(`[data-cell="${c}"]`).getAttribute('aria-label');
+    // A gutter's name is `<side> line <n> · in <range>, <range>…`.
+    const inRange = async (range, cells) => Promise.all(cells.map(async (c) => ((await label(c)).split(' · in ')[1] ?? '').split(', ').includes(range)));
+    const viewGroup = page.getByRole('group', { name: 'Diff view' });
+    /**
+     * WCAG non-text contrast of each rail in `cell` against what it sits on: the cell's ancestors' backgrounds, composited
+     * top-down onto a 1×1 canvas (the tints are translucent), compared with the opaque rail colour.
+     */
+    const railContrast = (sel) => page.locator(sel).evaluate((cell) => {
+      const ctx = Object.assign(document.createElement('canvas'), { width: 1, height: 1 }).getContext('2d', { willReadFrequently: true });
+      const paint = (colors) => { ctx.clearRect(0, 0, 1, 1); for (const c of colors) { ctx.fillStyle = c; ctx.fillRect(0, 0, 1, 1); } return [...ctx.getImageData(0, 0, 1, 1).data.slice(0, 3)]; };
+      const lum = (rgb) => { const [r, g, b] = rgb.map((v) => { v /= 255; return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }); return 0.2126 * r + 0.7152 * g + 0.0722 * b; };
+      const layers = [];
+      for (let n = cell; n; n = n.parentElement) { const bg = getComputedStyle(n).backgroundColor; if (bg && bg !== 'rgba(0, 0, 0, 0)' && bg !== 'transparent') layers.unshift(bg); }
+      const under = paint(layers);
+      return [...cell.querySelectorAll('[data-rails] > span')].map((r) => {
+        const [a, b] = [lum(paint([...layers, getComputedStyle(r).backgroundColor])), lum(under)];
+        return Math.round(((Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05)) * 100) / 100;
+      });
+    });
+
+    for (const scheme of ['light', 'dark']) {
+      await page.emulateMedia({ colorScheme: scheme });
+      const shot = (name) => shotter(page)(`${name}-${scheme}`);
+      const contrasts = {};
+      const measure = async (name, sel) => { contrasts[name] = await railContrast(sel); };
+
+      // Inline: each range's new gutters carry it, nothing around them does, no old gutter does.
+      await page.goto(q({ review: range, file: 'a.js' }));
+      await page.evaluate(() => localStorage.setItem('code-review:diffView', 'inline'));
+      await page.reload();
+      await page.getByRole('button', { name: ACCEPTED_SUMMARY }).click();
+      await page.locator('[data-cell="new:5"]').waitFor();
+      assert.deepEqual(await inRange(SUGGESTION, ['new:4', 'new:5', 'new:6', 'new:7', 'new:8']), [false, true, true, true, false]);
+      assert.deepEqual(await inRange(QUESTION, ['new:6', 'new:7', 'new:8', 'new:9', 'new:10']), [false, true, true, true, false]);
+      assert.deepEqual(await inRange(SUGGESTION, ['old:5', 'old:6', 'old:7']), [false, false, false], 'a new-side range marks no old gutter');
+      assert.deepEqual(await inRange('finding thread L8 (old)', ['old:8']), [true], 'the old-side finding marks old 8');
+      const lanes = await page.locator('[data-cell="new:7"] [data-rails] > span').evaluateAll((rs) => rs.map((r) => getComputedStyle(r).left));
+      assert.deepEqual(lanes, ['0px', '4px'], 'touching ranges sit in separate lanes on their shared line');
+      assert.equal(await page.locator('[data-line-target]').count(), 0, 'no thread paints a row target');
+      await measure('add (new 6)', '[data-cell="new:6"]');
+      await measure('ctx (new 9)', '[data-cell="new:9"]');
+      await measure('del (old 8)', '[data-cell="old:8"]');
+      await page.locator('[data-cell="new:6"]').scrollIntoViewIfNeeded();
+      await shot('13-ranges-inline');
+
+      // A selection over a rail (info tint): click a marked gutter, measure, then cancel the composer.
+      await page.locator('[data-cell="new:6"]').click();
+      const form = page.getByRole('form', { name: 'Comment on L6 (new)' });
+      await form.waitFor();
+      await measure('selected (new 6)', '[data-cell="new:6"]');
+      await shot('13-ranges-selection');
+      await form.getByRole('button', { name: 'Cancel' }).click();
+
+      // Split: the same rails in the right half; the wrapped line 6 rail spans its full row height.
+      await viewGroup.getByRole('button', { name: 'Split' }).click();
+      await page.locator('[role=row].grid').first().waitFor();
+      assert.deepEqual(await inRange(SUGGESTION, ['new:5', 'new:6', 'new:7']), [true, true, true]);
+      const [cellH, railH] = await page.locator('[data-cell="new:6"]').evaluate((c) => [c.getBoundingClientRect().height, c.querySelector('[data-rails] > span').getBoundingClientRect().height]);
+      assert.ok(cellH > 30 && railH === cellH, `the wrapped row's rail spans its full height (${railH}px of ${cellH}px)`);
+      await measure('split add (new 6)', '[data-cell="new:6"]');
+      await page.locator('[data-cell="new:6"]').scrollIntoViewIfNeeded();
+      await shot('13-ranges-split');
+
+      // Focus the suggestion: its rails turn active, the question's do not; on a reload its accepted hunk opens by itself.
+      await page.locator('[role=rowgroup] article', { hasText: 'Split the long line' }).getByRole('button', { name: 'Focus' }).click();
+      await page.locator('[data-cell="new:5"] [data-rails][data-active]').waitFor({ state: 'attached' });
+      assert.equal(await page.locator('[data-cell="new:8"] [data-rails][data-active]').count(), 0, 'the question is not active');
+      await page.reload();
+      await page.locator('[data-cell="new:5"] [data-rails][data-active]').waitFor({ state: 'attached' });
+      assert.equal(await page.getByRole('button', { name: ACCEPTED_SUMMARY }).count(), 0, 'the focused thread keeps its accepted hunk open');
+      await measure('active add (new 5)', '[data-cell="new:5"]');
+      await measure('active ctx (new 7, two lanes)', '[data-cell="new:7"]');
+      await page.locator('[data-cell="new:6"]').scrollIntoViewIfNeeded();
+      await shot('13-ranges-active');
+
+      // A citation target (warning wash) under the rails.
+      await page.goto(q({ review: range, file: 'a.js', side: 'new', lines: '5-9' }));
+      await page.locator('[data-line-target]').waitFor();
+      await measure('target add (new 6)', '[data-cell="new:6"]');
+      await measure('target ctx (new 9)', '[data-cell="new:9"]');
+      await shot('13-ranges-target');
+
+      // Compare 1 → 2 (read-only, split): round 2's copies mark the right half.
+      await page.goto(q({ review: range, compare: '1..2', file: 'a.js' }));
+      await page.locator('[role=rowgroup] article', { hasText: 'Split the long line' }).waitFor();
+      const rightGutter = (n) => page.locator('[role=row].grid').filter({ has: page.locator('[role=gridcell]:nth-child(4)', { hasText: new RegExp(`^${n}\\b`) }) }).locator('[role=gridcell]:nth-child(4)').first();
+      assert.equal(await rightGutter(6).textContent(), `6 · in ${SUGGESTION}`, 'round 2\'s copy marks the right half');
+      await rightGutter(6).scrollIntoViewIfNeeded();
+      await shot('13-ranges-compare');
+
+      console.log(`rail contrast (${scheme}):`, JSON.stringify(contrasts));
+      for (const [where, ratios] of Object.entries(contrasts)) {
+        assert.ok(ratios.length && ratios.every((r) => r >= 3), `${scheme}: every rail on ${where} reaches 3:1 (${ratios})`);
+      }
+    }
+
+    // Forced colours (Windows High Contrast), under both schemes: the rails take the system colours (CanvasText, and
+    // Highlight for the focused thread) rather than Canvas or a theme colour, and the focused rail is also wider, with
+    // lanes still apart.
+    for (const scheme of ['light', 'dark']) {
+      await page.emulateMedia({ colorScheme: scheme, forcedColors: 'active' });
+      await page.goto(q({ review: range, file: 'a.js' }));
+      await page.getByRole('button', { name: ACCEPTED_SUMMARY }).click();
+      await page.locator('[data-cell="new:7"] [data-rails]').waitFor({ state: 'attached' });
+      await page.locator('[role=rowgroup] article', { hasText: 'Split the long line' }).getByRole('button', { name: 'Focus' }).click();
+      await page.locator('[data-cell="new:7"] [data-rails][data-active]').waitFor({ state: 'attached' });
+      // What the system colours resolve to in this palette, from a sentinel element.
+      const system = await page.evaluate(() => Object.fromEntries(['CanvasText', 'Highlight'].map((c) => {
+        const el = Object.assign(document.createElement('div'), { style: `forced-color-adjust: none; background-color: ${c}` });
+        document.body.append(el);
+        const v = getComputedStyle(el).backgroundColor;
+        el.remove();
+        return [c, v];
+      })));
+      const rails = await page.locator('[data-cell="new:7"] [data-rails] > span').evaluateAll((rs) => rs.map((r) => {
+        const b = r.getBoundingClientRect();
+        return { color: getComputedStyle(r).backgroundColor, left: b.left, right: b.right, width: b.width };
+      }));
+      const forced = await railContrast('[data-cell="new:7"]');
+      console.log(`rail contrast (forced colors, ${scheme}):`, JSON.stringify(forced), JSON.stringify(rails), JSON.stringify(system));
+      // new 7: the focused suggestion in lane 0, the question in lane 1.
+      assert.equal(rails[0].color, system.Highlight, `forced ${scheme}: the focused rail is Highlight`);
+      assert.equal(rails[1].color, system.CanvasText, `forced ${scheme}: other rails are CanvasText`);
+      assert.ok(rails[0].width >= 2 * rails[1].width, `forced ${scheme}: the focused rail is at least twice as wide (${rails[0].width} vs ${rails[1].width})`);
+      assert.ok(rails[0].right < rails[1].left, `forced ${scheme}: the wider rail leaves a gap before the next lane`);
+      assert.ok(forced.length === 2 && forced.every((r) => r >= 3), `forced ${scheme}: both rails on new 7 reach 3:1 (${forced})`);
+      await page.locator('[data-cell="new:6"]').scrollIntoViewIfNeeded();
+      await shotter(page)(`13-ranges-forced-colors-${scheme}`);
+    }
+    assert.deepEqual(errors, []);
+  }, { headless: true, viewport: { width: 1100, height: 800 }, deviceScaleFactor: 2 });
   console.log('golden path ok');
 } finally {
   await world.close();

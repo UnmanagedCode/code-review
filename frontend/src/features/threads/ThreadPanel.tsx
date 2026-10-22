@@ -108,7 +108,7 @@ function ReviewThreadPanel() {
               <NativeSelect size="sm" id="tp-status" value={status} onChange={(e) => setStatus(e.target.value as typeof status)}>
                 <option value="open">Open</option><option value="resolved">Resolved</option><option value="all">All</option>
               </NativeSelect>
-              <Button size="sm" variant="outline" disabled={!nextUnread} onClick={() => nextUnread && navigate({ file: nextUnread.anchor.file, side: nextUnread.anchor.side, lines: `${nextUnread.anchor.startLine}`, thread: nextUnread.id })}>Next unread</Button>
+              <Button size="sm" variant="outline" disabled={!nextUnread} onClick={() => nextUnread && navigate({ file: nextUnread.anchor.file, side: nextUnread.anchor.side, lines: undefined, thread: nextUnread.id })}>Next unread</Button>
             </div>
             {index.loading && !index.threads.length ? <Loading label="Loading threads" rows={3} />
               : index.error ? <ErrorState error={index.error} />

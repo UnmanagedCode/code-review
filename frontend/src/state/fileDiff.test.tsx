@@ -161,6 +161,19 @@ test('in a comparison an old-side line in a collapsed gap is revealed', async ()
   });
   const { result } = renderHook(() => useFileDiff({ reviewId: 'r-1', path: 'src/a.ts', version: 1, uncommitted: false, compare: { from: 1, to: 3, files: [diffFile({ hunks: [h] })], reload: () => {} } }));
   await vi.waitFor(() => expect(result.current.total).toBe(40));
-  act(() => result.current.reveal([{ side: 'old', n: 30 }]));
+  act(() => result.current.reveal([{ side: 'old', start: 30, end: 30 }]));
   await vi.waitFor(() => expect(result.current.rows.some((r) => r.kind === 'line' && r.line.old === 30 && r.line.new === 29 && r.line.text === 'L29')).toBe(true));
+});
+
+// Invariant: revealing a thread shows every line of its range, not just its last line: a range that starts in collapsed
+// context and ends in a hunk, and one wholly inside a gap nearer its bottom edge, both come back with no line hidden.
+test('reveal opens enough context to show a whole range', async () => {
+  // Hunk new 11–14; gaps: pre 1–10, after:h1 15–40.
+  const file = diffFile({ hunks: [hunk({ oldStart: 11, newStart: 11, lines: lines('c1 c2 d3 a3 c4').map((l) => ({ ...l, old: l.old && l.old + 10, new: l.new && l.new + 10 })) })] });
+  stubFetch({ 'GET api/reviews/r-1/diff': { review: review(), files: [file] }, 'GET api/reviews/r-1/file': fileLines });
+  const { result } = renderHook(() => useFileDiff({ reviewId: 'r-1', path: 'src/a.ts', version: 1, uncommitted: false }));
+  await vi.waitFor(() => expect(result.current.total).toBe(40));
+  act(() => result.current.reveal([{ side: 'new', start: 8, end: 12 }, { side: 'new', start: 33, end: 37 }]));
+  const shown = () => new Set(result.current.rows.flatMap((r) => (r.kind === 'line' && r.line.new != null ? [r.line.new] : [])));
+  await vi.waitFor(() => expect([8, 9, 10, 11, 12, 33, 34, 35, 36, 37].filter((n) => !shown().has(n))).toEqual([]));
 });

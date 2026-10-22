@@ -1,7 +1,7 @@
-import { formatLines } from '@/lib/route';
+import { lineSpan } from '@/lib/ranges';
 import type { ComparedThread, Thread, UnplacedReason } from '@/lib/types';
 
-const span = (t: Thread) => `L${formatLines(t.anchor.startLine, t.anchor.endLine).replace('-', '–L')}`;
+const span = (t: Thread) => lineSpan(t.anchor.startLine, t.anchor.endLine);
 const copyOf = (t: Thread) => t as Partial<ComparedThread>;
 
 export const UNPLACED_TEXT: Record<UnplacedReason, string> = {

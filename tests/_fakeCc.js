@@ -106,9 +106,9 @@ function run(state, spec, req, res) {
 }
 
 /**
- * A fake cc REST host. `fixture` is mutable: {projects, worktrees:{project:[rows]}, instances, systems, execEnv, execHook}.
+ * A fake cc REST host. `fixture` is mutable: {projects, worktrees:{project:[rows]}, instances, systems, execEnv, execHook, mode, displayLabel}.
  * `mode` is 'ok' | 'error' | 'hang'. Sets CONDUCTOR_URL; `close()` restores it.
- * `GET /api/instances` fills each row's `displayLabel` the row doesn't set with a stand-in, `title || firstPrompt || <id prefix>…`.
+ * `GET /api/instances` fills each row's `displayLabel` that is absent or null with a stand-in, `title || firstPrompt || <id prefix>…`.
  * That is not cc's rule (cc gives `(new session)`, never the id prefix, for a session with no title or prompt):
  * a test that asserts a label sets `displayLabel` on its row. `displayLabel: false` sends rows without the field,
  * as a cc that does not serve it. Rows are copied, so `instances` stays as the test wrote it.

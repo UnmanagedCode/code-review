@@ -37,6 +37,8 @@ beforeEach(async () => {
       { sessionId: 's-crash', project: 'app', status: 'crashed', title: 'c', worktree: null },
       { sessionId: 's-cond', project: '.conduct', status: 'idle', title: 'cond', worktree: null },
       { sessionId: 's-untitled', project: 'app', status: 'idle', title: null, firstPrompt: 'Fix the login bug', displayLabel: 'Fix the login bug', worktree: null },
+      { sessionId: 's-blank', project: 'app', status: 'idle', title: '   ', firstPrompt: 'Fix the login bug', displayLabel: 'Fix the login bug', worktree: null },
+      { sessionId: 's-notitle', project: 'app', status: 'idle', worktree: null },
     ],
   });
 });
@@ -179,10 +181,12 @@ test('sessions() labels each session with cc\'s displayLabel, else its title', a
   const labels = async () => Object.fromEntries((await sessions({ project: 'app', worktree: null })).map((s) => [s.sessionId, s.label]));
   const present = await labels();
   assert.equal(present['s-untitled'], 'Fix the login bug');
+  assert.equal(present['s-blank'], 'Fix the login bug');
   assert.equal(present['s-live'], 'w');
   cc.state.displayLabel = false;
   const absent = await labels();
   assert.equal(absent['s-untitled'], null);
+  assert.equal(absent['s-notitle'], null);
   assert.equal(absent['s-live'], 'w');
 });
 

@@ -388,7 +388,7 @@ try {
     assert.deepEqual(errors, []);
   }, { headless: true, viewport: { width: 1400, height: 900 } });
 
-  // 12: thread range rails, in light and dark. a.js (round 2) carries a suggestion on new L5–L7 and a question on new
+  // 13: thread range rails, in light and dark. a.js (round 2) carries a suggestion on new L5–L7 and a question on new
   // L7–L9 (touching: two lanes), the resolved comment on L9, step 1's question on L10–L11 and the old-side L8 finding.
   await withPage(async (page) => {
     const errors = watchErrors(page);
@@ -438,14 +438,14 @@ try {
       await measure('ctx (new 9)', '[data-cell="new:9"]');
       await measure('del (old 8)', '[data-cell="old:8"]');
       await page.locator('[data-cell="new:6"]').scrollIntoViewIfNeeded();
-      await shot('12-ranges-inline');
+      await shot('13-ranges-inline');
 
       // A selection over a rail (info tint): click a marked gutter, measure, then cancel the composer.
       await page.locator('[data-cell="new:6"]').click();
       const form = page.getByRole('form', { name: 'Comment on L6 (new)' });
       await form.waitFor();
       await measure('selected (new 6)', '[data-cell="new:6"]');
-      await shot('12-ranges-selection');
+      await shot('13-ranges-selection');
       await form.getByRole('button', { name: 'Cancel' }).click();
 
       // Split: the same rails in the right half; the wrapped line 6 rail spans its full row height.
@@ -456,7 +456,7 @@ try {
       assert.ok(cellH > 30 && railH === cellH, `the wrapped row's rail spans its full height (${railH}px of ${cellH}px)`);
       await measure('split add (new 6)', '[data-cell="new:6"]');
       await page.locator('[data-cell="new:6"]').scrollIntoViewIfNeeded();
-      await shot('12-ranges-split');
+      await shot('13-ranges-split');
 
       // Focus the suggestion: its rails turn active, the question's do not; on a reload its accepted hunk opens by itself.
       await page.locator('[role=rowgroup] article', { hasText: 'Split the long line' }).getByRole('button', { name: 'Focus' }).click();
@@ -468,14 +468,14 @@ try {
       await measure('active add (new 5)', '[data-cell="new:5"]');
       await measure('active ctx (new 7, two lanes)', '[data-cell="new:7"]');
       await page.locator('[data-cell="new:6"]').scrollIntoViewIfNeeded();
-      await shot('12-ranges-active');
+      await shot('13-ranges-active');
 
       // A citation target (warning wash) under the rails.
       await page.goto(q({ review: range, file: 'a.js', side: 'new', lines: '5-9' }));
       await page.locator('[data-line-target]').waitFor();
       await measure('target add (new 6)', '[data-cell="new:6"]');
       await measure('target ctx (new 9)', '[data-cell="new:9"]');
-      await shot('12-ranges-target');
+      await shot('13-ranges-target');
 
       // Compare 1 → 2 (read-only, split): round 2's copies mark the right half.
       await page.goto(q({ review: range, compare: '1..2', file: 'a.js' }));
@@ -483,7 +483,7 @@ try {
       const rightGutter = (n) => page.locator('[role=row].grid').filter({ has: page.locator('[role=gridcell]:nth-child(4)', { hasText: new RegExp(`^${n}\\b`) }) }).locator('[role=gridcell]:nth-child(4)').first();
       assert.equal(await rightGutter(6).textContent(), `6 · in ${SUGGESTION}`, 'round 2\'s copy marks the right half');
       await rightGutter(6).scrollIntoViewIfNeeded();
-      await shot('12-ranges-compare');
+      await shot('13-ranges-compare');
 
       console.log(`rail contrast (${scheme}):`, JSON.stringify(contrasts));
       for (const [where, ratios] of Object.entries(contrasts)) {
@@ -522,7 +522,7 @@ try {
       assert.ok(rails[0].right < rails[1].left, `forced ${scheme}: the wider rail leaves a gap before the next lane`);
       assert.ok(forced.length === 2 && forced.every((r) => r >= 3), `forced ${scheme}: both rails on new 7 reach 3:1 (${forced})`);
       await page.locator('[data-cell="new:6"]').scrollIntoViewIfNeeded();
-      await shotter(page)(`12-ranges-forced-colors-${scheme}`);
+      await shotter(page)(`13-ranges-forced-colors-${scheme}`);
     }
     assert.deepEqual(errors, []);
   }, { headless: true, viewport: { width: 1100, height: 800 }, deviceScaleFactor: 2 });

@@ -103,7 +103,7 @@ REST under `/api` (JSON), an SSE stream, and the cc MCP endpoint. Behaviour behi
 | `list_threads` | `review` | `{text, meta:{review, count, counts}}`; `status` default `open`; `owner` (`user` = human-opened, `agents` = agent-opened; absent = both; else `INVALID_ARGUMENT`); `counts` is the whole review's; cited code inlined as `path#L… @<short sha | working tree>`, ≤ 80 lines then `… (truncated)`, unresolvable ones `(unresolved: …)` |
 | `get_hunk` | `review` + `hunk` or `file` | `{text: hunk with old/new line gutters, meta:{file, hunks:[{id, verdict, threadIds}]}}`; `file`+`line` picks the hunk covering that new-side line |
 | `annotate` | `review kind body` | `{result:{ok, thread}}`; needs `file`+`startLine` or `hunk`; `severity` required for a finding |
-| `reply` | `review thread body` | `{result:{ok, thread}}`; `thread.resolveProposed:true` = proposed, not closed (even on an already resolved thread), else the thread closed. `disposition` only with a conductor's `resolve` on a finding (`INVALID_ARGUMENT` otherwise, and when a conductor closes an agent's finding without one); nothing is posted on a refusal |
+| `reply` | `review thread body` | `{result:{ok, thread}}`; `thread.resolveProposed:true` = proposed, not closed (a resolved, outdated or user-opened thread never closes from an agent), else the thread closed. `disposition` only with a conductor's `resolve` on a finding (`INVALID_ARGUMENT` otherwise, and when a conductor closes an agent's finding without one); nothing is posted on a refusal |
 | `refresh_review` | `review` | `{result:{ok, round, unchanged, hunks, threads}}` |
 
 ## cc routes consumed

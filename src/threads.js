@@ -28,8 +28,8 @@ function findThread(review, tid) {
   throw new Refusal('THREAD_UNKNOWN', `unknown thread: ${tid}`);
 }
 
-// The conductor closes any thread an agent opened; any other agent only a non-finding thread it opened. Outdated threads never close.
-const mayClose = (thread, actor) => thread.status !== 'outdated' && (
+// The conductor closes any thread an agent opened; any other agent only a non-finding thread it opened. Only an open thread closes: an agent never overrides a human's close, and an outdated thread is frozen.
+const mayClose = (thread, actor) => thread.status === 'open' && (
   isConductorProject(actor.project) ? thread.openedBy.kind === 'session'
     : thread.openedBy.sessionId === actor.sessionId && thread.kind !== 'finding');
 

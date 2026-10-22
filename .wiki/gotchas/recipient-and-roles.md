@@ -7,5 +7,5 @@
 - **One role derivation:** `roleOf` in `src/context.js`. `recipientRole` reads `conductor` from `createdBy`, so a human assigning a conductor session to a human-created review still reads `author`.
 - **`AUTHOR_UNKNOWN` is MCP-only:** a human `author` is refused `INVALID_ARGUMENT` first, so the UI has no copy for it.
 - **The prompt body follows the review kind, the closing line the role** (`src/prompt.js`): a range review can have a `reviewer` recipient.
-- **Resolve rights:** `mayClose` in `src/threads.js`. The conductor closes any agent-opened thread (a finding needs a disposition); other agents close only their own non-finding threads; user-opened and outdated threads only ever get a proposal. Outdated is frozen because past-round status is derived from `resolution`.
+- **Resolve rights:** `mayClose` in `src/threads.js`. Only an open thread closes: the conductor closes any agent-opened one (a finding needs a disposition), other agents only their own non-finding ones. User-opened, resolved and outdated threads only ever get a proposal, so an agent never overrides a human's close. Outdated is frozen because past-round status is derived from `resolution`.
 - **Owner** = `openedBy.kind` (`human` → user, `session` → agents), the same in `listThreads` and the Threads tab's owner select.

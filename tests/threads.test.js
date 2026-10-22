@@ -153,6 +153,21 @@ test('resolve: on an already resolved thread the conductor\'s resolve only propo
   assert.equal(res.resolveProposed, true);
 });
 
+test('resolve: an agent never overrides a human\'s close of an agent thread, nor re-resolves its own resolved one', async () => {
+  roster();
+  const { review } = await rangeReview(undefined, { recipient: 's-author' });
+  const f = ok(await say(review.id, at('a.js', 2), { kind: 'finding', severity: 'major' }, reviewer)).thread;
+  ok(await threads.setThreadStatus(review.id, f.id, { status: 'resolved', disposition: 'fixed' }));
+  const before = (await store.read(review.id)).threads.find((x) => x.id === f.id).resolution;
+  const res = ok(await threads.reply(review.id, conductor, f.id, { body: 'no', resolve: true, disposition: 'dismissed' })).thread;
+  assert.deepEqual([res.disposition, res.resolveProposed], ['fixed', true]);
+  assert.deepEqual((await store.read(review.id)).threads.find((x) => x.id === f.id).resolution, before);
+  const c = ok(await say(review.id, at('a.js', 3), {}, reviewer)).thread;
+  ok(await threads.reply(review.id, reviewer, c.id, { body: 'ok', resolve: true }));
+  const again = ok(await threads.reply(review.id, reviewer, c.id, { body: 'again', resolve: true })).thread;
+  assert.deepEqual([again.status, again.resolveProposed], ['resolved', true]);
+});
+
 test('resolve: the conductor closes a thread it opened itself', async () => {
   roster();
   const { review } = await rangeReview(undefined, { recipient: 's-author' });

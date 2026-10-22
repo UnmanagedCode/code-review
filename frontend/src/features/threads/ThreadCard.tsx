@@ -2,7 +2,7 @@ import { useEffect, useRef, type ReactNode } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { formatLines, navigate, useRoute } from '@/lib/route';
+import { formatLines, navigate, useRoute, type Route } from '@/lib/route';
 import type { Thread } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import { useReviewCtx } from '@/state/reviewContext';
@@ -15,8 +15,21 @@ import { ResolveControls } from './ResolveControls';
 
 const place = (t: Thread) => `L${formatLines(t.anchor.startLine, t.anchor.endLine).replace('-', '–L')} (${t.anchor.side})`;
 
-/** One thread. `dropped`: a session-local tombstone of an uncommitted thread whose lines changed. `note`: shown under the header. */
-export function ThreadCard({ thread, dropped = false, showLocation = false, note }: { thread: Thread; dropped?: boolean; showLocation?: boolean; note?: ReactNode }) {
+/**
+ * The route that shows `t` in place. An outdated thread's anchor is its last located one, so round `anchor.round` still holds
+ * it and it went outdated in the next: that comparison puts it on the left at its old lines. A base-side anchor has no place
+ * in a comparison, so it opens that round's own view. `commit` is cleared because it beats `compare`.
+ */
+const at = (t: Thread): Route => {
+  const { file, side, startLine, endLine, round } = t.anchor;
+  const lines = formatLines(startLine, endLine);
+  if (t.status !== 'outdated') return { file, side, lines, thread: t.id };
+  if (side === 'old') return { round: String(round), compare: undefined, commit: undefined, file, side, lines, thread: t.id };
+  return { compare: `${round}..${round + 1}`, round: undefined, commit: undefined, file, side: 'old', lines, thread: t.id };
+};
+
+/** One thread. `unplaced`: a comparison has no place for it, so Focus never moves the file position. `dropped`: a session-local tombstone of an uncommitted thread whose lines changed. `note`: shown under the header. */
+export function ThreadCard({ thread, dropped = false, showLocation = false, unplaced = false, note }: { thread: Thread; dropped?: boolean; showLocation?: boolean; unplaced?: boolean; note?: ReactNode }) {
   const { readOnly, compare } = useReviewCtx();
   const actions = useReviewActions();
   const route = useRoute();
@@ -30,6 +43,10 @@ export function ThreadCard({ thread, dropped = false, showLocation = false, note
   }, [focused, thread.unread, dropped]);
 
   const outdated = thread.status === 'outdated';
+  const jump = () => {
+    if (outdated && thread.unread > 0) void actions.markRead(thread.id); // this card unmounts before the focus effect can
+    navigate(at(thread));
+  };
   return (
     <article
       ref={ref}
@@ -44,11 +61,11 @@ export function ThreadCard({ thread, dropped = false, showLocation = false, note
         {thread.unread > 0 && <Badge variant="default">{thread.unread} unread</Badge>}
         {showLocation && !dropped && (
           <Button variant="link" size="sm" className="h-auto p-0 font-mono text-xs"
-            onClick={() => navigate({ file: thread.anchor.file, side: thread.anchor.side, lines: formatLines(thread.anchor.startLine, thread.anchor.endLine), thread: thread.id })}>
+            onClick={jump}>
             {thread.anchor.file}:{thread.anchor.startLine}
           </Button>
         )}
-        {!dropped && !focused && <Button variant="ghost" size="sm" className="ml-auto h-6 px-2 text-xs" onClick={() => navigate({ thread: thread.id })}>Focus</Button>}
+        {!dropped && !focused && <Button variant="ghost" size="sm" className="ml-auto h-6 px-2 text-xs" onClick={() => (!unplaced && (outdated || thread.anchor.file !== route.file) ? jump() : navigate({ thread: thread.id }))}>Focus</Button>}
       </header>
       {note}
       {dropped && <p className="text-xs text-muted-foreground">dropped: its lines changed</p>}

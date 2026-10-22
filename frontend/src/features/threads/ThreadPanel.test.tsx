@@ -2,6 +2,7 @@ import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { expect, test, vi } from 'vitest';
 import { diffFile, fileState, message, review, thread } from '@/test/fixtures';
+import { parseRoute } from '@/lib/route';
 import { ctxValue } from '@/test/renderCtx';
 import { stubFetch } from '@/test/stubFetch';
 import type { ComparedThread, UnplacedThread } from '@/lib/types';
@@ -140,4 +141,35 @@ test('a loaded comparison whose reload failed still lists its threads in every t
     expect(within(panel).queryByRole('button', { name: 'Retry' }), String(tab)).toBeNull();
     expect(within(panel).getAllByRole('article'), String(tab)).toHaveLength(n);
   }
+});
+
+// Invariant: the Outdated tab lists each thread with its location link (it opens the thread's comparison).
+test('the Outdated tab shows each thread\'s location link', async () => {
+  const t = thread({ status: 'outdated' });
+  const files = [fileState({ threads: { open: 0, resolved: 0, outdated: 1 } })];
+  render(<ReviewProvider value={ctxValue({ files, outdatedThreads: [t], fileDiff: { file: undefined } as never })}><ThreadPanel /></ReviewProvider>);
+  await userEvent.setup().click(screen.getByRole('tab', { name: /^Outdated/ }));
+  expect(screen.getByRole('button', { name: 'src/a.ts:3' })).toBeTruthy();
+});
+
+// Invariant: Focus on a thread the comparison does not place only focuses it: its anchor's side means the base there,
+// not round A's head, so navigating to file and lines would highlight the wrong snapshot.
+test('in a comparison, Focus on an unplaced thread adds only the thread to the route', async () => {
+  history.replaceState(null, '', '?review=r-1&compare=1..2');
+  render(<ReviewProvider value={comparison()}><ThreadPanel /></ReviewProvider>);
+  const user = userEvent.setup();
+  await user.click(screen.getByRole('tab', { name: /^Not in diff/ }));
+  await user.click(screen.getByRole('button', { name: 'Focus' }));
+  expect(parseRoute(location.search)).toEqual({ review: 'r-1', compare: '1..2', thread: 't-3' });
+});
+
+// Invariant: Focus on a placed thread inside a comparison stays in it: `compare` is never cleared.
+test('in a comparison, Focus on a thread of another file keeps the comparison open', async () => {
+  history.replaceState(null, '', '?review=r-1&compare=1..2&file=src%2Fb.ts');
+  render(<ReviewProvider value={comparison()}><ThreadPanel /></ReviewProvider>);
+  const user = userEvent.setup();
+  await user.click(screen.getByRole('tab', { name: /^All/ }));
+  const t2 = screen.getAllByRole('article')[1];
+  await user.click(within(t2).getByRole('button', { name: 'Focus' }));
+  expect(parseRoute(location.search)).toMatchObject({ compare: '1..2', file: 'src/a.ts', thread: 't-2' });
 });

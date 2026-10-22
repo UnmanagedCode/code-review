@@ -169,3 +169,40 @@ test('outside a comparison a citation link adds no round', async () => {
   await userEvent.setup().click(screen.getByRole('link', { name: 'src/a.ts#L3' }));
   expect(parseRoute(location.search)).toEqual({ review: 'r-1', file: 'src/a.ts', side: 'new', lines: '3' });
 });
+
+const anchorAt = (over: Partial<ReturnType<typeof thread>['anchor']>) => ({ ...thread().anchor, ...over });
+
+// Invariant: Focus on a thread of another file opens that file at the thread, dropping the old file's side and lines.
+test('Focus on a thread in another file opens that file at the thread', async () => {
+  history.replaceState(null, '', '?review=r-1&file=src%2Fb.ts&lines=9&side=old');
+  renderInReview(<ThreadCard thread={thread({ anchor: anchorAt({ startLine: 3, endLine: 4 }) })} />);
+  await userEvent.setup().click(screen.getByRole('button', { name: 'Focus' }));
+  expect(parseRoute(location.search)).toEqual({ review: 'r-1', file: 'src/a.ts', side: 'new', lines: '3-4', thread: 't-1' });
+});
+
+// Invariant: Focus within the open file only marks the thread focused; the file position is left alone.
+test('Focus on a thread in the open file only adds the thread to the route', async () => {
+  history.replaceState(null, '', '?review=r-1&file=src%2Fa.ts&lines=9');
+  renderInReview(<ThreadCard thread={thread()} />);
+  await userEvent.setup().click(screen.getByRole('button', { name: 'Focus' }));
+  expect(parseRoute(location.search)).toEqual({ review: 'r-1', file: 'src/a.ts', lines: '9', thread: 't-1' });
+});
+
+const outdatedAt = (side: 'old' | 'new') => thread({ status: 'outdated', anchor: anchorAt({ side, startLine: 10, endLine: 14, round: 2 }) });
+
+// Invariant: an outdated thread's place is the comparison of its last located round with the next, at its old lines;
+// commit= and round= are cleared because commit beats compare.
+test.each(['src/a.ts:10', 'Focus'])('%s on an outdated thread opens comparison R..R+1 at its old lines', async (name) => {
+  history.replaceState(null, '', '?review=r-1&round=1&commit=abc');
+  renderInReview(<ThreadCard thread={outdatedAt('new')} showLocation />);
+  await userEvent.setup().click(screen.getByRole('button', { name }));
+  expect(parseRoute(location.search)).toEqual({ review: 'r-1', compare: '2..3', file: 'src/a.ts', side: 'old', lines: '10-14', thread: 't-1' });
+});
+
+// Invariant: a base-side anchor has no place in a comparison, so it opens round R's own view instead.
+test('an outdated base-side thread opens its round view', async () => {
+  history.replaceState(null, '', '?review=r-1&compare=1..3&commit=abc');
+  renderInReview(<ThreadCard thread={outdatedAt('old')} showLocation />);
+  await userEvent.setup().click(screen.getByRole('button', { name: 'src/a.ts:10' }));
+  expect(parseRoute(location.search)).toEqual({ review: 'r-1', round: '2', file: 'src/a.ts', side: 'old', lines: '10-14', thread: 't-1' });
+});

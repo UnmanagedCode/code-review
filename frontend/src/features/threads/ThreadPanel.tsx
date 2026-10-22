@@ -23,7 +23,7 @@ const compareList = (shown: ShownThread[], compare: { from: number; to: number }
     {shown.map(({ thread: t, other }) => {
       const reason = (t as Partial<UnplacedThread>).reason;
       const note = reason ? <UnplacedNote reason={reason} /> : <CompareNote thread={t} other={other} compare={compare} />;
-      return <ThreadCard key={t.id} thread={t} note={note} showLocation={showLocation && !reason} />;
+      return <ThreadCard key={t.id} thread={t} note={note} showLocation={showLocation && !reason} unplaced={!!reason} />;
     })}
   </div>
 );
@@ -115,7 +115,7 @@ function ReviewThreadPanel() {
                 : allThreads.length ? list(allThreads, { showLocation: true }) : <Empty title="No threads" />}
           </TabsContent>
           <TabsContent value="outdated">
-            {ctx.outdatedThreads.length ? list(ctx.outdatedThreads, { showLocation: false }) : <Empty title="No outdated threads" />}
+            {ctx.outdatedThreads.length ? list(ctx.outdatedThreads, { showLocation: true }) : <Empty title="No outdated threads" />}
           </TabsContent>
           <TabsContent value="dropped">{list(dropped, { dropped: true })}</TabsContent>
         </div>

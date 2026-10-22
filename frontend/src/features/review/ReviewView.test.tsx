@@ -1,6 +1,6 @@
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, expect, test } from 'vitest';
+import { beforeEach, expect, test, vi } from 'vitest';
 import { WIDE_QUERY } from '@/lib/useMediaQuery';
 import { installFakeEventSource } from '@/test/fakeEventSource';
 import { installMedia } from '@/test/fakeMedia';
@@ -245,4 +245,127 @@ test('Retry in the file pane of a failed comparison fetches the comparison again
   const before = net.count('GET api/reviews/r-1/compare');
   await userEvent.setup().click(retry);
   await waitFor(() => expect(net.count('GET api/reviews/r-1/compare')).toBe(before + 1));
+});
+
+/** Two files; src/a.ts is open and holds t-1, src/b.ts holds t-2. */
+function twoFiles() {
+  const one = { open: 1, resolved: 0, outdated: 0 };
+  const b = (id: string) => thread({ id, anchor: { ...thread().anchor, file: 'src/b.ts', startLine: 3, endLine: 3 } });
+  return stubFetch({
+    'GET api/reviews/r-1': { review: review(), files: [fileState({ threads: one }), fileState({ path: 'src/b.ts', threads: one })], rounds: [], submissions: [], outdatedThreads: [] },
+    'GET api/reviews/r-1/diff': (u: URL) => ({
+      review: review(),
+      files: u.searchParams.get('file') === 'src/b.ts'
+        ? [diffFile({ path: 'src/b.ts', threads: [b('t-2')] })]
+        : [diffFile({ threads: [thread()] })],
+    }),
+    'GET api/sessions': { sessions: [] },
+  });
+}
+
+const panelCardOf = (link: string) => waitFor(() => {
+  const card = screen.getAllByRole('article').find((a) => within(a).queryByRole('button', { name: link }));
+  if (!card) throw new Error(`no card with ${link}`);
+  return card;
+});
+
+// Invariant: Focus on a thread of another file switches to that file, and the thread's card there scrolls itself into view.
+test('cross-file Focus loads the other file and focuses its thread there', async () => {
+  const scrolled: Element[] = [];
+  const orig = Element.prototype.scrollIntoView;
+  Element.prototype.scrollIntoView = function (this: Element) { scrolled.push(this); };
+  try {
+    const net = twoFiles();
+    installMedia({ [WIDE_QUERY]: true, [XL_QUERY]: true }); // the thread panel is a column only at xl
+  history.replaceState(null, '', '?review=r-1&file=src%2Fa.ts');
+    render(<ReviewView id="r-1" />);
+    await screen.findAllByRole('article');
+    // The panel's All tab lists t-2 from the thread index.
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('tab', { name: /^All/ }));
+    const t2 = await panelCardOf('src/b.ts:3');
+    await user.click(within(t2).getByRole('button', { name: 'Focus' }));
+    expect(parseRoute(location.search)).toMatchObject({ file: 'src/b.ts', thread: 't-2' });
+    const grid = await screen.findByRole('grid', { name: 'Changes in src/b.ts' });
+    await waitFor(() => expect(scrolled.some((el) => grid.contains(el) && el.getAttribute('aria-label') === 'comment thread')).toBe(true));
+  } finally { Element.prototype.scrollIntoView = orig; }
+});
+
+/** A range review at round 3 whose t-9 went outdated in round 3 (its last located anchor is round 2). */
+function outdatedWorld(files: ReturnType<typeof diffFile>[], unread = 0) {
+  const rounds = [1, 2, 3].map((n) => ({ n, headSha: `${n}`.repeat(40), baseSha: 'b'.repeat(40), createdAt: '', submittedAt: null }));
+  const t9 = thread({ id: 't-9', status: 'outdated', unread, anchor: { ...thread().anchor, round: 2, startLine: 3, endLine: 3 } });
+  const from = { ...thread({ id: 't-9', anchor: { ...thread().anchor, side: 'old', round: 2 } }), placement: 'from', outdatedIn: 3 };
+  return stubFetch({
+    'GET api/reviews/r-1': { review: review({ kind: 'range', round: 3 }), files: [fileState()], rounds, submissions: [], outdatedThreads: [t9] },
+    'GET api/reviews/r-1/compare': (u: URL) => ({
+      readOnly: true, from: rounds[Number(u.searchParams.get('from')) - 1], to: rounds[Number(u.searchParams.get('to')) - 1],
+      files: files.map((f) => ({ ...f, threads: [from] })), counts: { open: 1, resolved: 0, outdated: 0 }, unplaced: [],
+    }),
+    'GET api/reviews/r-1/diff': { review: review({ kind: 'range', round: 3 }), files: [diffFile()] },
+    'GET api/reviews/r-1/file': { path: 'src/a.ts', side: 'old', total: 4, lines: [{ n: 3, text: 'x' }] },
+    'POST api/reviews/r-1/read': { review: review() },
+    'GET api/sessions': { sessions: [] },
+  });
+}
+
+// Invariant: an outdated thread's location link opens the comparison of its last located round with the next, thread in place.
+test('an outdated thread\'s link opens comparison 2..3 with the thread in place', async () => {
+  const net = outdatedWorld([diffFile()]);
+  installMedia({ [WIDE_QUERY]: true, [XL_QUERY]: true }); // the thread panel is a column only at xl
+  history.replaceState(null, '', '?review=r-1');
+  render(<ReviewView id="r-1" />);
+  const user = userEvent.setup();
+  await user.click(await screen.findByRole('tab', { name: /^Outdated/ }));
+  await user.click(await screen.findByRole('button', { name: 'src/a.ts:3' }));
+  expect(await screen.findByText('Exit comparison')).toBeTruthy();
+  expect(parseRoute(location.search)).toMatchObject({ compare: '2..3', file: 'src/a.ts', side: 'old', thread: 't-9' });
+  const cmp = net.calls.filter((c) => c.url.pathname.endsWith('/compare'));
+  expect(cmp.length).toBeGreaterThan(0);
+  expect(cmp.every((c) => c.url.searchParams.get('from') === '2' && c.url.searchParams.get('to') === '3')).toBe(true);
+  expect((await screen.findAllByRole('article', { name: 'comment thread' })).length).toBeGreaterThan(0);
+});
+
+// Invariant: when the comparison lacks the thread's file, the cited excerpt reads round R's head (side=old) rather than nothing.
+test('an outdated thread whose file is not in the comparison shows the excerpt at its round', async () => {
+  const net = outdatedWorld([]);
+  installMedia({ [WIDE_QUERY]: true, [XL_QUERY]: true }); // the thread panel is a column only at xl
+  history.replaceState(null, '', '?review=r-1');
+  render(<ReviewView id="r-1" />);
+  const user = userEvent.setup();
+  await user.click(await screen.findByRole('tab', { name: /^Outdated/ }));
+  await user.click(await screen.findByRole('button', { name: 'src/a.ts:3' }));
+  expect(await screen.findByRole('table', { name: 'Excerpt of src/a.ts' })).toBeTruthy();
+  expect(net.calls.some((c) => c.url.pathname.endsWith('/file') && c.url.searchParams.get('round') === '2')).toBe(true);
+});
+
+// Invariant: repeating the same jump pushes one history entry (navigate ignores an identical route).
+// The location link stays mounted after the jump, unlike Focus, so it can be clicked twice.
+test('clicking a location link twice pushes one history entry', async () => {
+  const push = vi.spyOn(history, 'pushState');
+  twoFiles();
+  installMedia({ [WIDE_QUERY]: true, [XL_QUERY]: true });
+  history.replaceState(null, '', '?review=r-1&file=src%2Fa.ts');
+  render(<ReviewView id="r-1" />);
+  const user = userEvent.setup();
+  await user.click(await screen.findByRole('tab', { name: /^All/ }));
+  const link = within(await panelCardOf('src/b.ts:3')).getByRole('button', { name: 'src/b.ts:3' });
+  await user.click(link);
+  await waitFor(() => expect(parseRoute(location.search)).toMatchObject({ file: 'src/b.ts', thread: 't-2' }));
+  await user.click(link);
+  expect(push).toHaveBeenCalledTimes(1);
+  push.mockRestore();
+});
+
+// Invariant: in the real Outdated tab the card unmounts on the jump (the panel becomes the comparison's), and the unread
+// outdated thread is still marked read.
+test('jumping from the Outdated tab to an unread outdated thread marks it read', async () => {
+  const net = outdatedWorld([diffFile()], 2);
+  installMedia({ [WIDE_QUERY]: true, [XL_QUERY]: true });
+  history.replaceState(null, '', '?review=r-1');
+  render(<ReviewView id="r-1" />);
+  const user = userEvent.setup();
+  await user.click(await screen.findByRole('tab', { name: /^Outdated/ }));
+  await user.click(await screen.findByRole('button', { name: 'src/a.ts:3' }));
+  await waitFor(() => expect(net.calls.find((c) => c.method === 'POST' && c.url.pathname.endsWith('/read'))?.body).toEqual({ threadId: 't-9' }));
 });

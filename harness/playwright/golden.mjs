@@ -300,9 +300,15 @@ try {
     assert.equal(await isSplit(), false, 'a phone shows inline rows');
     await shot('9-phone-inline');
     // The resolved finding's summary keeps a readable preview at phone width: its range and badges wrap instead.
+    // Checked at 390px and at a common 412px phone, whose summary is just wider than 24rem.
     const phoneSummary = page.getByRole('button', { name: /Missing guard.*resolved/ });
-    const previewWidth = (await phoneSummary.getByText('## Missing guard', { exact: true }).boundingBox()).width;
-    assert.ok(previewWidth >= 100, `the phone summary preview keeps its width (${previewWidth}px)`);
+    const previewWidth = async () => (await phoneSummary.getByText('## Missing guard', { exact: true }).boundingBox()).width;
+    for (const width of [390, 412]) {
+      await page.setViewportSize({ width, height: 844 });
+      const w = await previewWidth();
+      assert.ok(w >= 100, `the ${width}px phone summary preview keeps its width (${w}px)`);
+    }
+    await page.setViewportSize({ width: 390, height: 844 });
 
     // 9b. A comparison on a phone: inline rows, round 1's question under its round-1 line 4.
     await page.goto(q({ review: range, compare: '1..2', file: 'a.js' }));

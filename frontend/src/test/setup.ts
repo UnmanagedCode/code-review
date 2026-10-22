@@ -2,12 +2,12 @@ import { cleanup } from '@testing-library/react';
 import { afterEach, vi } from 'vitest';
 import { resetDrafts } from '@/state/drafts';
 import { resetDropped } from '@/state/dropped';
-import { resetMarked } from '@/state/threads';
+import { resetMarks } from '@/state/readMarks';
 
 afterEach(() => {
   cleanup();
   resetDropped();
-  resetMarked();
+  resetMarks();
   resetDrafts();
   vi.useRealTimers();
   vi.unstubAllGlobals();

@@ -40,3 +40,14 @@ test('a refused mark may be retried', async () => {
   await act(() => result.current.markRead('t-1'));
   expect(posts(net)).toBe(2);
 });
+
+// Invariant: the version restarts with every visit, so a revisit at an equal version still marks a newly unread thread.
+test('after the provider remounts, marking the same thread at the same version posts again', async () => {
+  const net = stubFetch({ 'POST api/reviews/r-1/read': { review: review() } });
+  const first = actions(1);
+  await act(() => first.result.current.markRead('t-1'));
+  first.unmount();
+  const second = actions(1);
+  await act(() => second.result.current.markRead('t-1'));
+  expect(posts(net)).toBe(2);
+});

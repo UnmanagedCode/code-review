@@ -2,17 +2,8 @@ import { toast } from 'sonner';
 import * as ep from '@/lib/endpoints';
 import { errorText, STALE_DIFF } from '@/lib/refusals';
 import type { Severity, Thread, ThreadAnchorInput, ThreadKind, Verdict } from '@/lib/types';
+import { claimMark, releaseMark } from './readMarks';
 import { useReviewCtx } from './reviewContext';
-
-/**
- * Per-thread read marks already sent, keyed by review and thread, with the review version they were sent at. One thread
- * can be on screen as several cards (inline in the diff and in the force-mounted Threads tab), each asking to mark it
- * read: only the first ask per version posts. The reload a mark triggers moves the version, and by then the thread reads
- * as read, so a later unread message can be marked again.
- */
-const marked = new Map<string, number>();
-/** Test isolation: forget every mark sent. */
-export function resetMarked(): void { marked.clear(); }
 
 /** Write actions on the open review. Each returns undefined after toasting a refusal, and refetches when the diff proved stale. */
 export function useReviewActions() {
@@ -37,18 +28,14 @@ export function useReviewActions() {
     reply: (tid: string, body: string) => guard(async () => landed((await ep.replyThread(id, tid, body)).thread)),
     setStatus: (tid: string, status: 'open' | 'resolved', disposition?: 'fixed' | 'dismissed') =>
       guard(async () => landed((await ep.setThreadStatus(id, tid, status, disposition)).thread)),
-    /** One thread (deduped per review version, see `marked`), or the whole review. */
+    /** One thread (at most once per review version and visit, see `readMarks.ts`), or the whole review. */
     markRead: (threadId?: string) => {
-      const key = threadId === undefined ? undefined : `${id}\n${threadId}`;
-      if (key !== undefined) {
-        if (marked.get(key) === version) return Promise.resolve(undefined);
-        marked.set(key, version);
-      }
+      if (threadId !== undefined && !claimMark(id, threadId, version)) return Promise.resolve(undefined);
       return guard(async () => {
         try {
           applyReview((await ep.markRead(id, threadId)).review);
         } catch (e) {
-          if (key !== undefined) marked.delete(key); // a refused mark may be asked again
+          if (threadId !== undefined) releaseMark(id, threadId); // a refused mark may be asked again
           throw e;
         }
         reload();

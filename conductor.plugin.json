@@ -228,7 +228,7 @@
       },
       {
         "name": "reply",
-        "description": "Reply on a thread. resolve:true closes a non-finding thread you opened (a conductor: any thread an agent opened, a finding with `disposition`; never an outdated one); otherwise it proposes resolution to the human. The returned thread's `resolveProposed` says which.",
+        "description": "Reply on a thread. resolve:true closes a non-finding thread you opened (a conductor: any open thread an agent opened, a finding with `disposition`); otherwise it proposes resolution to the human. The returned thread's `resolveProposed` says which.",
         "inputSchema": {
           "type": "object",
           "properties": {

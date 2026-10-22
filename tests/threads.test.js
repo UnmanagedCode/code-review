@@ -144,7 +144,7 @@ test('resolve: a conductor reply without resolve never closes, and a close clear
   assert.deepEqual([closed.status, closed.resolveProposed], ['resolved', false]);
 });
 
-test('resolve: on an already resolved thread the conductor\'s resolve only proposes, so resolveProposed is the signal', async () => {
+test('resolve: on an already resolved user-opened thread the conductor\'s resolve only proposes, so resolveProposed is the signal', async () => {
   roster();
   const { review } = await rangeReview(undefined, { recipient: 's-author' });
   const t = ok(await say(review.id, at('a.js', 2))).thread;

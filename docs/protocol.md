@@ -94,7 +94,7 @@ REST under `/api` (JSON), an SSE stream, and the cc MCP endpoint. Behaviour behi
 - Header fields in text results (paths, labels, thread locations, hunk headers) have control characters stripped; code lines and message bodies are verbatim.
 - Writes (`open_review`, `annotate`, `reply`, `refresh_review`) refuse `CALLER_UNKNOWN` without `caller.sessionId`.
 - No tool sets a verdict.
-- **Trust:** `caller` comes from cc over unauthenticated loopback, so any local process can forge an agent identity, including a reviewer that resolves its own question and clears `mergeBlockers`, or a forged conductor identity (`caller.project` `.conduct`) that closes any agent-opened thread, findings included. This is no wider than the REST surface, which already acts as the human. There is no token; one would need a cc change.
+- **Trust:** `caller` comes from cc over unauthenticated loopback, so any local process can forge an agent identity, including a reviewer that resolves its own question and clears `mergeBlockers`, or a forged conductor identity (`caller.project` `.conduct`) that closes any open agent-opened thread, findings included. This is no wider than the REST surface, which already acts as the human. There is no token; one would need a cc change.
 
 | Tool | Required | Result |
 |---|---|---|
@@ -103,7 +103,7 @@ REST under `/api` (JSON), an SSE stream, and the cc MCP endpoint. Behaviour behi
 | `list_threads` | `review` | `{text, meta:{review, count, counts}}`; `status` default `open`; `owner` (`user` = human-opened, `agents` = agent-opened; absent = both; else `INVALID_ARGUMENT`); `counts` is the whole review's; cited code inlined as `path#L… @<short sha | working tree>`, ≤ 80 lines then `… (truncated)`, unresolvable ones `(unresolved: …)` |
 | `get_hunk` | `review` + `hunk` or `file` | `{text: hunk with old/new line gutters, meta:{file, hunks:[{id, verdict, threadIds}]}}`; `file`+`line` picks the hunk covering that new-side line |
 | `annotate` | `review kind body` | `{result:{ok, thread}}`; needs `file`+`startLine` or `hunk`; `severity` required for a finding |
-| `reply` | `review thread body` | `{result:{ok, thread}}`; `thread.resolveProposed:true` = proposed, not closed (a resolved, outdated or user-opened thread never closes from an agent), else the thread closed. `disposition` only with a conductor's `resolve` on a finding (`INVALID_ARGUMENT` otherwise, and when a conductor closes an agent's finding without one); nothing is posted on a refusal |
+| `reply` | `review thread body` | `{result:{ok, thread}}`; with `resolve:true`: `thread.resolveProposed:true` = proposed, `false` = closed (a resolved, outdated or user-opened thread never closes from an agent); a reply without `resolve` leaves the status alone. `disposition` only with a conductor's `resolve` on a finding (`INVALID_ARGUMENT` otherwise, and when a conductor closes an agent's finding without one); nothing is posted on a refusal |
 | `refresh_review` | `review` | `{result:{ok, round, unchanged, hunks, threads}}` |
 
 ## cc routes consumed

@@ -318,6 +318,14 @@ try {
     await finding.waitFor();
     await shot('8-resolved-expanded-inline');
     await viewGroup.getByRole('button', { name: 'Split' }).click();
+    // A focused thread collapses when it gets resolved, too: reopen it, focus it, resolve it.
+    await finding.getByRole('button', { name: 'Reopen' }).click();
+    await finding.getByRole('button', { name: 'Focus' }).click();
+    await page.waitForURL(/thread=/);
+    await finding.getByRole('button', { name: 'Resolve as fixed' }).click();
+    await findingSummary.waitFor();
+    assert.equal(await findingSummary.getAttribute('aria-expanded'), 'false', 'a focused thread collapses once resolved');
+    await shot('8-resolved-focused');
 
     // 9. Phone: the stored split choice gives way to inline, with no toggle.
     await page.setViewportSize({ width: 390, height: 844 });

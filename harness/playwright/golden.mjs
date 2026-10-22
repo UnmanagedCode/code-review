@@ -118,10 +118,16 @@ try {
     await page.getByRole('button', { name: 'Recipient: Review the feature branch' }).waitFor();
     await shot('3b-recipient-untitled');
 
-    // 5. Pick round 1: read-only, and the question that is outdated now sits under its round-1 lines again.
+    // 5. Pick round 1 in History: read-only, and the question that is outdated now sits under its round-1 lines again.
     // Back to the current round, it is gone from the diff.
-    await page.getByRole('combobox', { name: 'Round' }).selectOption('1');
+    const paneTab = (name) => page.getByRole('tablist', { name: 'Review pane' }).getByRole('tab', { name });
+    const scope = (re) => page.getByRole('button', { name: re });
+    await paneTab('History').click();
+    await page.getByRole('navigation', { name: 'History' }).getByRole('link', { name: /^Round 1 · / }).click();
     await page.getByRole('button', { name: 'Back to current round' }).waitFor();
+    await scope(/^Round 1 · .* · read-only/).waitFor();
+    await shot('5-history-round-1');
+    await paneTab('Files').click();
     await page.getByRole('link', { name: /a\.js/ }).first().click();
     const question = page.locator('[role=rowgroup] article', { hasText: 'Why change both lines?' });
     await question.waitFor();
@@ -132,7 +138,7 @@ try {
     assert.equal(await page.getByLabel('Reply').count(), 0, 'no reply box in a past round');
     await shot('5-round-1');
     await page.getByRole('button', { name: 'Back to current round' }).click();
-    await page.getByRole('combobox', { name: 'Commit filter' }).waitFor();
+    await scope(/^Round 2 · /).waitFor();
     assert.ok(!new URL(page.url()).searchParams.has('round'));
     await page.getByRole('link', { name: /a\.js/ }).first().click();
     await page.getByRole('group', { name: 'Hunk verdict' }).first().waitFor();
@@ -141,9 +147,12 @@ try {
 
     // 5c. Compare rounds (1 → 2): round 1's question sits on the left at its round-1 lines, noted outdated in round 2;
     // the comment on line 9 (unchanged in both rounds) shows once; nothing is writable.
+    await paneTab('History').click();
     await page.getByRole('button', { name: 'Compare rounds' }).click();
     await page.getByRole('button', { name: 'Exit comparison' }).waitFor();
     assert.equal(new URL(page.url()).searchParams.get('compare'), '1..2');
+    await shot('5c-history-compare');
+    await paneTab('Files').click();
     await page.getByRole('link', { name: /a\.js/ }).first().click();
     await question.waitFor();
     assert.equal((await rowBefore(question)).text, '4 · in question thread L3–L4 (old)||−|changed4', 'inline, the question sits under round 1\'s line 4 (deleted in round 2), marked on the old side');
@@ -154,7 +163,7 @@ try {
     assert.equal(await page.getByRole('button', { name: 'Submit round' }).count(), 0, 'no Submit in a comparison');
     await shot('5c-compare-inline');
 
-    // 5d. Split (needs a 36rem pane: md–xl width): the question is under the pair whose left number is 4.
+    // 5d. Split (needs a 36rem diff pane; 1100px less the default side pane leaves it): the question is under the pair whose left number is 4.
     await page.setViewportSize({ width: 1100, height: 800 });
     await page.getByRole('group', { name: 'Diff view' }).getByRole('button', { name: 'Split' }).click();
     await page.locator('[role=row].grid').first().waitFor();
@@ -163,18 +172,16 @@ try {
     assert.ok(compareOverflow <= 0, `the split comparison has no horizontal overflow (${compareOverflow}px)`);
     await shot('5c-compare-split');
 
-    // 5e. The threads sheet lists the base-side finding under Not in diff; Exit comparison leaves it.
-    await page.getByRole('button', { name: /^Threads/ }).click();
-    const sheet = page.getByRole('dialog');
-    await sheet.getByRole('tab', { name: /^Not in diff/ }).click();
-    const unplaced = sheet.getByRole('tabpanel').locator('article', { hasText: 'Missing guard' });
+    // 5e. The Threads tab lists the base-side finding under Not in diff; Exit comparison leaves it.
+    await paneTab(/^Threads/).click();
+    const threadsPanel = page.getByRole('tabpanel', { name: /^Threads/ });
+    await threadsPanel.getByRole('tab', { name: /^Not in diff/ }).click();
+    const unplaced = threadsPanel.getByRole('tabpanel').locator('article', { hasText: 'Missing guard' });
     await unplaced.waitFor();
     assert.match(await unplaced.textContent(), /on the base side/);
     await shot('5e-compare-not-in-diff');
-    await page.keyboard.press('Escape');
-    await sheet.waitFor({ state: 'detached' });
     await page.getByRole('button', { name: 'Exit comparison' }).click();
-    await page.getByRole('combobox', { name: 'Commit filter' }).waitFor();
+    await scope(/^Round 2 · /).waitFor();
     assert.ok(!new URL(page.url()).searchParams.has('compare'));
     assert.deepEqual(errors, []);
   }, { headless: true, viewport: { width: 1280, height: 800 } });
@@ -239,7 +246,7 @@ try {
     await shot('4-delivered');
     assert.deepEqual(errors, []);
   }, { headless: true, viewport: { width: 1280, height: 800 } });
-  // 6–10: split view, collapsed settled items, the resizable thread panel (stored view/width live in this page's storage).
+  // 6–11: split view, collapsed settled items, the resizable side pane (stored view/width live in this page's storage).
   await withPage(async (page) => {
     const errors = watchErrors(page);
     const shot = shotter(page);
@@ -318,15 +325,16 @@ try {
     assert.equal((await rowBefore(phoneQuestion)).text, '4 · in question thread L3–L4 (old)||−|changed4');
     await shot('9b-phone-compare');
 
-    // 10. xl: the thread column has a handle; widening it pushes split down to inline, narrowing brings it back.
-    await page.setViewportSize({ width: 1440, height: 900 });
+    // 10. The side pane has a handle; widening it pushes split down to inline, narrowing brings it back. At 1100px the
+    // default pane leaves split room and the widest one does not (at 1440px even the widest pane leaves split room).
+    await page.setViewportSize({ width: 1100, height: 800 });
     await page.goto(q({ review: range, file: 'a.js' }));
-    const handle = page.getByRole('separator', { name: 'Resize threads panel' });
+    const handle = page.getByRole('separator', { name: 'Resize side pane' });
     await handle.waitFor();
     await viewGroup.waitFor();
-    assert.ok(await isSplit(), 'the default panel leaves room for split at 1440px');
-    const panelWidth = () => handle.evaluate((h) => h.parentElement.getBoundingClientRect().width);
-    const before = await panelWidth();
+    assert.ok(await isSplit(), 'the default pane leaves room for split at 1100px');
+    const paneWidth = () => handle.evaluate((h) => h.parentElement.getBoundingClientRect().width);
+    const before = await paneWidth();
     const drag = async (dx) => {
       const b = await handle.boundingBox();
       await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2);
@@ -334,61 +342,116 @@ try {
       await page.mouse.move(b.x + b.width / 2 + dx, b.y + b.height / 2, { steps: 8 });
       await page.mouse.up();
     };
-    await drag(-200);
-    assert.equal(await panelWidth(), before + 200, 'dragging left widens the panel');
+    await drag(200);
+    assert.equal(await paneWidth(), before + 200, 'dragging right widens the pane');
     await viewGroup.waitFor({ state: 'detached' });
     assert.equal(await isSplit(), false, 'the narrower diff pane falls back to inline');
-    await shot('10-wide-panel-inline');
+    await shot('10-wide-pane-inline');
     // With room, the resolved summary stays on one line: preview and range share a row.
     const wideSummary = page.getByRole('button', { name: /Missing guard.*resolved/ });
     const [preview, rangeTag] = [await wideSummary.getByText('## Missing guard', { exact: true }).boundingBox(), await wideSummary.getByText('L8 (old)').boundingBox()];
     assert.equal(rangeTag.y + rangeTag.height / 2, preview.y + preview.height / 2, 'the wide summary is one line');
-    await drag(200);
+    await drag(-200);
     await viewGroup.waitFor();
-    assert.ok(await isSplit(), 'narrowing the panel brings split back');
+    assert.ok(await isSplit(), 'narrowing the pane brings split back');
     await handle.focus();
+    await page.keyboard.press('Home');
+    await shot('10-pane-min'); // the header, scope line and tabs (with the unread badge) at the narrowest pane
     await page.keyboard.press('End');
     const pane = await page.getByRole('main').evaluate((m) => m.getBoundingClientRect().width);
     assert.ok(pane >= 384, `the diff pane keeps its minimum (${pane}px)`);
-    const widest = await panelWidth();
-    await shot('10-panel-max');
+    const widest = await paneWidth();
+    await shot('10-pane-max');
     await page.reload();
     await handle.waitFor();
-    assert.equal(await panelWidth(), widest, 'the panel width survives a reload');
+    assert.equal(await paneWidth(), widest, 'the pane width survives a reload');
+    await handle.focus(); // put the stored width back to the default for the next steps
+    for (let w = widest; w > before; w -= 16) await page.keyboard.press('ArrowLeft');
+    assert.equal(await paneWidth(), before);
 
-    // 11. Below xl the threads sheet overlays the diff and has no handle.
+    // 11. 1024px: the same single pane and handle; no Threads button and no dialog.
     await page.setViewportSize({ width: 1024, height: 768 });
     await page.goto(q({ review: range, file: 'a.js' }));
-    await page.getByRole('button', { name: /^Threads/ }).click();
-    await page.getByRole('dialog').waitFor();
-    assert.equal(await page.getByRole('separator', { name: 'Resize threads panel' }).count(), 0, 'the md sheet has no handle');
-    await shot('11-md-sheet');
+    await page.getByRole('grid').waitFor();
+    assert.equal(await page.getByRole('separator', { name: 'Resize side pane' }).count(), 1, 'one side pane handle');
+    assert.equal(await page.getByRole('button', { name: /^Threads/ }).count(), 0, 'no Threads button beside the diff');
+    await page.getByRole('tablist', { name: 'Review pane' }).getByRole('tab', { name: /^Threads/ }).click();
+    await page.getByRole('tablist', { name: 'Thread filter' }).waitFor();
+    assert.equal(await page.getByRole('dialog').count(), 0, 'no dialog');
+    await shot('11-md-pane-threads');
     assert.deepEqual(errors, []);
-  }, { headless: true, viewport: { width: 1100, height: 800 } }); // md–xl: a 320px file column leaves a split-wide pane
-  // 12: an outdated thread's link opens its comparison; Focus on a thread of another file opens that file.
+  }, { headless: true, viewport: { width: 1100, height: 800 } }); // the default 384px side pane leaves a split-wide diff (716px)
+  // 12: an outdated thread's link opens its comparison; Focus on a thread of another file opens that file. The pane stays
+  // on its Threads tab throughout.
   await withPage(async (page) => {
     const errors = watchErrors(page);
     const shot = shotter(page);
+    const threadsTab = page.getByRole('tablist', { name: 'Review pane' }).getByRole('tab', { name: /^Threads/ });
     await page.goto(q({ review: range, file: 'a.js' }));
+    await threadsTab.click();
     await page.getByRole('tab', { name: /^Outdated/ }).click();
     await shot('12a-outdated-link');
     await page.getByRole('button', { name: 'a.js · L3–L4 (new)' }).click(); // the outdated question's last located range
     await page.getByText('Exit comparison').waitFor();
     assert.match(page.url(), /compare=1\.\.2/, 'the outdated thread opens its round and the next');
+    assert.equal(await threadsTab.getAttribute('aria-selected'), 'true', 'the comparison keeps the Threads tab');
     await page.locator('article[aria-label$="thread"]').first().waitFor();
     await shot('12b-outdated-comparison');
     await page.getByRole('button', { name: 'Exit comparison' }).click();
     await page.goto(q({ review: range, file: 'c.js' }));
+    await threadsTab.click();
     await page.getByRole('tab', { name: /^All/ }).click();
     const card = page.getByRole('article').filter({ has: page.getByRole('button', { name: /^a\.js · L/ }) }).first();
     await card.getByRole('button', { name: 'Focus' }).click();
     await page.getByRole('grid', { name: 'Changes in a.js' }).waitFor();
     assert.match(page.url(), /file=a\.js/);
+    assert.equal(new URL(page.url()).searchParams.get('view'), 'threads', 'the jump keeps view=threads');
+    assert.equal(await threadsTab.getAttribute('aria-selected'), 'true', 'the jump keeps the Threads tab');
     await shot('12c-cross-file-focus');
+
+    // 13. The scope line opens History and focuses its tab.
+    await page.getByRole('button', { name: /^Round 2 · .* — show history$/ }).click();
+    const historyTab = page.getByRole('tablist', { name: 'Review pane' }).getByRole('tab', { name: 'History' });
+    await page.getByRole('navigation', { name: 'History' }).waitFor();
+    assert.equal(await historyTab.getAttribute('aria-selected'), 'true');
+    assert.ok(await historyTab.evaluate((t) => t === document.activeElement), 'the History tab has focus');
+    await page.getByRole('navigation', { name: 'History' }).getByRole('link', { name: /^[0-9a-f]{7} / }).first().waitFor(); // the current round's commits
+    await shot('13-history');
     assert.deepEqual(errors, []);
   }, { headless: true, viewport: { width: 1400, height: 900 } });
 
-  // 13: thread range rails, in light and dark. a.js (round 2) carries a suggestion on new L5–L7 and a question on new
+  // 14. Phone: the review opens on the pane's tabs; a thread's Focus opens the diff; Back returns to the Threads tab;
+  // the diff's Threads button opens it too.
+  await withPage(async (page) => {
+    const errors = watchErrors(page);
+    const shot = shotter(page);
+    const tabs = page.getByRole('tablist', { name: 'Review pane' });
+    await page.goto(q({ review: range }));
+    await tabs.waitFor();
+    assert.equal(await page.getByRole('grid').count(), 0, 'no diff without a file');
+    await shot('14-phone-pane');
+    await tabs.getByRole('tab', { name: /^Threads/ }).click();
+    await page.getByRole('tab', { name: /^All/ }).click();
+    const card = page.getByRole('article').filter({ has: page.getByRole('button', { name: /^a\.js · L/ }) }).first();
+    await card.getByRole('button', { name: 'Focus' }).click();
+    await page.getByRole('grid', { name: 'Changes in a.js' }).waitFor();
+    assert.equal(await tabs.count(), 0, 'the diff replaces the pane');
+    await shot('14-phone-diff');
+    await page.getByRole('button', { name: 'Back to files' }).click();
+    await tabs.waitFor();
+    assert.equal(await tabs.getByRole('tab', { name: /^Threads/ }).getAttribute('aria-selected'), 'true', 'Back returns to the Threads tab');
+    await tabs.getByRole('tab', { name: 'Files' }).click();
+    await page.getByRole('link', { name: /a\.js/ }).first().click();
+    await page.getByRole('grid').waitFor();
+    await page.getByRole('button', { name: /^Threads/ }).click();
+    await tabs.waitFor();
+    assert.equal(await tabs.getByRole('tab', { name: /^Threads/ }).getAttribute('aria-selected'), 'true', 'the diff\'s Threads button opens the Threads tab');
+    assert.equal(await page.getByRole('dialog').count(), 0, 'no dialog');
+    await shot('14-phone-threads');
+    assert.deepEqual(errors, []);
+  }, { headless: true, viewport: { width: 390, height: 844 } });
+
+  // 15: thread range rails, in light and dark. a.js (round 2) carries a suggestion on new L5–L7 and a question on new
   // L7–L9 (touching: two lanes), the resolved comment on L9, step 1's question on L10–L11 and the old-side L8 finding.
   await withPage(async (page) => {
     const errors = watchErrors(page);
@@ -438,14 +501,14 @@ try {
       await measure('ctx (new 9)', '[data-cell="new:9"]');
       await measure('del (old 8)', '[data-cell="old:8"]');
       await page.locator('[data-cell="new:6"]').scrollIntoViewIfNeeded();
-      await shot('13-ranges-inline');
+      await shot('15-ranges-inline');
 
       // A selection over a rail (info tint): click a marked gutter, measure, then cancel the composer.
       await page.locator('[data-cell="new:6"]').click();
       const form = page.getByRole('form', { name: 'Comment on L6 (new)' });
       await form.waitFor();
       await measure('selected (new 6)', '[data-cell="new:6"]');
-      await shot('13-ranges-selection');
+      await shot('15-ranges-selection');
       await form.getByRole('button', { name: 'Cancel' }).click();
 
       // Split: the same rails in the right half; the wrapped line 6 rail spans its full row height.
@@ -456,7 +519,7 @@ try {
       assert.ok(cellH > 30 && railH === cellH, `the wrapped row's rail spans its full height (${railH}px of ${cellH}px)`);
       await measure('split add (new 6)', '[data-cell="new:6"]');
       await page.locator('[data-cell="new:6"]').scrollIntoViewIfNeeded();
-      await shot('13-ranges-split');
+      await shot('15-ranges-split');
 
       // Focus the suggestion: its rails turn active, the question's do not; on a reload its accepted hunk opens by itself.
       await page.locator('[role=rowgroup] article', { hasText: 'Split the long line' }).getByRole('button', { name: 'Focus' }).click();
@@ -468,14 +531,14 @@ try {
       await measure('active add (new 5)', '[data-cell="new:5"]');
       await measure('active ctx (new 7, two lanes)', '[data-cell="new:7"]');
       await page.locator('[data-cell="new:6"]').scrollIntoViewIfNeeded();
-      await shot('13-ranges-active');
+      await shot('15-ranges-active');
 
       // A citation target (warning wash) under the rails.
       await page.goto(q({ review: range, file: 'a.js', side: 'new', lines: '5-9' }));
       await page.locator('[data-line-target]').waitFor();
       await measure('target add (new 6)', '[data-cell="new:6"]');
       await measure('target ctx (new 9)', '[data-cell="new:9"]');
-      await shot('13-ranges-target');
+      await shot('15-ranges-target');
 
       // Compare 1 → 2 (read-only, split): round 2's copies mark the right half.
       await page.goto(q({ review: range, compare: '1..2', file: 'a.js' }));
@@ -483,7 +546,7 @@ try {
       const rightGutter = (n) => page.locator('[role=row].grid').filter({ has: page.locator('[role=gridcell]:nth-child(4)', { hasText: new RegExp(`^${n}\\b`) }) }).locator('[role=gridcell]:nth-child(4)').first();
       assert.equal(await rightGutter(6).textContent(), `6 · in ${SUGGESTION}`, 'round 2\'s copy marks the right half');
       await rightGutter(6).scrollIntoViewIfNeeded();
-      await shot('13-ranges-compare');
+      await shot('15-ranges-compare');
 
       console.log(`rail contrast (${scheme}):`, JSON.stringify(contrasts));
       for (const [where, ratios] of Object.entries(contrasts)) {
@@ -522,7 +585,7 @@ try {
       assert.ok(rails[0].right < rails[1].left, `forced ${scheme}: the wider rail leaves a gap before the next lane`);
       assert.ok(forced.length === 2 && forced.every((r) => r >= 3), `forced ${scheme}: both rails on new 7 reach 3:1 (${forced})`);
       await page.locator('[data-cell="new:6"]').scrollIntoViewIfNeeded();
-      await shotter(page)(`13-ranges-forced-colors-${scheme}`);
+      await shotter(page)(`15-ranges-forced-colors-${scheme}`);
     }
     assert.deepEqual(errors, []);
   }, { headless: true, viewport: { width: 1100, height: 800 }, deviceScaleFactor: 2 });

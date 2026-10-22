@@ -45,9 +45,9 @@ function CompareThreadPanel({ compare }: { compare: NonNullable<ReturnType<typeo
   const load = ctx.viewLoad;
   const gate = view ? null : load?.error ? <ErrorState error={load.error} onRetry={load.reload} /> : <Loading label="Loading threads" rows={3} />;
   return (
-    <section aria-label="Threads" className="flex min-h-0 flex-1 flex-col">
+    <div className="flex min-h-0 flex-1 flex-col">
       <Tabs value={tab} onValueChange={setTab} className="min-h-0 flex-1 gap-0">
-        <TabsList className="m-3 w-auto">
+        <TabsList aria-label="Thread filter" className="m-3 w-auto">
           <TabsTrigger value="file">This file</TabsTrigger>
           <TabsTrigger value="all">All <Badge variant="secondary">{every.length}</Badge></TabsTrigger>
           <TabsTrigger value="unplaced">Not in diff <Badge variant="secondary">{unplaced.length}</Badge></TabsTrigger>
@@ -70,7 +70,7 @@ function CompareThreadPanel({ compare }: { compare: NonNullable<ReturnType<typeo
           </TabsContent>
         </div>
       </Tabs>
-    </section>
+    </div>
   );
 }
 
@@ -90,9 +90,9 @@ function ReviewThreadPanel() {
   const nextUnread = index.threads.find((t) => t.unread > 0);
   const counts = ctx.threadCounts;
   return (
-    <section aria-label="Threads" className="flex min-h-0 flex-1 flex-col">
+    <div className="flex min-h-0 flex-1 flex-col">
       <Tabs value={tab} onValueChange={setTab} className="min-h-0 flex-1 gap-0">
-        <TabsList className="m-3 w-auto">
+        <TabsList aria-label="Thread filter" className="m-3 w-auto">
           <TabsTrigger value="file">This file</TabsTrigger>
           <TabsTrigger value="all">All <Badge variant="secondary">{counts.open + counts.resolved}</Badge></TabsTrigger>
           <TabsTrigger value="outdated">Outdated <Badge variant="secondary">{ctx.outdatedThreads.length}</Badge></TabsTrigger>
@@ -120,6 +120,6 @@ function ReviewThreadPanel() {
           <TabsContent value="dropped">{list(dropped, { dropped: true })}</TabsContent>
         </div>
       </Tabs>
-    </section>
+    </div>
   );
 }

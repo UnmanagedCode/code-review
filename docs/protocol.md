@@ -146,10 +146,10 @@ The page keeps its state in the query string (`?…`, never the hash) and writes
 | `file` | A path in the diff, or a cited path outside it |
 | `side` | `old` or `new`, for `lines` (default `new`) |
 | `lines` | `10` or `10-20`: highlight, scroll to, and expand context to reach it |
-| `thread` | Focused thread: scrolled to, panel opened, marked read |
+| `thread` | Focused thread: scrolled to, marked read |
 | `commit` | Range reviews: commit-filter view (read-only) |
 | `round` | Range reviews: past-round view (read-only), a positive integer; ignored with `commit`, dropped when it names the current round or a later one. Focusing a thread there marks nothing read |
 | `compare` | Range reviews: round comparison (read-only), `A..B` of positive integers. Ignored with `commit`; beats `round` (which is dropped); dropped when the review is not a range review, `A` ≥ `B`, or `B` is past the current round. There `side=old` means round A's lines and `new` round B's |
-| `view` | `new` (New review dialog) or `threads` (thread panel on narrow layouts) |
+| `view` | Outside a review: `new` (New review dialog). Inside one, the side pane's tab: `threads` or `history` (History only on range reviews; elsewhere it shows Files); absent = Files. Tab clicks write it with `replace`; every other in-review navigation keeps it; opening or leaving a review clears it |
 
 **Citation links.** A message citation (`path#L10-L20`) renders as `?<route>&file=<path>&side=new&lines=10-20`, built from the route serialiser, never from the message text. Inside a comparison it also sets `round=<the message's round>` and clears `compare`. Paths that start with `/` or contain a `..` segment are left as text, like the backend's citation resolver. A markdown link whose destination is a listed citation (`[label](path#L10-L20)`) renders the same route link, labelled by its label.

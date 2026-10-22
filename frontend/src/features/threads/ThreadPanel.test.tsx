@@ -43,6 +43,15 @@ test('"Next unread" focuses the first unread thread, which posts read {threadId}
   await waitFor(() => expect(net.calls.filter((c) => c.method === 'POST').map((c) => c.body)).toEqual([{ threadId: 't-7' }]));
 });
 
+// Invariant: the filter is its own named tablist, so it reads as nested inside the pane's Threads tab.
+test('the filter tablist is named "Thread filter", in the review and in a comparison', () => {
+  const { unmount } = render(<ReviewProvider value={ctxValue({ fileDiff: { file: undefined } as never })}><ThreadPanel /></ReviewProvider>);
+  expect(screen.getByRole('tablist', { name: 'Thread filter' })).toBeTruthy();
+  unmount();
+  render(<ReviewProvider value={comparison()}><ThreadPanel /></ReviewProvider>);
+  expect(screen.getByRole('tablist', { name: 'Thread filter' })).toBeTruthy();
+});
+
 test('the All count is the shown threads\' counts, not the review\'s', () => {
   const value = ctxValue({ review: review({ counts: { ...review().counts, threads: { open: 9, resolved: 9, outdated: 0 } } }), threadCounts: { open: 2, resolved: 1, outdated: 0 }, fileDiff: { file: undefined } as never });
   render(<ReviewProvider value={value}><ThreadPanel /></ReviewProvider>);

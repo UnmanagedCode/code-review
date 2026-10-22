@@ -61,7 +61,8 @@ try {
         await shot('diff');
 
         if (vp === 'desktop') {
-          // Split needs a 36rem pane: at 1280px (xl) the thread column leaves less, so shoot it at md–xl width.
+          // Split needs a 36rem diff pane; at 1280px the default 384px side pane leaves room, but shoot it at 1100px,
+          // the narrowest common desktop width that still gets split.
           await page.setViewportSize({ width: 1100, height: 800 });
           await open(q({ review: range, file: 'a.js' }), page.getByRole('grid'));
           await page.getByRole('group', { name: 'Diff view' }).getByRole('button', { name: 'Split' }).click();
@@ -77,21 +78,21 @@ try {
           await page.getByRole('group', { name: 'Diff view' }).getByRole('button', { name: 'Inline' }).click();
           await page.setViewportSize(size);
           await open(q({ review: range, file: 'a.js' }), page.getByRole('grid'));
-          await page.getByRole('tab', { name: /^All/ }).click();
-          await page.getByRole('tabpanel').getByRole('article').first().waitFor();
-          await shot('threads-all');
-          await page.getByRole('tab', { name: /Outdated/ }).click();
-          await page.getByText(/outdated · was/).first().waitFor();
-          await shot('threads-outdated');
+          await page.getByRole('tablist', { name: 'Review pane' }).getByRole('tab', { name: /^Threads/ }).click();
         } else {
-          await open(q({ review: range, file: 'a.js', view: 'threads' }), page.getByRole('tab', { name: /Outdated/ }));
-          await page.getByRole('tab', { name: /^All/ }).click();
-          await page.getByRole('tabpanel').getByRole('article').first().waitFor();
-          await shot('threads-all');
-          await page.getByRole('tab', { name: /Outdated/ }).click();
-          await page.getByText(/outdated · was/).first().waitFor();
-          await shot('threads-outdated');
+          // A phone shows the pane or the diff: the Threads tab is the pane's, so open it without a file.
+          await open(q({ review: range, view: 'threads' }), page.getByRole('tab', { name: /Outdated/ }));
         }
+        await page.getByRole('tab', { name: /^All/ }).click();
+        await page.getByRole('tabpanel').getByRole('article').first().waitFor();
+        await shot('threads-all');
+        await page.getByRole('tab', { name: /Outdated/ }).click();
+        await page.getByText(/outdated · was/).first().waitFor();
+        await shot('threads-outdated');
+
+        // History: the rounds newest first, the current round's commits under it.
+        await open(q({ review: range, view: 'history' }), page.getByRole('navigation', { name: 'History' }).getByRole('link', { name: /^[0-9a-f]{7} / }));
+        await shot('history');
 
         // Round 1 of the range review, read-only: the banner, then a.js with the question that is outdated now.
         await open(q({ review: range, round: '1' }), page.getByRole('button', { name: 'Back to current round' }));

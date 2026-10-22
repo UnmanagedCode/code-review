@@ -2,7 +2,7 @@ import { useSyncExternalStore } from 'react';
 
 export interface Route {
   project?: string; worktree?: string; review?: string; file?: string; side?: 'old' | 'new';
-  lines?: string; thread?: string; commit?: string; round?: string; compare?: string; view?: 'new' | 'threads';
+  lines?: string; thread?: string; commit?: string; round?: string; compare?: string; view?: 'new' | 'threads' | 'history';
 }
 const KEYS = ['project', 'worktree', 'review', 'file', 'side', 'lines', 'thread', 'commit', 'round', 'compare', 'view'] as const;
 
@@ -13,6 +13,9 @@ const KEYS = ['project', 'worktree', 'review', 'file', 'side', 'lines', 'thread'
 export const REVIEW_SCOPED = {
   file: undefined, side: undefined, lines: undefined, thread: undefined, commit: undefined, round: undefined, compare: undefined, view: undefined,
 } as const satisfies Route;
+
+/** Leaves the open file position (file, lines, side, focused thread) and nothing else: filters, views and the pane tab stay. */
+export const LEAVE_FILE = { file: undefined, lines: undefined, side: undefined, thread: undefined } as const satisfies Route;
 
 const COMPARE_RE = /^([1-9]\d*)\.\.([1-9]\d*)$/;
 
@@ -29,7 +32,7 @@ export function parseRoute(search: string): Route {
     const v = p.get(k);
     if (v === null || v === '') continue;
     if (k === 'side' && v !== 'old' && v !== 'new') continue;
-    if (k === 'view' && v !== 'new' && v !== 'threads') continue;
+    if (k === 'view' && v !== 'new' && v !== 'threads' && v !== 'history') continue;
     if (k === 'lines' && !/^\d+(-\d+)?$/.test(v)) continue;
     if (k === 'round' && !/^[1-9]\d*$/.test(v)) continue;
     if (k === 'compare' && !COMPARE_RE.test(v)) continue;

@@ -61,7 +61,7 @@ export function useReturnFocus(open: boolean) {
   return { register, onCloseAutoFocus };
 }
 
-/** Provided by `Dialog` and `Sheet` (`web/src/components/ui/`), consumed by their content. */
+/** Provided by `Dialog` (`frontend/src/components/ui/`), consumed by its content. */
 export const ReturnFocusContext = React.createContext<ReturnType<typeof useReturnFocus> | null>(null);
 
 /**

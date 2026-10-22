@@ -2,12 +2,13 @@ import { toast } from 'sonner';
 import * as ep from '@/lib/endpoints';
 import { errorText, STALE_DIFF } from '@/lib/refusals';
 import type { Severity, Thread, ThreadAnchorInput, ThreadKind, Verdict } from '@/lib/types';
+import { claimMark, releaseMark } from './readMarks';
 import { useReviewCtx } from './reviewContext';
 
 /** Write actions on the open review. Each returns undefined after toasting a refusal, and refetches when the diff proved stale. */
 export function useReviewActions() {
   const ctx = useReviewCtx();
-  const { id, fileDiff, reload, applyReview } = ctx;
+  const { id, fileDiff, reload, applyReview, version } = ctx;
 
   async function guard<T>(fn: () => Promise<T>): Promise<T | undefined> {
     try {
@@ -27,7 +28,19 @@ export function useReviewActions() {
     reply: (tid: string, body: string) => guard(async () => landed((await ep.replyThread(id, tid, body)).thread)),
     setStatus: (tid: string, status: 'open' | 'resolved', disposition?: 'fixed' | 'dismissed') =>
       guard(async () => landed((await ep.setThreadStatus(id, tid, status, disposition)).thread)),
-    markRead: (threadId?: string) => guard(async () => { applyReview((await ep.markRead(id, threadId)).review); reload(); }),
+    /** One thread (at most once per review version and visit, see `readMarks.ts`), or the whole review. */
+    markRead: (threadId?: string) => {
+      if (threadId !== undefined && !claimMark(id, threadId, version)) return Promise.resolve(undefined);
+      return guard(async () => {
+        try {
+          applyReview((await ep.markRead(id, threadId)).review);
+        } catch (e) {
+          if (threadId !== undefined) releaseMark(id, threadId); // a refused mark may be asked again
+          throw e;
+        }
+        reload();
+      });
+    },
     /** Optimistic: flips at once, reverts on refusal. */
     async setVerdict(hunkId: string, verdict: Verdict, previous: Verdict | null) {
       fileDiff.patchVerdict(hunkId, verdict);

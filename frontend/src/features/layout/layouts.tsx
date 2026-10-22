@@ -1,21 +1,20 @@
-import type { ReactNode } from 'react';
+import { useId, type ReactNode } from 'react';
 import { ResizeHandle } from './ResizeHandle';
-import { useResizablePanel } from './useResizablePanel';
+import { useResizablePane } from './useResizablePane';
 
-/** Desktop: a left column, the centre, and (≥ xl) an optional right column, resizable from its left edge. */
-export function DesktopLayout({ left, center, right }: { left: ReactNode; center: ReactNode; right?: ReactNode }) {
-  const panel = useResizablePanel();
+/** Desktop: a side pane on the left, resizable from its right edge, and the centre. */
+export function DesktopLayout({ left, center }: { left: ReactNode; center: ReactNode }) {
+  const pane = useResizablePane();
+  const id = useId();
   return (
-    <div ref={right ? panel.rootRef : undefined} className="flex h-full min-h-0">
-      <aside ref={panel.leftRef} className="flex w-80 shrink-0 flex-col overflow-y-auto border-r xl:w-96">{left}</aside>
+    <div ref={pane.rootRef} className="flex h-full min-h-0">
+      {/* The handle is the scroller's sibling, so it never scrolls away with the pane's content. */}
+      <div className="relative shrink-0" style={{ width: pane.width }}>
+        <aside id={id} className="flex h-full flex-col overflow-y-auto border-r">{left}</aside>
+        <ResizeHandle {...pane.handleProps} controls={id} />
+      </div>
       {/* A stable scrollbar gutter keeps the centre's width (which picks the diff view) independent of its scrollbar. */}
       <main className="min-w-0 flex-1 overflow-auto [scrollbar-gutter:stable]">{center}</main>
-      {right && (
-        <aside className="relative flex shrink-0 flex-col overflow-hidden border-l" style={{ width: panel.width }}>
-          <ResizeHandle {...panel.handleProps} />
-          {right}
-        </aside>
-      )}
     </div>
   );
 }

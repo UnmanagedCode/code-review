@@ -1,7 +1,8 @@
-import { createContext, useContext, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, type ReactNode } from 'react';
 import type { CompareView, ReviewDetail } from '@/lib/endpoints';
 import type { ReviewSummary, Session, Thread, ThreadCounts } from '@/lib/types';
 import type { FileDiffState } from './fileDiff';
+import { forgetMarks } from './readMarks';
 
 export interface ReviewCtx extends Omit<ReviewDetail, 'review'> {
   id: string;
@@ -29,7 +30,12 @@ export interface ReviewCtx extends Omit<ReviewDetail, 'review'> {
 }
 
 const Ctx = createContext<ReviewCtx | null>(null);
-export const ReviewProvider = ({ value, children }: { value: ReviewCtx; children: ReactNode }) => <Ctx.Provider value={value}>{children}</Ctx.Provider>;
+/** One visit of a review: its read marks (`readMarks.ts`) last as long as this provider shows that review. */
+export function ReviewProvider({ value, children }: { value: ReviewCtx; children: ReactNode }) {
+  const { id } = value;
+  useEffect(() => () => forgetMarks(id), [id]);
+  return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
+}
 export function useReviewCtx(): ReviewCtx {
   const v = useContext(Ctx);
   if (!v) throw new Error('useReviewCtx outside ReviewProvider');

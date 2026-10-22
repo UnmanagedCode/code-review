@@ -7,7 +7,7 @@ import { installMedia } from '@/test/fakeMedia';
 import { parseRoute } from '@/lib/route';
 import { diffFile, fileState, refusal, review, thread } from '@/test/fixtures';
 import { stubFetch } from '@/test/stubFetch';
-import { ReviewView, XL_QUERY } from './ReviewView';
+import { ReviewView } from './ReviewView';
 
 beforeEach(() => installFakeEventSource());
 
@@ -33,15 +33,19 @@ test('an open review offers gutter selection and a reply box', async () => {
   expect(screen.getAllByLabelText('Reply').length).toBeGreaterThan(0);
 });
 
-// Invariant: the resize handle exists only where the thread panel sits beside the diff.
-test.each([[false, false], [true, true]])('with xl=%s the threads panel handle is present=%s', async (xl, present) => {
-  installMedia({ [WIDE_QUERY]: true, [XL_QUERY]: xl });
+// Invariant: every wide layout is one resizable side pane beside the diff; the threads live in its tabs, not a dialog.
+test('wide: one side pane holds the threads, with one resize handle and no dialog or Threads button', async () => {
+  installMedia({ [WIDE_QUERY]: true });
   world('open');
   history.replaceState(null, '', '?review=r-1&file=src%2Fa.ts&view=threads');
   render(<ReviewView id="r-1" />);
-  // Below xl the panel is an open modal sheet, which hides the rest from the accessibility tree.
-  await screen.findByRole('grid', { hidden: true });
-  expect(!!screen.queryByRole('separator', { name: 'Resize threads panel', hidden: true })).toBe(present);
+  await screen.findByRole('grid');
+  expect(screen.getAllByRole('separator', { name: 'Resize side pane' })).toHaveLength(1);
+  expect(screen.queryByRole('dialog', { hidden: true })).toBeNull();
+  expect(screen.queryByRole('button', { name: /^Threads/ })).toBeNull();
+  const threads = within(screen.getByRole('tablist', { name: 'Review pane' })).getByRole('tab', { name: /^Threads/ });
+  expect(threads.getAttribute('aria-selected')).toBe('true');
+  expect(within(screen.getByRole('tabpanel', { name: /^Threads/ })).getByRole('tablist', { name: 'Thread filter' })).toBeTruthy();
 });
 
 test('a closed review is read-only: no gutter selection and no reply box', async () => {
@@ -79,9 +83,9 @@ function twoRounds(roundView: unknown = undefined) {
   });
 }
 
-test('a past round shows that round\'s files, read-only: no verdicts, no Accept file, no gutter selection, no reply box, no commit filter', async () => {
+test('a past round shows that round\'s files, read-only: no verdicts, no Accept file, no gutter selection, no reply box', async () => {
   const net = twoRounds();
-  history.replaceState(null, '', '?review=r-1&round=1&file=old.ts');
+  history.replaceState(null, '', '?review=r-1&round=1&file=old.ts&view=history');
   render(<ReviewView id="r-1" />);
   await screen.findByRole('article', { name: 'comment thread' });
   expect(net.count('GET api/reviews/r-1/rounds/1')).toBeGreaterThan(0);
@@ -90,8 +94,11 @@ test('a past round shows that round\'s files, read-only: no verdicts, no Accept 
   expect(screen.queryByRole('button', { name: 'Accept file' })).toBeNull();
   expect(document.querySelector('[data-cell]')).toBeNull();
   expect(screen.queryByLabelText('Reply')).toBeNull();
-  expect(screen.queryByRole('combobox', { name: 'Commit filter' })).toBeNull();
-  expect((screen.getByRole('combobox', { name: 'Round' }) as HTMLSelectElement).value).toBe('1');
+  // History marks the viewed round; its commits sit under the current round, picking one leaves the past view.
+  const hist = screen.getByRole('navigation', { name: 'History' });
+  expect(within(hist).getByRole('link', { name: /^Round 1 · / }).getAttribute('aria-current')).toBe('true');
+  const current = within(hist).getByRole('link', { name: /^Round 2 \(current\)/ }).closest('li')!;
+  expect(within(current).getByRole('link', { name: /abc1234/ })).toBeTruthy();
   const diffs = net.calls.filter((c) => c.url.pathname.endsWith('/diff'));
   expect(diffs.every((c) => c.url.searchParams.get('round') === '1')).toBe(true);
 });
@@ -102,7 +109,7 @@ test('"Back to current round" leaves the round view and the round\'s file', asyn
   render(<ReviewView id="r-1" />);
   await userEvent.setup().click(await screen.findByRole('button', { name: 'Back to current round' }));
   expect(parseRoute(location.search)).toEqual({ review: 'r-1' });
-  expect(await screen.findByRole('combobox', { name: 'Commit filter' })).toBeTruthy();
+  expect(await screen.findByRole('button', { name: /^Round 2 · 2222222 — show history/ })).toBeTruthy();
 });
 
 test('round= naming the current round is dropped from the URL, and the live view shows', async () => {
@@ -114,12 +121,14 @@ test('round= naming the current round is dropped from the URL, and the live view
   expect(screen.queryByRole('button', { name: 'Back to current round' })).toBeNull();
 });
 
-test('a refused round view shows its error in place of the file tree, with the round picker still there', async () => {
+test('a refused round view shows its error in the Files tab, with History still reachable', async () => {
   twoRounds(refusal('SNAPSHOT_GONE', 410));
   history.replaceState(null, '', '?review=r-1&round=1');
   render(<ReviewView id="r-1" />);
-  expect(await screen.findByRole('button', { name: /retry/i })).toBeTruthy();
-  expect(screen.getByRole('combobox', { name: 'Round' })).toBeTruthy();
+  const files = await screen.findByRole('tabpanel', { name: 'Files' });
+  expect(await within(files).findByRole('button', { name: /retry/i })).toBeTruthy();
+  await userEvent.setup().click(screen.getByRole('tab', { name: 'History' }));
+  expect(within(screen.getByRole('navigation', { name: 'History' })).getByRole('link', { name: /^Round 1 · / }).getAttribute('aria-current')).toBe('true');
 });
 
 test('a closed review in a past-round view says it is closed but offers no Reopen', async () => {
@@ -178,7 +187,7 @@ test('a comparison lists its files and is read-only: no verdicts, Accept file, S
   expect(screen.queryByRole('button', { name: 'Review actions' })).toBeNull();
   expect(screen.queryByLabelText('Reply')).toBeNull();
   expect(document.querySelector('[data-cell]')).toBeNull();
-  expect(screen.queryByRole('combobox', { name: 'Commit filter' })).toBeNull();
+  expect(screen.getByRole('button', { name: /^Round 1 → 3 · read-only/ })).toBeTruthy();
 });
 
 // Invariant: a comparison the review cannot have is replaced out of the URL, and the live view shows.
@@ -226,7 +235,7 @@ test('Exit comparison clears the comparison and the file position', async () => 
   render(<ReviewView id="r-1" />);
   await userEvent.setup().click(await screen.findByRole('button', { name: 'Exit comparison' }));
   expect(parseRoute(location.search)).toEqual({ review: 'r-1' });
-  expect(await screen.findByRole('combobox', { name: 'Commit filter' })).toBeTruthy();
+  expect(await screen.findByRole('button', { name: /^Round 3 · 3333333 — show history/ })).toBeTruthy();
 });
 
 // Invariant: on a phone the open file's Retry is the only recovery from a failed comparison, so it refetches it.
@@ -237,7 +246,7 @@ test('Retry in the file pane of a failed comparison fetches the comparison again
     'GET api/reviews/r-1/compare': refusal('SNAPSHOT_GONE', 410),
     'GET api/sessions': { sessions: [] },
   });
-  installMedia({ [WIDE_QUERY]: false }); // phone: the open file replaces the sidebar, so its Retry is the only one
+  installMedia({ [WIDE_QUERY]: false }); // phone: the open file replaces the pane, so its Retry is the only one
   history.replaceState(null, '', '?review=r-1&compare=1..2&file=src%2Fa.ts');
   render(<ReviewView id="r-1" />);
   const retry = await screen.findByRole('button', { name: 'Retry' });
@@ -270,23 +279,26 @@ const panelCardOf = (link: string) => waitFor(() => {
 });
 
 // Invariant: Focus on a thread of another file switches to that file, and the thread's card there scrolls itself into view.
-test('cross-file Focus loads the other file and focuses its thread there', async () => {
+// Invariant: the pane stays on its Threads tab across the jump.
+test('cross-file Focus loads the other file and focuses its thread there, the Threads tab still selected', async () => {
   const scrolled: Element[] = [];
   const orig = Element.prototype.scrollIntoView;
   Element.prototype.scrollIntoView = function (this: Element) { scrolled.push(this); };
   try {
     const net = twoFiles();
-    installMedia({ [WIDE_QUERY]: true, [XL_QUERY]: true }); // the thread panel is a column only at xl
-  history.replaceState(null, '', '?review=r-1&file=src%2Fa.ts');
+    installMedia({ [WIDE_QUERY]: true });
+    history.replaceState(null, '', '?review=r-1&file=src%2Fa.ts');
     render(<ReviewView id="r-1" />);
     await screen.findAllByRole('article');
-    // The panel's All tab lists t-2 from the thread index.
+    // The Threads tab's All filter lists t-2 from the thread index.
     const user = userEvent.setup();
+    await user.click(await screen.findByRole('tab', { name: /^Threads/ }));
     await user.click(await screen.findByRole('tab', { name: /^All/ }));
     const t2 = await panelCardOf('src/b.ts · L3 (new)');
     await user.click(within(t2).getByRole('button', { name: 'Focus' }));
-    expect(parseRoute(location.search)).toMatchObject({ file: 'src/b.ts', thread: 't-2' });
+    expect(parseRoute(location.search)).toMatchObject({ file: 'src/b.ts', thread: 't-2', view: 'threads' });
     const grid = await screen.findByRole('grid', { name: 'Changes in src/b.ts' });
+    expect(screen.getByRole('tab', { name: /^Threads/ }).getAttribute('aria-selected')).toBe('true');
     await waitFor(() => expect(scrolled.some((el) => grid.contains(el) && el.getAttribute('aria-label') === 'comment thread')).toBe(true));
   } finally { Element.prototype.scrollIntoView = orig; }
 });
@@ -312,14 +324,16 @@ function outdatedWorld(files: ReturnType<typeof diffFile>[], unread = 0) {
 // Invariant: an outdated thread's location link opens the comparison of its last located round with the next, thread in place.
 test('an outdated thread\'s link opens comparison 2..3 with the thread in place', async () => {
   const net = outdatedWorld([diffFile()]);
-  installMedia({ [WIDE_QUERY]: true, [XL_QUERY]: true }); // the thread panel is a column only at xl
+  installMedia({ [WIDE_QUERY]: true });
   history.replaceState(null, '', '?review=r-1');
   render(<ReviewView id="r-1" />);
   const user = userEvent.setup();
+  await user.click(await screen.findByRole('tab', { name: /^Threads/ }));
   await user.click(await screen.findByRole('tab', { name: /^Outdated/ }));
   await user.click(await screen.findByRole('button', { name: 'src/a.ts · L3 (new)' }));
   expect(await screen.findByText('Exit comparison')).toBeTruthy();
-  expect(parseRoute(location.search)).toMatchObject({ compare: '2..3', file: 'src/a.ts', side: 'old', thread: 't-9' });
+  expect(parseRoute(location.search)).toMatchObject({ compare: '2..3', file: 'src/a.ts', side: 'old', thread: 't-9', view: 'threads' });
+  expect(screen.getByRole('tab', { name: /^Threads/ }).getAttribute('aria-selected')).toBe('true');
   const cmp = net.calls.filter((c) => c.url.pathname.endsWith('/compare'));
   expect(cmp.length).toBeGreaterThan(0);
   expect(cmp.every((c) => c.url.searchParams.get('from') === '2' && c.url.searchParams.get('to') === '3')).toBe(true);
@@ -329,10 +343,11 @@ test('an outdated thread\'s link opens comparison 2..3 with the thread in place'
 // Invariant: when the comparison lacks the thread's file, the cited excerpt reads round R's head (side=old) rather than nothing.
 test('an outdated thread whose file is not in the comparison shows the excerpt at its round', async () => {
   const net = outdatedWorld([]);
-  installMedia({ [WIDE_QUERY]: true, [XL_QUERY]: true }); // the thread panel is a column only at xl
+  installMedia({ [WIDE_QUERY]: true });
   history.replaceState(null, '', '?review=r-1');
   render(<ReviewView id="r-1" />);
   const user = userEvent.setup();
+  await user.click(await screen.findByRole('tab', { name: /^Threads/ }));
   await user.click(await screen.findByRole('tab', { name: /^Outdated/ }));
   await user.click(await screen.findByRole('button', { name: 'src/a.ts · L3 (new)' }));
   expect(await screen.findByRole('table', { name: 'Excerpt of src/a.ts' })).toBeTruthy();
@@ -344,8 +359,8 @@ test('an outdated thread whose file is not in the comparison shows the excerpt a
 test('clicking a location link twice pushes one history entry', async () => {
   const push = vi.spyOn(history, 'pushState');
   twoFiles();
-  installMedia({ [WIDE_QUERY]: true, [XL_QUERY]: true });
-  history.replaceState(null, '', '?review=r-1&file=src%2Fa.ts');
+  installMedia({ [WIDE_QUERY]: true });
+  history.replaceState(null, '', '?review=r-1&file=src%2Fa.ts&view=threads');
   render(<ReviewView id="r-1" />);
   const user = userEvent.setup();
   await user.click(await screen.findByRole('tab', { name: /^All/ }));
@@ -361,11 +376,72 @@ test('clicking a location link twice pushes one history entry', async () => {
 // outdated thread is still marked read.
 test('jumping from the Outdated tab to an unread outdated thread marks it read', async () => {
   const net = outdatedWorld([diffFile()], 2);
-  installMedia({ [WIDE_QUERY]: true, [XL_QUERY]: true });
-  history.replaceState(null, '', '?review=r-1');
+  installMedia({ [WIDE_QUERY]: true });
+  history.replaceState(null, '', '?review=r-1&view=threads');
   render(<ReviewView id="r-1" />);
   const user = userEvent.setup();
   await user.click(await screen.findByRole('tab', { name: /^Outdated/ }));
   await user.click(await screen.findByRole('button', { name: 'src/a.ts · L3 (new)' }));
   await waitFor(() => expect(net.calls.find((c) => c.method === 'POST' && c.url.pathname.endsWith('/read'))?.body).toEqual({ threadId: 't-9' }));
+});
+
+// Invariant: a phone shows the pane or the diff, never a dialog; the diff's Threads button opens the pane's Threads tab.
+test('phone: the pane without a file, the diff with one, and its Threads button lands on the Threads tab', async () => {
+  installMedia({ [WIDE_QUERY]: false });
+  stubFetch({
+    'GET api/reviews/r-1': { review: review({ unread: 2 }), files: [fileState()], rounds: [], submissions: [], outdatedThreads: [] },
+    'GET api/reviews/r-1/diff': { review: review({ unread: 2 }), files: [diffFile({ threads: [thread()] })] },
+    'GET api/sessions': { sessions: [] },
+  });
+  history.replaceState(null, '', '?review=r-1');
+  render(<ReviewView id="r-1" />);
+  expect(await screen.findByRole('tablist', { name: 'Review pane' })).toBeTruthy();
+  expect(screen.queryByRole('grid')).toBeNull();
+  const user = userEvent.setup();
+  await user.click(within(screen.getByRole('navigation', { name: 'Files' })).getByTitle('src/a.ts'));
+  await screen.findByRole('grid');
+  expect(screen.queryByRole('tablist', { name: 'Review pane' })).toBeNull();
+  const button = screen.getByRole('button', { name: /^Threads/ });
+  expect(button.textContent).toContain('2');
+  await user.click(button);
+  expect(parseRoute(location.search)).toEqual({ review: 'r-1', view: 'threads' });
+  expect((await screen.findByRole('tab', { name: /^Threads/ })).getAttribute('aria-selected')).toBe('true');
+  expect(screen.queryByRole('dialog', { hidden: true })).toBeNull();
+});
+
+// Invariant: Back from the diff returns to the pane on the tab it was left from.
+test('phone: Back from the diff keeps the pane tab', async () => {
+  installMedia({ [WIDE_QUERY]: false });
+  world('open');
+  history.replaceState(null, '', '?review=r-1&file=src%2Fa.ts&view=threads');
+  render(<ReviewView id="r-1" />);
+  await screen.findByRole('grid');
+  await userEvent.setup().click(screen.getByRole('button', { name: 'Back to files' }));
+  expect(parseRoute(location.search)).toEqual({ review: 'r-1', view: 'threads' });
+  expect((await screen.findByRole('tab', { name: /^Threads/ })).getAttribute('aria-selected')).toBe('true');
+  expect(screen.queryByRole('dialog', { hidden: true })).toBeNull();
+});
+
+// Invariant: a focused unread thread is shown twice on a wide layout (inline, and in the force-mounted Threads tab, here
+// hidden behind Files), yet marking it read posts once.
+test('wide: focusing an unread thread posts exactly one read mark, though two cards show it', async () => {
+  installMedia({ [WIDE_QUERY]: true });
+  let read = false;
+  const t1 = () => thread({ unread: read ? 0 : 1 });
+  const net = stubFetch({
+    'GET api/reviews/r-1': () => ({ review: review(), files: [fileState()], rounds: [], submissions: [], outdatedThreads: [] }),
+    'GET api/reviews/r-1/diff': () => ({ review: review(), files: [diffFile({ threads: [t1()] })] }),
+    'GET api/reviews/r-1/commits': { commits: [] },
+    'POST api/reviews/r-1/read': () => { read = true; return { review: review() }; },
+    'GET api/sessions': { sessions: [] },
+  });
+  history.replaceState(null, '', '?review=r-1&file=src%2Fa.ts&thread=t-1');
+  render(<ReviewView id="r-1" />);
+  await screen.findByRole('grid');
+  expect(screen.getByRole('tab', { name: 'Files' }).getAttribute('aria-selected')).toBe('true');
+  expect(screen.getAllByRole('article', { name: 'comment thread', hidden: true })).toHaveLength(2);
+  // The mark's reload refetches the review and the diff; by then any second mark would have been sent.
+  await waitFor(() => expect(net.count('GET api/reviews/r-1')).toBeGreaterThan(1));
+  await waitFor(() => expect(net.count('GET api/reviews/r-1/diff')).toBeGreaterThan(1));
+  expect(net.calls.filter((c) => c.method === 'POST' && c.url.pathname.endsWith('/read')).map((c) => c.body)).toEqual([{ threadId: 't-1' }]);
 });

@@ -6,7 +6,7 @@ import path from 'node:path';
 import { fakeCc } from './_fakeCc.js';
 import { makeRepo, localPlace } from './_git.js';
 import { attempt } from '../src/refusals.js';
-import { resolveCheckout, forkPoints, sessions, sessionCheckout, isConductorProject, checkoutInfo } from '../src/checkouts.js';
+import { resolveCheckout, forkPoints, sessions, sessionCheckout, sessionPlaces, isConductorProject, checkoutInfo } from '../src/checkouts.js';
 import { statusOf } from '../src/git.js';
 
 let cc;
@@ -216,4 +216,88 @@ test('an unset CONDUCTOR_URL gives CONDUCTOR_UNAVAILABLE', async () => {
   } finally {
     process.env.CONDUCTOR_URL = saved;
   }
+});
+
+const at = (n) => new Date(Date.UTC(2026, 0, 1, 0, 0, n)).toISOString(); // cc mints lastSpawnAt with toISOString()
+const row = (sessionId, project, worktreeName, extra = {}) => ({ sessionId, project, status: 'idle', title: sessionId, worktree: worktreeName ? { worktreeName } : null, ...extra });
+
+test('sessionPlaces of a conductor: live workers by project name, then spawn history deduped, worktrees merged and sorted, .conduct dropped', async () => {
+  cc.state.instances = [
+    row('root', '.conduct', null),
+    row('w1', 'zeta', 'wz', { ownerSessionId: 'root' }),
+    row('w2', 'alpha', null, { ownerSessionId: 'root' }),
+    row('w3', 'alpha', 'b-wt', { ownerSessionId: 'root' }),
+    row('other', 'beta', null, { ownerSessionId: 'someone-else' }),
+  ];
+  cc.state.conductorProjects = { root: [
+    { project: 'hist', lastSpawnAt: at(2), worktrees: ['h2', 'h1'] },
+    { project: 'alpha', lastSpawnAt: at(1), worktrees: ['a-wt'] },
+    { project: 'nullwt', lastSpawnAt: at(0), worktrees: null },
+    { project: '.conduct', lastSpawnAt: at(0) },
+  ], other: [{ project: 'nope', lastSpawnAt: at(1) }] };
+  assert.deepEqual(await sessionPlaces('root'), [
+    { project: 'alpha', main: true, worktrees: ['a-wt', 'b-wt'] },
+    { project: 'zeta', main: false, worktrees: ['wz'] },
+    { project: 'hist', main: false, worktrees: ['h1', 'h2'] },
+    { project: 'nullwt', main: true, worktrees: [] },
+  ]);
+});
+
+test('sessionPlaces of a plain session: its own checkout first, then its workers', async () => {
+  cc.state.instances = [row('me', 'zeta', 'mine'), row('w', 'alpha', null, { ownerSessionId: 'me' }), row('main', 'app', null)];
+  assert.deepEqual(await sessionPlaces('me'), [
+    { project: 'zeta', main: false, worktrees: ['mine'] },
+    { project: 'alpha', main: true, worktrees: [] },
+  ]);
+  assert.deepEqual(await sessionPlaces('main'), [{ project: 'app', main: true, worktrees: [] }]);
+});
+
+test('sessionPlaces of an unknown session is empty; a cc that cannot answer refuses', async () => {
+  assert.deepEqual(await sessionPlaces('nobody'), []);
+  cc.state.mode = 'error';
+  assert.equal((await attempt(() => sessionPlaces('root'))).code, 'CONDUCTOR_UNAVAILABLE');
+});
+
+test('sessionPlaces sorts history by lastSpawnAt (ISO strings) newest first, then project name, a missing one last, whatever order cc returns', async () => {
+  cc.state.conductorProjects = { root: [
+    { project: 'b', lastSpawnAt: at(1), worktrees: ['x'] },
+    { project: 'old', lastSpawnAt: at(0), worktrees: ['x'] },
+    { project: 'c', lastSpawnAt: at(5), worktrees: ['x'] },
+    { project: 'a', lastSpawnAt: at(1), worktrees: ['x'] },
+    { project: 'undated', worktrees: ['x'] },
+  ] };
+  assert.deepEqual((await sessionPlaces('root')).map((p) => p.project), ['c', 'a', 'b', 'old', 'undated']);
+});
+
+test('sessionPlaces marks main for a history entry with null, absent or empty worktrees, and not for one with names', async () => {
+  cc.state.conductorProjects = { root: [
+    { project: 'nul', lastSpawnAt: at(4), worktrees: null },
+    { project: 'abs', lastSpawnAt: at(3) },
+    { project: 'emp', lastSpawnAt: at(2), worktrees: [] },
+    { project: 'named', lastSpawnAt: at(1), worktrees: ['w'] },
+  ] };
+  assert.deepEqual((await sessionPlaces('root')).map((p) => [p.project, p.main]), [['nul', true], ['abs', true], ['emp', true], ['named', false]]);
+});
+
+test('sessionPlaces keeps the live places, with a logged warning, when only the history route fails', async () => {
+  cc.state.instances = [row('w', 'alpha', 'wt', { ownerSessionId: 'root' })];
+  cc.state.conductorProjects = null;
+  const warnings = [];
+  const warn = console.warn;
+  console.warn = (m) => warnings.push(m);
+  try {
+    assert.deepEqual(await sessionPlaces('root'), [{ project: 'alpha', main: false, worktrees: ['wt'] }]);
+  } finally {
+    console.warn = warn;
+  }
+  assert.equal(warnings.length, 1);
+  assert.match(warnings[0], /\/api\/conductors\/projects/);
+});
+
+test('sessionPlaces refuses CONDUCTOR_UNAVAILABLE when only /api/instances fails, though the history answers', async () => {
+  cc.state.instances = null;
+  cc.state.conductorProjects = { root: [{ project: 'hist', lastSpawnAt: at(1), worktrees: ['h'] }] };
+  const err = await attempt(() => sessionPlaces('root'));
+  assert.equal(err.code, 'CONDUCTOR_UNAVAILABLE');
+  assert.match(err.reason, /\/api\/instances/);
 });

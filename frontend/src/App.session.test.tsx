@@ -12,6 +12,7 @@ import { App } from './App';
 const world = () => stubFetch([
   [/^GET api\/projects$/, { projects: [{ name: 'app' }, { name: 'other' }] }],
   [/^GET api\/checkout\?/, { checkout: { project: 'app', worktree: null, path: '/x', branch: 'main', headSha: 'h', dirty: false, exists: true }, forkPoints: [], worktrees: [{ worktreeName: 'feature', branch: 'feature' }] }],
+  [/^GET api\/sessions\/[^/?]+\/places$/, { places: [] }],
   [/^GET api\/sessions/, { sessions: [] }],
   [/^GET api\/reviews\?/, { reviews: [] }],
 ]);

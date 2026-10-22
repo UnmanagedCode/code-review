@@ -58,6 +58,14 @@ test('GET /projects lists every project, local or on a system; /checkout, /check
   assert.equal((await req('GET', '/checkout')).status, 400);
 });
 
+test('GET /sessions/:id/places lists the session own checkout then its owned workers', async () => {
+  w.cc.state.instances.push({ sessionId: 'w-1', project: 'zed', status: 'idle', title: 't', worktree: { worktreeName: 'zw' }, ownerSessionId: 's-author' });
+  const places = (await req('GET', '/sessions/s-author/places')).body;
+  assert.equal(places.ok, true);
+  assert.deepEqual(places.places, [{ project: 'app', main: false, worktrees: ['feature'] }, { project: 'zed', main: false, worktrees: ['zw'] }]);
+  assert.deepEqual((await req('GET', '/sessions/nobody/places')).body.places, []);
+});
+
 test('review lifecycle over HTTP: open, reuse, get, diff, file, commits, patch, delete', async () => {
   const opened = await openReview();
   assert.equal(opened.ok, true);

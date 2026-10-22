@@ -62,6 +62,50 @@ export async function sessionCheckout(sessionId) {
   return i ? { project: i.project, worktree: i.worktree?.worktreeName ?? null } : null;
 }
 
+// cc's `lastSpawnAt` is an ISO string, so it compares as a string; one that is missing sorts last.
+const byNewestThenName = (a, b) => {
+  const [x, y] = [a.lastSpawnAt ?? '', b.lastSpawnAt ?? ''];
+  return x < y ? 1 : x > y ? -1 : a.project.localeCompare(b.project);
+};
+
+/**
+ * The checkouts a session is working on: its own, then those of the live workers it owns (by project name),
+ * then those it has spawned workers into (`lastSpawnAt` newest first, then project name). Mirrors cc's `conductorChips` in `shared/conductors.ts`.
+ * Rows {project, main, worktrees}: `main` = a live row is on the main checkout, or a history entry records no worktrees.
+ * An unknown session gives []; a failing history route degrades to the live places, a failing instances route refuses.
+ */
+export async function sessionPlaces(sessionId) {
+  const [live, hist] = await Promise.allSettled([cc.instances(), cc.conductorProjects()]);
+  if (live.status === 'rejected') throw live.reason;
+  const rows = live.value;
+  let spawned = {};
+  if (hist.status === 'fulfilled') spawned = hist.value;
+  else console.warn(`code-review: session places without spawn history: ${hist.reason.message}`);
+  const places = new Map();
+  const place = (project) => {
+    if (!places.has(project)) places.set(project, { project, main: false, worktrees: new Set() });
+    return places.get(project);
+  };
+  const addRow = (i) => {
+    const p = place(i.project);
+    if (i.worktree?.worktreeName) p.worktrees.add(i.worktree.worktreeName); else p.main = true;
+  };
+  const own = rows.find((i) => i.sessionId === sessionId);
+  if (own) addRow(own);
+  rows.filter((i) => i.ownerSessionId === sessionId).sort((a, b) => a.project.localeCompare(b.project)).forEach(addRow);
+  const history = [...(spawned?.[sessionId] ?? [])]
+    .sort(byNewestThenName);
+  for (const e of history) {
+    const p = place(e.project);
+    const recorded = Array.isArray(e.worktrees) ? e.worktrees : [];
+    recorded.forEach((w) => p.worktrees.add(w));
+    if (!recorded.length) p.main = true; // no recorded worktree: main is the only place that worker could have been
+  }
+  return [...places.values()]
+    .filter((p) => !isConductorProject(p.project))
+    .map((p) => ({ project: p.project, main: p.main, worktrees: [...p.worktrees].sort((a, b) => a.localeCompare(b)) }));
+}
+
 /** Picker data for one checkout: its git state, base shortcuts and the project's worktrees. */
 export async function checkoutInfo({ project, worktree }) {
   const co = await resolveCheckout({ project, worktree });

@@ -24,6 +24,9 @@ export async function seed() {
     w.session('s-author', { worktree: 'feature' });
     w.session('s-rev', { worktree: null, title: null, firstPrompt: 'Review the feature branch' }); // untitled: the fake cc labels it by its prompt
     w.session('s-cond', { project: '.conduct' });
+    // s-rev has spawned workers into project `other`; s-author owns none.
+    w.cc.state.projects.push({ name: 'other', path: '/o' });
+    w.cc.state.conductorProjects['s-rev'] = [{ project: 'other', lastSpawnAt: '2026-01-01T00:00:01.000Z', worktrees: ['x'] }];
 
     srv = await bootServer({ cwd: projectRoot, entry: 'server.js', silent: true, env: { CODE_REVIEW_STORE: w.store.dir, CONDUCTOR_URL: process.env.CONDUCTOR_URL } });
     const call = async (method, p, body) => {

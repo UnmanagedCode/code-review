@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -7,6 +7,7 @@ import { Label } from '@/components/ui/label';
 import { NativeSelect } from '@/components/ui/native-select';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import * as ep from '@/lib/endpoints';
+import { useBridgeSession } from '@/lib/bridge';
 import { errorText } from '@/lib/refusals';
 import { navigate, REVIEW_SCOPED } from '@/lib/route';
 import { sessionOptions } from '@/lib/sessionOptions';
@@ -33,6 +34,15 @@ export function NewReviewDialog({ project, worktree, onClose }: { project: strin
   const checkout = useCheckout(project, worktree);
   const commits = useCheckoutCommits(project, worktree, 50, kind !== 'uncommitted');
   const sessions = useSessions(project, worktree);
+  const active = useBridgeSession();
+  const touched = useRef({ title: false, recipient: false });
+  const activeRow = active ? sessions.data?.sessions.find((s) => s.sessionId === active.sessionId) : undefined;
+  // Untouched fields follow cc's active session; the user's edit pins a field for the dialog's life.
+  useEffect(() => {
+    if (!sessions.data) return;
+    if (!touched.current.title) setTitle(activeRow?.label || '');
+    if (!touched.current.recipient) setRecipient(activeRow?.live ? activeRow.sessionId : '');
+  }, [sessions.data, active?.sessionId]);
   const forkPoints = checkout.data?.forkPoints ?? [];
   // Default to the checkout's own fork point (the nearest one).
   useEffect(() => { if (!choice && forkPoints.length) setChoice(forkPoints[0].ref); }, [forkPoints.length]);
@@ -89,11 +99,11 @@ export function NewReviewDialog({ project, worktree, onClose }: { project: strin
         )}
         <div className="flex flex-col gap-1.5">
           <Label htmlFor="nr-title">Title (optional)</Label>
-          <Input id="nr-title" value={title} onChange={(e) => setTitle(e.target.value)} />
+          <Input id="nr-title" value={title} onChange={(e) => { touched.current.title = true; setTitle(e.target.value); }} />
         </div>
         <div className="flex flex-col gap-1.5">
           <Label htmlFor="nr-recipient">Recipient session</Label>
-          <NativeSelect className="w-full" id="nr-recipient" value={recipient} onChange={(e) => setRecipient(e.target.value)}>
+          <NativeSelect className="w-full" id="nr-recipient" value={recipient} onChange={(e) => { touched.current.recipient = true; setRecipient(e.target.value); }}>
             <option value="">Default</option>
             {sessionOptions(sessions.data?.sessions.filter((s) => s.live) ?? []).map(({ session: s, name }) => <option key={s.sessionId} value={s.sessionId}>{name}</option>)}
           </NativeSelect>

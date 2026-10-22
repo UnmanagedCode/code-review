@@ -3,8 +3,10 @@ import { NativeSelect } from '@/components/ui/native-select';
 import { Badge } from '@/components/ui/badge';
 import { navigateTo, type Route } from '@/lib/route';
 import * as storage from '@/lib/storage';
-import { useCheckout, useProjects } from '@/state/checkout';
+import { useBridgeSession } from '@/lib/bridge';
+import { useCheckout, useProjects, useSessionPlaces } from '@/state/checkout';
 import { ErrorState } from '@/features/common/States';
+import { PinnedOptions } from './pinned';
 
 export const rememberCheckout = (project: string, worktree: string | undefined) =>
   storage.setItem('lastCheckout', JSON.stringify({ project, worktree: worktree ?? null }));
@@ -12,6 +14,9 @@ export const rememberCheckout = (project: string, worktree: string | undefined) 
 export function CheckoutBar({ route, followingTitle, unfollowable }: { route: Route; followingTitle?: string; unfollowable?: boolean }) {
   const projects = useProjects();
   const checkout = useCheckout(route.project, route.worktree ?? null);
+  const session = useBridgeSession();
+  const places = useSessionPlaces(session?.sessionId).data?.places ?? [];
+  const place = places.find((p) => p.project === route.project);
   const go = (project: string, worktree?: string) => { rememberCheckout(project, worktree); navigateTo({ project, worktree }); };
   const info = checkout.data?.checkout;
   return (
@@ -21,15 +26,18 @@ export function CheckoutBar({ route, followingTitle, unfollowable }: { route: Ro
         <NativeSelect className="min-w-32 flex-1" id="cb-project" value={route.project ?? ''} onChange={(e) => e.target.value && go(e.target.value)}>
           {!route.project && <option value="">Choose a project…</option>}
           {route.project && !projects.data?.projects.some((p) => p.name === route.project) && <option value={route.project}>{route.project}</option>}
-          {projects.data?.projects.map((p) => <option key={p.name} value={p.name}>{p.name}</option>)}
+          <PinnedOptions items={(projects.data?.projects ?? []).map((p) => ({ value: p.name, label: p.name }))} pinned={places.map((p) => p.project)} restLabel="Other projects" />
         </NativeSelect>
         {route.project && (
           <>
             <label className="sr-only" htmlFor="cb-worktree">Worktree</label>
             <NativeSelect className="min-w-32 flex-1" id="cb-worktree" value={route.worktree ?? ''} onChange={(e) => go(route.project!, e.target.value || undefined)}>
-              <option value="">Main checkout</option>
               {route.worktree && !checkout.data?.worktrees.some((w) => w.worktreeName === route.worktree) && <option value={route.worktree}>{route.worktree}</option>}
-              {checkout.data?.worktrees.map((w) => <option key={w.worktreeName} value={w.worktreeName}>{w.worktreeName}</option>)}
+              <PinnedOptions
+                items={[{ value: '', label: 'Main checkout' }, ...(checkout.data?.worktrees ?? []).map((w) => ({ value: w.worktreeName, label: w.worktreeName }))]}
+                pinned={[...(place?.main ? [''] : []), ...(place?.worktrees ?? [])]}
+                restLabel="Other worktrees"
+              />
             </NativeSelect>
           </>
         )}

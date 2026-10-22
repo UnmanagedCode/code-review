@@ -13,6 +13,20 @@ import { Empty, ErrorState, Loading } from '@/features/common/States';
 import { CompareNote, UnplacedNote } from '@/features/diff/CompareNote';
 import { ThreadCard } from './ThreadCard';
 
+type Owner = 'all' | 'user' | 'agents';
+const ownedBy = (t: Thread, owner: Owner) => owner === 'all' || (t.openedBy.kind === 'human') === (owner === 'user');
+
+function OwnerSelect({ value, onChange }: { value: Owner; onChange: (owner: Owner) => void }) {
+  return (
+    <>
+      <label className="sr-only" htmlFor="tp-owner">Owner</label>
+      <NativeSelect size="sm" id="tp-owner" value={value} onChange={(e) => onChange(e.target.value as Owner)}>
+        <option value="all">All owners</option><option value="user">User</option><option value="agents">Agents</option>
+      </NativeSelect>
+    </>
+  );
+}
+
 const list = (threads: Thread[], opts: { dropped?: boolean; showLocation?: boolean } = {}) => (
   <div className="flex flex-col gap-3 p-3">{threads.map((t) => <ThreadCard key={t.id} thread={t} {...opts} />)}</div>
 );
@@ -33,13 +47,14 @@ function CompareThreadPanel({ compare }: { compare: NonNullable<ReturnType<typeo
   const ctx = useReviewCtx();
   const [tab, setTab] = useState('file');
   const [status, setStatus] = useState<'open' | 'resolved' | 'all'>('open');
+  const [owner, setOwner] = useState<Owner>('all');
   const view = compare.view;
   const unplaced = view?.unplaced ?? [];
   const fileThreads = dedupeCopies(ctx.fileDiff.file?.threads ?? []);
   // Every compared thread once; one outdated by round B is listed too, as its round-A copy.
   const every = dedupeCopies([...(view?.files.flatMap((f) => f.threads) ?? []), ...unplaced])
     .sort((a, b) => a.thread.id.localeCompare(b.thread.id, undefined, { numeric: true }));
-  const all = every.filter((s) => status === 'all' || s.thread.status === status);
+  const all = every.filter((s) => (status === 'all' || s.thread.status === status) && ownedBy(s.thread, owner));
   // Until the comparison has loaded (or when it failed) no tab can list anything, nor claim that nothing is there.
   // A loaded view wins over an error: a failed reload keeps the previous data.
   const load = ctx.viewLoad;
@@ -62,6 +77,7 @@ function CompareThreadPanel({ compare }: { compare: NonNullable<ReturnType<typeo
               <NativeSelect size="sm" id="tp-status" value={status} onChange={(e) => setStatus(e.target.value as typeof status)}>
                 <option value="open">Open</option><option value="resolved">Resolved</option><option value="all">All</option>
               </NativeSelect>
+              <OwnerSelect value={owner} onChange={setOwner} />
             </div>
             {gate ?? (all.length ? compareList(all, compare, true) : <Empty title="No threads" />)}
           </TabsContent>
@@ -83,10 +99,11 @@ function ReviewThreadPanel() {
   const ctx = useReviewCtx();
   const [tab, setTab] = useState('file');
   const [status, setStatus] = useState<'open' | 'resolved' | 'all'>('open');
+  const [owner, setOwner] = useState<Owner>('all');
   const dropped = useDropped(ctx.id);
   const index = useThreadIndex(ctx.id, ctx.files, ctx.version, tab === 'all', ctx.round);
   const fileThreads = ctx.fileDiff.file?.threads ?? [];
-  const allThreads = index.threads.filter((t) => status === 'all' || t.status === status);
+  const allThreads = index.threads.filter((t) => (status === 'all' || t.status === status) && ownedBy(t, owner));
   const nextUnread = index.threads.find((t) => t.unread > 0);
   const counts = ctx.threadCounts;
   return (
@@ -108,6 +125,7 @@ function ReviewThreadPanel() {
               <NativeSelect size="sm" id="tp-status" value={status} onChange={(e) => setStatus(e.target.value as typeof status)}>
                 <option value="open">Open</option><option value="resolved">Resolved</option><option value="all">All</option>
               </NativeSelect>
+              <OwnerSelect value={owner} onChange={setOwner} />
               <Button size="sm" variant="outline" disabled={!nextUnread} onClick={() => nextUnread && navigate({ file: nextUnread.anchor.file, side: nextUnread.anchor.side, lines: undefined, thread: nextUnread.id })}>Next unread</Button>
             </div>
             {index.loading && !index.threads.length ? <Loading label="Loading threads" rows={3} />

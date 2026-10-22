@@ -1,4 +1,4 @@
-import { conductorUrl } from './cc.js';
+import { ccFetch, unavailable } from './ccFetch.js';
 import { Refusal } from './refusals.js';
 
 // cc's own caps (same names in cc's src/hostExec.ts): a larger request is refused, so clamp.
@@ -23,9 +23,9 @@ export const placeKey = (place) => JSON.stringify([place.system, place.remoteId,
  * Runs `argv` on `place`'s system through cc's `POST /api/exec` (form B, cwd `/`, argv form, base64 output).
  * Resolves {code, stdout: Buffer, stderr: Buffer} whatever the exit code; cc's refusals become code-review ones.
  * `stdin` (Buffer or string) is sent as bytes; absent means a closed stdin.
+ * `readOnly` asserts the command writes nothing, and is the only thing that lets a connection failure be retried.
  */
-export async function exec(place, argv, { env, stdin, maxOutputBytes } = {}) {
-  const base = conductorUrl();
+export async function exec(place, argv, { env, stdin, maxOutputBytes, readOnly = false } = {}) {
   const limit = timeoutMs();
   const body = {
     system: place.system, cwd: '/', argv, encoding: 'base64', timeoutMs: limit,
@@ -34,24 +34,17 @@ export async function exec(place, argv, { env, stdin, maxOutputBytes } = {}) {
     ...(stdin !== undefined ? { stdinB64: Buffer.from(stdin).toString('base64') } : {}),
     ...(maxOutputBytes ? { maxOutputBytes: Math.min(maxOutputBytes, EXEC_MAX_OUTPUT_BYTES) } : {}),
   };
-  let res;
-  let text;
-  try {
-    // Past cc's own deadline, so cc reports EXEC_TIMEOUT first; aborting the request kills the command.
-    res = await fetch(`${base}/api/exec`, {
-      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
-      signal: AbortSignal.timeout(limit + Math.min(10_000, limit)),
-    });
-    text = await res.text();
-  } catch (e) {
-    throw new Refusal('CONDUCTOR_UNAVAILABLE', `code-conductor /api/exec: ${e.message}`);
-  }
+  // The deadline is past cc's own, so cc reports EXEC_TIMEOUT first; aborting the request kills the command. A timeout is never retried.
+  const { res, text, attempts, started } = await ccFetch('/api/exec', {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
+  }, { timeoutMs: limit + Math.min(10_000, limit), retry: readOnly ? 'connection' : 'none' });
+  const fail = (cause, reason) => unavailable({ route: 'POST /api/exec', started, attempts, cause, reason });
   let out = null;
   try { out = JSON.parse(text); } catch { /* handled below */ }
   if (res.status === 404 && !out?.code) {
-    throw new Refusal('CONDUCTOR_UNAVAILABLE', 'this code-conductor does not serve POST /api/exec; code-review needs a cc that does (restart cc after updating it)');
+    throw fail('HTTP 404', 'this code-conductor does not serve POST /api/exec; code-review needs a cc that does (restart cc after updating it)');
   }
-  if (!out || typeof out !== 'object') throw new Refusal('CONDUCTOR_UNAVAILABLE', `code-conductor /api/exec: HTTP ${res.status} with a non-JSON body`);
+  if (!out || typeof out !== 'object') throw fail('non-JSON body', `code-conductor /api/exec: HTTP ${res.status} with a non-JSON body`);
   if (res.status === 200) return { code: out.exitCode, stdout: Buffer.from(out.stdout ?? '', 'base64'), stderr: Buffer.from(out.stderr ?? '', 'base64') };
   const where = `${place.system}${place.remoteId ? `/${place.remoteId}` : ''}`;
   if (CC_UNREACHABLE.has(out.code)) throw new Refusal('SYSTEM_UNREACHABLE', `system ${where} is unreachable (${out.code}: ${out.error})`);

@@ -1,23 +1,17 @@
-import { Refusal } from './refusals.js';
+import { ccFetch, unavailable } from './ccFetch.js';
 
-const DEFAULT_TIMEOUT_MS = 3000;
-
-/** cc's base URL, or CONDUCTOR_UNAVAILABLE outside code-conductor. */
-export function conductorUrl() {
-  const base = process.env.CONDUCTOR_URL;
-  if (!base) throw new Refusal('CONDUCTOR_UNAVAILABLE', 'CONDUCTOR_URL is not set: run inside code-conductor');
-  return base;
-}
+/** The GET budget per attempt. */
+export const DEFAULT_TIMEOUT_MS = 15_000;
+export const ccTimeoutMs = () => Number(process.env.CODE_REVIEW_CC_TIMEOUT_MS) || DEFAULT_TIMEOUT_MS;
 
 async function get(route) {
-  const base = conductorUrl();
-  const timeout = Number(process.env.CODE_REVIEW_CC_TIMEOUT_MS) || DEFAULT_TIMEOUT_MS;
+  const { res, text, attempts, started } = await ccFetch(route, {}, { timeoutMs: ccTimeoutMs(), retry: 'transient' });
+  const fail = (cause) => unavailable({ route: `GET ${route}`, started, attempts, cause, reason: `code-conductor ${route}: ${cause}` });
+  if (!res.ok) throw fail(`HTTP ${res.status}`);
   try {
-    const res = await fetch(base + route, { signal: AbortSignal.timeout(timeout) });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    return await res.json();
-  } catch (e) {
-    throw new Refusal('CONDUCTOR_UNAVAILABLE', `code-conductor ${route}: ${e.message}`);
+    return JSON.parse(text);
+  } catch {
+    throw fail('non-JSON body');
   }
 }
 

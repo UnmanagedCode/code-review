@@ -48,6 +48,10 @@ npm run dev            # Vite dev server, /api proxied to PLUGIN_BACKEND (defaul
 
 The review store is `$CODE_REVIEW_STORE`, else `$PROJECTS_ROOT/.code-review`; without either the API answers 503 `STORE_UNCONFIGURED` and the page still loads. Standalone the page follows the OS light/dark scheme; the two host URLs 404 and log the only expected console errors.
 
+### Diagnostics
+
+The cc connection log is `<store>/logs/cc.log`; what it records and the retry rules are in [docs/protocol.md](docs/protocol.md#cc-routes-consumed).
+
 ### Test
 
 ```bash

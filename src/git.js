@@ -35,8 +35,8 @@ export function checkRef(x) {
 /** Single-quotes `s` for a POSIX sh script. */
 const shq = (s) => `'${s.replace(/'/g, `'\\''`)}'`;
 
-async function call(place, argv, what, { input, ok = [0], maxBuffer = MAX_DIFF_BYTES, env } = {}) {
-  const r = await exec(place, argv, { env: { ...BASE_ENV, ...env }, stdin: input, maxOutputBytes: maxBuffer });
+async function call(place, argv, what, { input, ok = [0], maxBuffer = MAX_DIFF_BYTES, env, readOnly } = {}) {
+  const r = await exec(place, argv, { env: { ...BASE_ENV, ...env }, stdin: input, maxOutputBytes: maxBuffer, readOnly });
   const stdout = r.stdout.toString('utf8');
   if (ok.includes(r.code)) return { code: r.code, stdout };
   const stderr = r.stderr.toString('utf8');
@@ -49,7 +49,11 @@ export const run = (place, args, opts) => call(place, ['git', ...BASE_ARGS, '-C'
 /** Runs a POSIX sh `script` on `place`'s system with `$1` = the checkout path and `args` after it. Same contract as `run`. */
 export const sh = (place, script, args = [], opts) => call(place, ['sh', '-c', script, 'sh', place.path, ...args], 'sh script', opts);
 
-const out = async (place, args, opts) => (await run(place, args, opts)).stdout.trim();
+// Only a command that writes nothing may use these: they let cc's transport failures be retried. `run` and `sh` never retry.
+const read = (place, args, opts) => run(place, args, { ...opts, readOnly: true });
+const readSh = (place, script, args, opts) => sh(place, script, args, { ...opts, readOnly: true });
+
+const out = async (place, args, opts) => (await read(place, args, opts)).stdout.trim();
 
 // C-quoted so a path with a newline, quote, backslash or leading '#' stays one entry (git unquotes entries starting with ").
 const cQuote = (p) => `"${[...Buffer.from(p)].map((b) => {
@@ -132,7 +136,7 @@ export async function removeTemp(place, dir) {
 
 /** True when `place.path` exists on its system (symlinks followed). */
 export async function exists(place) {
-  return (await call(place, ['sh', '-c', '[ -e "$1" ]', 'sh', place.path], 'exists', { ok: [0, 1] })).code === 0;
+  return (await call(place, ['sh', '-c', '[ -e "$1" ]', 'sh', place.path], 'exists', { ok: [0, 1], readOnly: true })).code === 0;
 }
 
 /** Full sha for a ref, or REF_UNKNOWN. */
@@ -148,7 +152,7 @@ export async function resolveCommit(place, ref) {
 
 /** HEAD's sha, or null on an unborn branch. */
 export async function headOf(place) {
-  const r = await run(place, ['rev-parse', '--verify', '--quiet', 'HEAD^{commit}'], { ok: [0, 1] });
+  const r = await read(place, ['rev-parse', '--verify', '--quiet', 'HEAD^{commit}'], { ok: [0, 1] });
   return r.code === 0 ? r.stdout.trim() : null;
 }
 
@@ -156,7 +160,7 @@ export const emptyTree = (place) => out(place, ['hash-object', '-t', 'tree', '--
 
 /** Merge base of two commits, or null when unrelated. */
 export async function mergeBase(place, a, b) {
-  const r = await run(place, ['merge-base', a, b], { ok: [0, 1] });
+  const r = await read(place, ['merge-base', a, b], { ok: [0, 1] });
   return r.code === 0 ? r.stdout.trim() : null;
 }
 
@@ -172,18 +176,18 @@ for s; do ${GIT} cat-file -e "$s^{tree}" 2>/dev/null || { printf '%s' "$s"; exit
 
 /** The first of `shas` missing from the object store, or null when all are present. One call. */
 export async function objectsExist(place, shas) {
-  return (await sh(place, OBJECTS_EXIST, [...new Set(shas)])).stdout.trim() || null;
+  return (await readSh(place, OBJECTS_EXIST, [...new Set(shas)])).stdout.trim() || null;
 }
 
 /** File content at `sha:path`, or null when absent. */
 export async function show(place, sha, path) {
-  const r = await run(place, ['show', `${sha}:${path}`], { ok: [0, 128] });
+  const r = await read(place, ['show', `${sha}:${path}`], { ok: [0, 128] });
   return r.code === 0 ? r.stdout : null;
 }
 
 /** {head, branch, dirty} from one `git status`: head null on an unborn branch, branch 'HEAD' when detached. */
 export async function statusOf(place) {
-  const r = await run(place, ['status', '--porcelain=v2', '-z', '--branch', '--no-ahead-behind', '--untracked-files=normal']);
+  const r = await read(place, ['status', '--porcelain=v2', '-z', '--branch', '--no-ahead-behind', '--untracked-files=normal']);
   let head = null;
   let branch = 'HEAD';
   let dirty = false;
@@ -196,7 +200,7 @@ export async function statusOf(place) {
 }
 
 /** Raw unified diff between two trees/commits. */
-export const diffBetween = (place, from, to, opts) => run(place, [...DIFF_FLAGS, from, to], opts).then((r) => r.stdout);
+export const diffBetween = (place, from, to, opts) => read(place, [...DIFF_FLAGS, from, to], opts).then((r) => r.stdout);
 
 /** Tracked changes (staged + unstaged) against `from`. */
 export const diffWorktree = (place, from, opts) => run(place, [...DIFF_FLAGS, from], opts).then((r) => r.stdout);
@@ -207,7 +211,7 @@ export const addToIndex = (place, paths, opts) =>
 
 /** Untracked, non-ignored paths (relative); directories (nested repos) are skipped. */
 export async function untracked(place, opts) {
-  const r = await run(place, ['ls-files', '--others', '--exclude-standard', '-z'], opts);
+  const r = await read(place, ['ls-files', '--others', '--exclude-standard', '-z'], opts);
   return r.stdout.split('\0').filter((p) => p && !p.endsWith('/'));
 }
 
@@ -221,7 +225,7 @@ export async function sizes(place, rels) {
   const res = [];
   for (let i = 0; i < rels.length; i += SIZE_CHUNK) {
     const chunk = rels.slice(i, i + SIZE_CHUNK);
-    const got = (await sh(place, SIZES, chunk)).stdout.split('\n').slice(0, -1);
+    const got = (await readSh(place, SIZES, chunk)).stdout.split('\n').slice(0, -1);
     if (got.length !== chunk.length) throw new Error(`sizes: ${got.length} answers for ${chunk.length} paths`);
     res.push(...got.map((s) => (s === '-' ? null : Number(s) || 0)));
   }
@@ -242,7 +246,7 @@ export async function diffUntrackedBatch(place, files, opts = {}) {
   let chunk = [];
   let sum = 0;
   const flush = async () => {
-    if (chunk.length) text += (await sh(place, DIFF_UNTRACKED, chunk, opts)).stdout;
+    if (chunk.length) text += (await readSh(place, DIFF_UNTRACKED, chunk, opts)).stdout;
     chunk = [];
     sum = 0;
   };
@@ -268,7 +272,7 @@ exec cat -- "$f"`;
 /** Working-tree content of `rel`, or null when absent, unreadable or outside the checkout. Over MAX_DIFF_BYTES: DIFF_TOO_LARGE. */
 export async function readWorktreeFile(place, rel) {
   try {
-    return (await sh(place, READ_FILE, [rel])).stdout;
+    return (await readSh(place, READ_FILE, [rel])).stdout;
   } catch (e) {
     if (e instanceof Refusal || e.exitCode === 126 || e.exitCode === 127) throw e; // a missing tool fails loudly
     return null;
@@ -277,7 +281,7 @@ export async function readWorktreeFile(place, rel) {
 
 /** Rename map for `from..to`: {newPath: oldPath}. */
 export async function renames(place, from, to) {
-  const r = await run(place, ['diff', '-M', '--name-status', '-z', from, to]);
+  const r = await read(place, ['diff', '-M', '--name-status', '-z', from, to]);
   const parts = r.stdout.split('\0');
   const map = {};
   for (let i = 0; i < parts.length; i++) {
@@ -291,7 +295,7 @@ export async function renames(place, from, to) {
 export async function commitLog(place, { range, limit = 50 } = {}) {
   const fmt = '--format=%H%x1f%h%x1f%an%x1f%aI%x1f%P%x1f%s%x1e';
   const args = range ? ['log', fmt, range] : ['log', fmt, '-n', String(limit), 'HEAD'];
-  const r = await run(place, args, { ok: [0, 128] });
+  const r = await read(place, args, { ok: [0, 128] });
   return r.stdout.split('\x1e').map((s) => s.trim()).filter(Boolean).map((rec) => {
     const [sha, short, author, date, parents, subject] = rec.split('\x1f');
     return { sha, short, author, date, subject, merge: parents.split(' ').filter(Boolean).length > 1 };
@@ -300,6 +304,6 @@ export async function commitLog(place, { range, limit = 50 } = {}) {
 
 /** Current branch name, or 'HEAD' when detached. Works on an unborn branch. */
 export async function currentBranch(place) {
-  const r = await run(place, ['symbolic-ref', '-q', '--short', 'HEAD'], { ok: [0, 1] });
+  const r = await read(place, ['symbolic-ref', '-q', '--short', 'HEAD'], { ok: [0, 1] });
   return r.code === 0 ? r.stdout.trim() : 'HEAD';
 }

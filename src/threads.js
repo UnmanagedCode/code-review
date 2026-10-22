@@ -28,10 +28,9 @@ function findThread(review, tid) {
   throw new Refusal('THREAD_UNKNOWN', `unknown thread: ${tid}`);
 }
 
-// The conductor closes any thread an agent opened; any other agent only a non-finding thread it opened. Only an open thread closes: an agent never overrides a human's close, and an outdated thread is frozen.
-const mayClose = (thread, actor) => thread.status === 'open' && (
-  isConductorProject(actor.project) ? thread.openedBy.kind === 'session'
-    : thread.openedBy.sessionId === actor.sessionId && thread.kind !== 'finding');
+// The conductor and a thread's opening agent close an agent-opened thread. Only an open thread closes: an agent never overrides a human's close, and an outdated thread is frozen.
+const closer = (thread, actor) => isConductorProject(actor.project) || thread.openedBy.sessionId === actor.sessionId;
+const mayClose = (thread, actor) => thread.status === 'open' && thread.openedBy.kind === 'session' && closer(thread, actor);
 
 // Annotated files are always in the diff, so the binary decision never needs their content.
 const noContent = async () => null;
@@ -100,7 +99,7 @@ export const reply = (id, actor, tid, { body, resolve = false, disposition }) =>
   let closes = false;
   if (actor.kind === 'agent') {
     if (disposition !== undefined) {
-      if (!isConductorProject(actor.project) || !resolve || thread.kind !== 'finding') throw invalid('disposition is for a conductor resolving a finding');
+      if (!resolve || thread.kind !== 'finding' || !closer(thread, actor)) throw invalid('disposition is for resolving a finding you opened (the conductor: any agent\'s finding)');
       if (!DISPOSITIONS.includes(disposition)) throw needsDisposition();
     }
     closes = resolve && mayClose(thread, actor);

@@ -94,16 +94,16 @@ REST under `/api` (JSON), an SSE stream, and the cc MCP endpoint. Behaviour behi
 - Header fields in text results (paths, labels, thread locations, hunk headers) have control characters stripped; code lines and message bodies are verbatim.
 - Writes (`open_review`, `annotate`, `reply`, `refresh_review`) refuse `CALLER_UNKNOWN` without `caller.sessionId`.
 - No tool sets a verdict.
-- **Trust:** `caller` comes from cc over unauthenticated loopback, so any local process can forge an agent identity, including a reviewer that resolves its own question and clears `mergeBlockers`. This is no wider than the REST surface, which already acts as the human. There is no token; one would need a cc change.
+- **Trust:** `caller` comes from cc over unauthenticated loopback, so any local process can forge an agent identity, including a reviewer that resolves its own question and clears `mergeBlockers`, or a forged conductor identity (`caller.project` `.conduct`) that closes any agent-opened thread, findings included. This is no wider than the REST surface, which already acts as the human. There is no token; one would need a cc change.
 
 | Tool | Required | Result |
 |---|---|---|
 | `open_review` | | `{result:{ok, review:ReviewSummary, reused}}`. Checkout: `project`+`worktree`; without `project`, `worktree` must be absent and the checkout is the caller's (`CHECKOUT_UNKNOWN` if cc does not know the caller); a conductor caller must name `project` (`INVALID_ARGUMENT`). Recipient: the caller. `author`: conductor callers only, range/commit only (else `INVALID_ARGUMENT`); `AUTHOR_UNKNOWN` if cc does not know the session. A reused review is returned unchanged. The creator is the caller; `seenByHuman:false`. |
 | `get_review` | `review` | `{text: per-file table, meta: ReviewSummary}` |
-| `list_threads` | `review` | `{text, meta:{review, count, counts}}`; `status` default `open`; cited code inlined as `path#L… @<short sha | working tree>`, ≤ 80 lines then `… (truncated)`, unresolvable ones `(unresolved: …)` |
+| `list_threads` | `review` | `{text, meta:{review, count, counts}}`; `status` default `open`; `owner` (`user` = human-opened, `agents` = agent-opened; absent = both; else `INVALID_ARGUMENT`); `counts` is the whole review's; cited code inlined as `path#L… @<short sha | working tree>`, ≤ 80 lines then `… (truncated)`, unresolvable ones `(unresolved: …)` |
 | `get_hunk` | `review` + `hunk` or `file` | `{text: hunk with old/new line gutters, meta:{file, hunks:[{id, verdict, threadIds}]}}`; `file`+`line` picks the hunk covering that new-side line |
 | `annotate` | `review kind body` | `{result:{ok, thread}}`; needs `file`+`startLine` or `hunk`; `severity` required for a finding |
-| `reply` | `review thread body` | `{result:{ok, thread}}` |
+| `reply` | `review thread body` | `{result:{ok, thread}}`; `thread.status` `resolved` = closed, else `resolveProposed:true` = proposed. `disposition` only with a conductor's `resolve` on a finding (`INVALID_ARGUMENT` otherwise, and when a conductor closes an agent's finding without one); nothing is posted on a refusal |
 | `refresh_review` | `review` | `{result:{ok, round, unchanged, hunks, threads}}` |
 
 ## cc routes consumed

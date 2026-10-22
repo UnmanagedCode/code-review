@@ -12,7 +12,7 @@
   - [markdown.md](gotchas/markdown.md) — message-body markdown: citation/URL atoms, the server's citation list, link allowlist, `\n` → `br`, linearity, `MAX_NESTING`.
   - [round-compare.md](gotchas/round-compare.md) — comparison coordinates (old = A's head, new = B's), copies via `threadsAt`, derived `outdatedIn`, repeated ids and same-row dedupe, gap-line source, the reviewed-path filter.
   - [cc-metadata.md](gotchas/cc-metadata.md) — the cc GET routes used, session places (`ownerSessionId`, conductor spawn history), the exec refusal mapping, old-cc 404, unreachable ≠ gone, liveness, session labels from `displayLabel`, conductor rule, no session role.
-  - [recipient-and-roles.md](gotchas/recipient-and-roles.md) — agent opener = recipient, conductor `author`, `roleOf`/`recipientRole`, reuse.
+  - [recipient-and-roles.md](gotchas/recipient-and-roles.md) — agent opener = recipient, conductor `author`, `roleOf`/`recipientRole`, reuse, resolve rights (`mayClose`), thread owner.
 - architecture/
   - [serving.md](architecture/serving.md) — `server.js` middleware order and exports.
   - [store.md](architecture/store.md) — review files, locking, `seq` (bad files skipped and logged).

@@ -103,15 +103,16 @@ test('a closed review keeps the active segment marked but disables every segment
   for (const name of ['Accept', 'Reject', 'Pending']) expect((screen.getByRole('button', { name }) as HTMLButtonElement).disabled).toBe(true);
 });
 
-// Pins: the active-verdict tint is keyed on aria-pressed (cc's ModeToggle treatment), so every segment carries it, plus
-// its own dark hover shade, without which ghost's dark hover washes the tint out.
-test('every verdict segment carries the aria-pressed primary tint and its dark hover shade', () => {
+// Pins: the active-verdict tint is keyed on aria-pressed and each verdict has its own hue, with a hover shade that holds the hue
+// (ghost's hover out-specifies it, dark most of all) and no primary tint.
+test.each([['Accept', 'success'], ['Reject', 'destructive'], ['Pending', 'info']])('the %s segment carries its own aria-pressed hue (%s), its hover shades, and no primary tint', (name, hue) => {
   renderInReview(<HunkBar hunk={hunk()} commentable />);
-  for (const name of ['Accept', 'Reject', 'Pending']) {
-    const { className } = screen.getByRole('button', { name });
-    expect(className).toMatch(/\baria-pressed:bg-primary\b/);
-    expect(className).toMatch(/(^|\s)dark:aria-pressed:hover:bg-primary\b/);
-  }
+  const { className } = screen.getByRole('button', { name });
+  expect(className).toMatch(new RegExp(`\\baria-pressed:bg-${hue}/15\\b`));
+  expect(className).toMatch(new RegExp(`\\baria-pressed:text-${hue}\\b`));
+  expect(className).toMatch(new RegExp(`\\baria-pressed:hover:text-${hue}\\b`));
+  expect(className).toMatch(new RegExp(`(^|\\s)dark:aria-pressed:hover:bg-${hue}/20\\b`));
+  expect(className).not.toMatch(/\bbg-primary\b/);
 });
 
 test('the past-round view renders no bar at all', () => {

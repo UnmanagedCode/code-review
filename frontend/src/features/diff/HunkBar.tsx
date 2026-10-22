@@ -1,13 +1,19 @@
 import { MessageSquarePlusIcon } from 'lucide-react';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 import type { Hunk, Verdict } from '@/lib/types';
 import { useReviewCtx } from '@/state/reviewContext';
 import { useReviewActions } from '@/state/threads';
-import { SEGMENT } from '@/features/common/segment';
+import { SEGMENT_SHAPE } from '@/features/common/segment';
 import { Composer } from '@/features/threads/Composer';
 
-const VERDICTS: { value: Verdict; label: string }[] = [{ value: 'accepted', label: 'Accept' }, { value: 'rejected', label: 'Reject' }, { value: 'pending', label: 'Pending' }];
+// The active segment carries its verdict's hue; unpressed segments stay neutral. Classes are written out so Tailwind's scanner sees them.
+const VERDICTS: { value: Verdict; label: string; tint: string }[] = [
+  { value: 'accepted', label: 'Accept', tint: 'aria-pressed:bg-success/15 aria-pressed:text-success aria-pressed:hover:bg-success/20 aria-pressed:hover:text-success dark:aria-pressed:hover:bg-success/20' },
+  { value: 'rejected', label: 'Reject', tint: 'aria-pressed:bg-destructive/15 aria-pressed:text-destructive aria-pressed:hover:bg-destructive/20 aria-pressed:hover:text-destructive dark:aria-pressed:hover:bg-destructive/20' },
+  { value: 'pending', label: 'Pending', tint: 'aria-pressed:bg-info/15 aria-pressed:text-info aria-pressed:hover:bg-info/20 aria-pressed:hover:text-info dark:aria-pressed:hover:bg-info/20' },
+];
 
 /** Per-hunk verdict toggle and "comment on hunk". No bar at all in the commit-filter, past-round and comparison views. */
 export function HunkBar({ hunk, commentable }: { hunk: Hunk; commentable: boolean }) {
@@ -28,7 +34,7 @@ export function HunkBar({ hunk, commentable }: { hunk: Hunk; commentable: boolea
               variant="ghost"
               aria-pressed={(hunk.verdict ?? 'pending') === v.value}
               disabled={closed}
-              className={SEGMENT}
+              className={cn(SEGMENT_SHAPE, v.tint)}
               onClick={() => (hunk.verdict ?? 'pending') !== v.value && actions.setVerdict(hunk.id, v.value, hunk.verdict)}
             >
               {v.label}

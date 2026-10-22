@@ -8,11 +8,11 @@ import { useReviewActions } from '@/state/threads';
 import { SEGMENT_SHAPE } from '@/features/common/segment';
 import { Composer } from '@/features/threads/Composer';
 
-// The active segment carries its verdict's hue; unpressed segments stay neutral. Classes are written out so Tailwind's scanner sees them.
+// The active segment carries its verdict's hue in the background, with neutral text for contrast; unpressed segments stay neutral. Classes are written out so Tailwind's scanner sees them.
 const VERDICTS: { value: Verdict; label: string; tint: string }[] = [
-  { value: 'accepted', label: 'Accept', tint: 'aria-pressed:bg-success/15 aria-pressed:text-success aria-pressed:hover:bg-success/20 aria-pressed:hover:text-success dark:aria-pressed:hover:bg-success/20' },
-  { value: 'rejected', label: 'Reject', tint: 'aria-pressed:bg-destructive/15 aria-pressed:text-destructive aria-pressed:hover:bg-destructive/20 aria-pressed:hover:text-destructive dark:aria-pressed:hover:bg-destructive/20' },
-  { value: 'pending', label: 'Pending', tint: 'aria-pressed:bg-info/15 aria-pressed:text-info aria-pressed:hover:bg-info/20 aria-pressed:hover:text-info dark:aria-pressed:hover:bg-info/20' },
+  { value: 'accepted', label: 'Accept', tint: 'aria-pressed:bg-success/25 aria-pressed:text-foreground aria-pressed:hover:bg-success/30 dark:aria-pressed:hover:bg-success/30' },
+  { value: 'rejected', label: 'Reject', tint: 'aria-pressed:bg-destructive/25 aria-pressed:text-foreground aria-pressed:hover:bg-destructive/30 dark:aria-pressed:hover:bg-destructive/30' },
+  { value: 'pending', label: 'Pending', tint: 'aria-pressed:bg-info/25 aria-pressed:text-foreground aria-pressed:hover:bg-info/30 dark:aria-pressed:hover:bg-info/30' },
 ];
 
 /** Per-hunk verdict toggle and "comment on hunk". No bar at all in the commit-filter, past-round and comparison views. */

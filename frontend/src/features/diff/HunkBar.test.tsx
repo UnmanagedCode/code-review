@@ -103,15 +103,19 @@ test('a closed review keeps the active segment marked but disables every segment
   for (const name of ['Accept', 'Reject', 'Pending']) expect((screen.getByRole('button', { name }) as HTMLButtonElement).disabled).toBe(true);
 });
 
-// Pins: the active-verdict tint is keyed on aria-pressed and each verdict has its own hue, with a hover shade that holds the hue
-// (ghost's hover out-specifies it, dark most of all) and no primary tint.
-test.each([['Accept', 'success'], ['Reject', 'destructive'], ['Pending', 'info']])('the %s segment carries its own aria-pressed hue (%s), its hover shades, and no primary tint', (name, hue) => {
+// Pins: the active-verdict tint is keyed on aria-pressed; each verdict has its own hue in the background only, with neutral
+// text (a hued label misses AA contrast). The dark hover shade is required (ghost's dark hover out-specifies the plain
+// background); the light one is an affordance. No other verdict's hue and no primary tint.
+const HUES = { Accept: 'success', Reject: 'destructive', Pending: 'info' } as const;
+test.each(Object.entries(HUES))('the %s segment carries its own aria-pressed hue (%s) in the background, neutral text, both hover shades, and no other tint', (name, hue) => {
   renderInReview(<HunkBar hunk={hunk()} commentable />);
   const { className } = screen.getByRole('button', { name });
-  expect(className).toMatch(new RegExp(`\\baria-pressed:bg-${hue}/15\\b`));
-  expect(className).toMatch(new RegExp(`\\baria-pressed:text-${hue}\\b`));
-  expect(className).toMatch(new RegExp(`\\baria-pressed:hover:text-${hue}\\b`));
-  expect(className).toMatch(new RegExp(`(^|\\s)dark:aria-pressed:hover:bg-${hue}/20\\b`));
+  expect(className).toMatch(new RegExp(`\\baria-pressed:bg-${hue}/\\d+\\b`));
+  expect(className).toMatch(new RegExp(`(^|\\s)aria-pressed:hover:bg-${hue}/\\d+\\b`));
+  expect(className).toMatch(new RegExp(`(^|\\s)dark:aria-pressed:hover:bg-${hue}/\\d+\\b`));
+  expect(className).toMatch(/(^|\s)aria-pressed:text-foreground\b/);
+  expect(className).not.toMatch(new RegExp(`\\baria-pressed:(hover:)?text-(${Object.values(HUES).join('|')}|primary)\\b`));
+  for (const other of Object.values(HUES).filter((h) => h !== hue)) expect(className).not.toMatch(new RegExp(`-${other}\\b`));
   expect(className).not.toMatch(/\bbg-primary\b/);
 });
 

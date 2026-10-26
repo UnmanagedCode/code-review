@@ -1,8 +1,9 @@
-import { openSource } from './sseSource';
+import { chooseTransport, type Transport, type TransportFactory } from './sseTransport';
 
 /**
  * One shared EventSource on `api/events` per page load. Opened on the first subscriber and never closed by unsubscribing:
  * the list ↔ review swap unmounts every subscriber before the next mounts, and the page, not a component, owns the stream.
+ * Where it comes from (a SharedWorker shared by the tabs, else this tab) is `sseTransport.ts`.
  */
 export interface ReviewEvent { id: string; rev?: number; deleted?: boolean }
 
@@ -12,10 +13,13 @@ export const setEventSourceFactory = (f: (url: string) => EventSource): void => 
 
 const handlers = new Set<(e: ReviewEvent) => void>();
 const reconnects = new Set<() => void>();
-let stream: { close: () => void } | null = null;
+let stream: Transport | null = null;
+let transport: TransportFactory | null = null;
+/** Test seam: replace how the stream is obtained (reset by `resetSse`). */
+export const setTransportFactory = (f: TransportFactory): void => { transport = f; };
 
 function ensureOpen() {
-  stream ??= openSource('api/events', make, {
+  stream ??= (transport ?? chooseTransport((url) => make(url)))({
     review(data) {
       try {
         const e = JSON.parse(data) as ReviewEvent;
@@ -41,6 +45,7 @@ export function onReconnect(fn: () => void): () => void {
 export function resetSse(): void {
   stream?.close();
   stream = null;
+  transport = null;
   handlers.clear();
   reconnects.clear();
 }

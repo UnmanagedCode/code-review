@@ -1,0 +1,2249 @@
+{
+ "size caps": {
+  "files": [
+   {
+    "path": "a.txt",
+    "oldPath": null,
+    "status": "modified",
+    "binary": false,
+    "additions": 2,
+    "deletions": 2,
+    "hunks": [
+     {
+      "id": "4e6a37e852f3",
+      "kind": "text",
+      "header": "@@ -1,6 +1,6 @@",
+      "oldStart": 1,
+      "oldLines": 6,
+      "newStart": 1,
+      "newLines": 6,
+      "lines": [
+       {
+        "t": "ctx",
+        "old": 1,
+        "new": 1,
+        "text": "l1"
+       },
+       {
+        "t": "ctx",
+        "old": 2,
+        "new": 2,
+        "text": "l2"
+       },
+       {
+        "t": "del",
+        "old": 3,
+        "new": null,
+        "text": "l3"
+       },
+       {
+        "t": "add",
+        "old": null,
+        "new": 3,
+        "text": "changed-3"
+       },
+       {
+        "t": "ctx",
+        "old": 4,
+        "new": 4,
+        "text": "l4"
+       },
+       {
+        "t": "ctx",
+        "old": 5,
+        "new": 5,
+        "text": "l5"
+       },
+       {
+        "t": "ctx",
+        "old": 6,
+        "new": 6,
+        "text": "l6"
+       }
+      ]
+     },
+     {
+      "id": "d3c8d6852ed2",
+      "kind": "text",
+      "header": "@@ -12,7 +12,7 @@ l11",
+      "oldStart": 12,
+      "oldLines": 7,
+      "newStart": 12,
+      "newLines": 7,
+      "lines": [
+       {
+        "t": "ctx",
+        "old": 12,
+        "new": 12,
+        "text": "l12"
+       },
+       {
+        "t": "ctx",
+        "old": 13,
+        "new": 13,
+        "text": "l13"
+       },
+       {
+        "t": "ctx",
+        "old": 14,
+        "new": 14,
+        "text": "l14"
+       },
+       {
+        "t": "del",
+        "old": 15,
+        "new": null,
+        "text": "l15"
+       },
+       {
+        "t": "add",
+        "old": null,
+        "new": 15,
+        "text": "changed-15"
+       },
+       {
+        "t": "ctx",
+        "old": 16,
+        "new": 16,
+        "text": "l16"
+       },
+       {
+        "t": "ctx",
+        "old": 17,
+        "new": 17,
+        "text": "l17"
+       },
+       {
+        "t": "ctx",
+        "old": 18,
+        "new": 18,
+        "text": "l18"
+       }
+      ]
+     }
+    ],
+    "oldBlob": "86bba901de6526d849fcca3181beda8cdd68551e",
+    "newBlob": "3fc4b0995b60ff4cdf67c125e67d9abac3c21f45",
+    "oldMode": "100644",
+    "newMode": "100644"
+   },
+   {
+    "path": "bin.dat",
+    "oldPath": null,
+    "status": "modified",
+    "binary": true,
+    "additions": 0,
+    "deletions": 0,
+    "hunks": [
+     {
+      "id": "963b70d38405",
+      "kind": "file",
+      "lines": []
+     }
+    ],
+    "oldBlob": "ba71a782e93f3fb63a428383706065e3ec2828e9",
+    "newBlob": "76814d559f270a2a94363d5abdb0b6993cf250e4",
+    "oldMode": "100644",
+    "newMode": "100644"
+   },
+   {
+    "path": "crlf.txt",
+    "oldPath": null,
+    "status": "modified",
+    "binary": false,
+    "additions": 1,
+    "deletions": 1,
+    "hunks": [
+     {
+      "id": "5754c079fbf3",
+      "kind": "text",
+      "header": "@@ -1,2 +1,2 @@",
+      "oldStart": 1,
+      "oldLines": 2,
+      "newStart": 1,
+      "newLines": 2,
+      "lines": [
+       {
+        "t": "ctx",
+        "old": 1,
+        "new": 1,
+        "text": "x\r"
+       },
+       {
+        "t": "del",
+        "old": 2,
+        "new": null,
+        "text": "y\r"
+       },
+       {
+        "t": "add",
+        "old": null,
+        "new": 2,
+        "text": "Y\r"
+       }
+      ]
+     }
+    ],
+    "oldBlob": "0aa0f34a605ee4e3ba45a2cad9d9bee05abbb12b",
+    "newBlob": "a092d71a091d0e2572f1401bce3ba441404829a9",
+    "oldMode": "100644",
+    "newMode": "100644"
+   },
+   {
+    "path": "del.txt",
+    "oldPath": null,
+    "status": "deleted",
+    "binary": false,
+    "additions": 0,
+    "deletions": 5,
+    "hunks": [
+     {
+      "id": "01c8a7fe41cc",
+      "kind": "text",
+      "header": "@@ -1,5 +0,0 @@",
+      "oldStart": 1,
+      "oldLines": 5,
+      "newStart": 0,
+      "newLines": 0,
+      "lines": [
+       {
+        "t": "del",
+        "old": 1,
+        "new": null,
+        "text": "d1"
+       },
+       {
+        "t": "del",
+        "old": 2,
+        "new": null,
+        "text": "d2"
+       },
+       {
+        "t": "del",
+        "old": 3,
+        "new": null,
+        "text": "d3"
+       },
+       {
+        "t": "del",
+        "old": 4,
+        "new": null,
+        "text": "d4"
+       },
+       {
+        "t": "del",
+        "old": 5,
+        "new": null,
+        "text": "d5"
+       }
+      ]
+     }
+    ],
+    "oldMode": "100644",
+    "oldBlob": "3c3103cc92a77d1aed21b697fceec5edefe878c3",
+    "newBlob": "0000000000000000000000000000000000000000"
+   },
+   {
+    "path": "noeol.txt",
+    "oldPath": null,
+    "status": "modified",
+    "binary": false,
+    "additions": 1,
+    "deletions": 1,
+    "hunks": [
+     {
+      "id": "244b2c5a7edc",
+      "kind": "text",
+      "header": "@@ -1,2 +1,2 @@",
+      "oldStart": 1,
+      "oldLines": 2,
+      "newStart": 1,
+      "newLines": 2,
+      "lines": [
+       {
+        "t": "ctx",
+        "old": 1,
+        "new": 1,
+        "text": "p"
+       },
+       {
+        "t": "del",
+        "old": 2,
+        "new": null,
+        "text": "q",
+        "noEol": true
+       },
+       {
+        "t": "add",
+        "old": null,
+        "new": 2,
+        "text": "Q",
+        "noEol": true
+       }
+      ]
+     }
+    ],
+    "oldBlob": "8d7864f1cbaf21a9cb5ec9a1371bb26ebc10d4ce",
+    "newBlob": "79cb5ec105303ebac540ca191c3bdc79b21f4c44",
+    "oldMode": "100644",
+    "newMode": "100644"
+   },
+   {
+    "path": "ren-dst.txt",
+    "oldPath": "ren-src.txt",
+    "status": "renamed",
+    "binary": false,
+    "additions": 1,
+    "deletions": 1,
+    "hunks": [
+     {
+      "id": "49ba3b3de439",
+      "kind": "text",
+      "header": "@@ -4,7 +4,7 @@ r3",
+      "oldStart": 4,
+      "oldLines": 7,
+      "newStart": 4,
+      "newLines": 7,
+      "lines": [
+       {
+        "t": "ctx",
+        "old": 4,
+        "new": 4,
+        "text": "r4"
+       },
+       {
+        "t": "ctx",
+        "old": 5,
+        "new": 5,
+        "text": "r5"
+       },
+       {
+        "t": "ctx",
+        "old": 6,
+        "new": 6,
+        "text": "r6"
+       },
+       {
+        "t": "del",
+        "old": 7,
+        "new": null,
+        "text": "r7"
+       },
+       {
+        "t": "add",
+        "old": null,
+        "new": 7,
+        "text": "r7-edited"
+       },
+       {
+        "t": "ctx",
+        "old": 8,
+        "new": 8,
+        "text": "r8"
+       },
+       {
+        "t": "ctx",
+        "old": 9,
+        "new": 9,
+        "text": "r9"
+       },
+       {
+        "t": "ctx",
+        "old": 10,
+        "new": 10,
+        "text": "r10"
+       }
+      ]
+     }
+    ],
+    "oldBlob": "229a82286c972dc87eb4608f10655545cb920343",
+    "newBlob": "35b0917e32601fd44a6eb19a3a03bcbff14b8f55",
+    "oldMode": "100644",
+    "newMode": "100644"
+   },
+   {
+    "path": "restage-gone.txt",
+    "oldPath": null,
+    "status": "deleted",
+    "binary": false,
+    "additions": 0,
+    "deletions": 1,
+    "hunks": [
+     {
+      "id": "2b66e6237df4",
+      "kind": "text",
+      "header": "@@ -1 +0,0 @@",
+      "oldStart": 1,
+      "oldLines": 1,
+      "newStart": 0,
+      "newLines": 0,
+      "lines": [
+       {
+        "t": "del",
+        "old": 1,
+        "new": null,
+        "text": "g"
+       }
+      ]
+     }
+    ],
+    "oldMode": "100644",
+    "oldBlob": "01058d844a98d293a3b03a8615a34700e4ed2be3",
+    "newBlob": "0000000000000000000000000000000000000000"
+   },
+   {
+    "path": "restage.txt",
+    "oldPath": null,
+    "status": "modified",
+    "binary": false,
+    "additions": 1,
+    "deletions": 1,
+    "hunks": [
+     {
+      "id": "6f1e8e9a885f",
+      "kind": "text",
+      "header": "@@ -1,5 +1,5 @@",
+      "oldStart": 1,
+      "oldLines": 5,
+      "newStart": 1,
+      "newLines": 5,
+      "lines": [
+       {
+        "t": "ctx",
+        "old": 1,
+        "new": 1,
+        "text": "s1"
+       },
+       {
+        "t": "del",
+        "old": 2,
+        "new": null,
+        "text": "s2"
+       },
+       {
+        "t": "add",
+        "old": null,
+        "new": 2,
+        "text": "S2"
+       },
+       {
+        "t": "ctx",
+        "old": 3,
+        "new": 3,
+        "text": "s3"
+       },
+       {
+        "t": "ctx",
+        "old": 4,
+        "new": 4,
+        "text": "s4"
+       },
+       {
+        "t": "ctx",
+        "old": 5,
+        "new": 5,
+        "text": "s5"
+       }
+      ]
+     }
+    ],
+    "oldBlob": "2ca0a9861399e49be6eed8daa081dae312e8a803",
+    "newBlob": "484188a57114e03d8ef0f693db6e191b270f07af",
+    "oldMode": "100644",
+    "newMode": "100644"
+   },
+   {
+    "path": "staged.txt",
+    "oldPath": null,
+    "status": "added",
+    "binary": false,
+    "additions": 2,
+    "deletions": 0,
+    "hunks": [
+     {
+      "id": "b55bf8f9d8bc",
+      "kind": "text",
+      "header": "@@ -0,0 +1,2 @@",
+      "oldStart": 0,
+      "oldLines": 0,
+      "newStart": 1,
+      "newLines": 2,
+      "lines": [
+       {
+        "t": "add",
+        "old": null,
+        "new": 1,
+        "text": "staged one"
+       },
+       {
+        "t": "add",
+        "old": null,
+        "new": 2,
+        "text": "staged two"
+       }
+      ]
+     }
+    ],
+    "newMode": "100644",
+    "oldBlob": "0000000000000000000000000000000000000000",
+    "newBlob": "108b20d9eb0e5ae264da72349a3edab7f4033363"
+   },
+   {
+    "path": "tracked\nnl.txt",
+    "oldPath": null,
+    "status": "modified",
+    "binary": false,
+    "additions": 1,
+    "deletions": 1,
+    "hunks": [
+     {
+      "id": "d24140d4ba2a",
+      "kind": "text",
+      "header": "@@ -1,2 +1,2 @@",
+      "oldStart": 1,
+      "oldLines": 2,
+      "newStart": 1,
+      "newLines": 2,
+      "lines": [
+       {
+        "t": "ctx",
+        "old": 1,
+        "new": 1,
+        "text": "one"
+       },
+       {
+        "t": "del",
+        "old": 2,
+        "new": null,
+        "text": "two"
+       },
+       {
+        "t": "add",
+        "old": null,
+        "new": 2,
+        "text": "TWO"
+       }
+      ]
+     }
+    ],
+    "oldBlob": "814f4a422927b82f5f8a43f8fab6d3839e3983f2",
+    "newBlob": "879de50b9a967adae6ab5fe536d4ef6e0af21bb1",
+    "oldMode": "100644",
+    "newMode": "100644"
+   },
+   {
+    "path": "u\nnl.txt",
+    "oldPath": null,
+    "status": "added",
+    "binary": false,
+    "additions": 1,
+    "deletions": 0,
+    "hunks": [
+     {
+      "id": "fd6adcdcf1ea",
+      "kind": "text",
+      "header": "@@ -0,0 +1 @@",
+      "oldStart": 0,
+      "oldLines": 0,
+      "newStart": 1,
+      "newLines": 1,
+      "lines": [
+       {
+        "t": "add",
+        "old": null,
+        "new": 1,
+        "text": "newline name"
+       }
+      ]
+     }
+    ],
+    "newMode": "100644",
+    "oldBlob": "0000000000000000000000000000000000000000",
+    "newBlob": "7249b2f60bf1b1faef75b5034cfa0edcdb2e9567"
+   },
+   {
+    "path": "u1.txt",
+    "oldPath": null,
+    "status": "added",
+    "binary": false,
+    "additions": 1,
+    "deletions": 0,
+    "hunks": [
+     {
+      "id": "939502d4d782",
+      "kind": "text",
+      "header": "@@ -0,0 +1 @@",
+      "oldStart": 0,
+      "oldLines": 0,
+      "newStart": 1,
+      "newLines": 1,
+      "lines": [
+       {
+        "t": "add",
+        "old": null,
+        "new": 1,
+        "text": "u1"
+       }
+      ]
+     }
+    ],
+    "newMode": "100644",
+    "oldBlob": "0000000000000000000000000000000000000000",
+    "newBlob": "db723f9f24003e5cd357eb5dada65c32d48882b3"
+   },
+   {
+    "path": "ubin.dat",
+    "oldPath": null,
+    "status": "added",
+    "binary": true,
+    "additions": 0,
+    "deletions": 0,
+    "hunks": [
+     {
+      "id": "2af8cd2cf964",
+      "kind": "file",
+      "lines": []
+     }
+    ],
+    "newMode": "100644",
+    "oldBlob": "0000000000000000000000000000000000000000",
+    "newBlob": "b01f5cb57a07ae9a2218d7b6ed46fd47b5ee8dee"
+   },
+   {
+    "path": "m-mid.txt",
+    "oldPath": null,
+    "status": "added",
+    "binary": false,
+    "tooLarge": true,
+    "additions": 0,
+    "deletions": 0,
+    "hunks": [
+     {
+      "id": "aad032b6ac8e",
+      "kind": "file",
+      "lines": []
+     }
+    ]
+   },
+   {
+    "path": "n-mid.txt",
+    "oldPath": null,
+    "status": "added",
+    "binary": false,
+    "tooLarge": true,
+    "additions": 0,
+    "deletions": 0,
+    "hunks": [
+     {
+      "id": "9699b851b029",
+      "kind": "file",
+      "lines": []
+     }
+    ]
+   },
+   {
+    "path": "v-vanish.txt",
+    "oldPath": null,
+    "status": "added",
+    "binary": false,
+    "tooLarge": true,
+    "additions": 0,
+    "deletions": 0,
+    "hunks": [
+     {
+      "id": "2c4c401c0459",
+      "kind": "file",
+      "lines": []
+     }
+    ]
+   },
+   {
+    "path": "w-big.txt",
+    "oldPath": null,
+    "status": "added",
+    "binary": false,
+    "tooLarge": true,
+    "additions": 0,
+    "deletions": 0,
+    "hunks": [
+     {
+      "id": "2b9f4ab59df7",
+      "kind": "file",
+      "lines": []
+     }
+    ]
+   },
+   {
+    "path": "x-past-cap.txt",
+    "oldPath": null,
+    "status": "added",
+    "binary": false,
+    "tooLarge": true,
+    "additions": 0,
+    "deletions": 0,
+    "hunks": [
+     {
+      "id": "e0655514f694",
+      "kind": "file",
+      "lines": []
+     }
+    ]
+   },
+   {
+    "path": "restage-big.txt",
+    "oldPath": null,
+    "status": "modified",
+    "binary": false,
+    "tooLarge": true,
+    "additions": 0,
+    "deletions": 0,
+    "hunks": [
+     {
+      "id": "5e8ea733f28f",
+      "kind": "file",
+      "lines": []
+     }
+    ]
+   }
+  ],
+  "fingerprint": "7f451b0d92b4b13ae2de3938ee24c8f29d12ed8cc86f9d99b2f73a9f2b9c2272",
+  "sides": {
+   "new a.txt": [
+    "l1",
+    "l2",
+    "changed-3",
+    "l4",
+    "l5",
+    "l6",
+    "l7",
+    "l8",
+    "l9",
+    "l10",
+    "l11",
+    "l12",
+    "l13",
+    "l14",
+    "changed-15",
+    "l16",
+    "l17",
+    "l18",
+    "l19",
+    "l20"
+   ],
+   "old a.txt": [
+    "l1",
+    "l2",
+    "l3",
+    "l4",
+    "l5",
+    "l6",
+    "l7",
+    "l8",
+    "l9",
+    "l10",
+    "l11",
+    "l12",
+    "l13",
+    "l14",
+    "l15",
+    "l16",
+    "l17",
+    "l18",
+    "l19",
+    "l20"
+   ],
+   "old del.txt": [
+    "d1",
+    "d2",
+    "d3",
+    "d4",
+    "d5"
+   ],
+   "new del.txt": null,
+   "new ren-dst.txt": [
+    "r1",
+    "r2",
+    "r3",
+    "r4",
+    "r5",
+    "r6",
+    "r7-edited",
+    "r8",
+    "r9",
+    "r10",
+    "r11",
+    "r12",
+    "r13",
+    "r14",
+    "r15",
+    "r16",
+    "r17",
+    "r18",
+    "r19",
+    "r20",
+    "r21",
+    "r22",
+    "r23",
+    "r24",
+    "r25",
+    "r26",
+    "r27",
+    "r28",
+    "r29",
+    "r30"
+   ],
+   "old ren-dst.txt": [
+    "r1",
+    "r2",
+    "r3",
+    "r4",
+    "r5",
+    "r6",
+    "r7",
+    "r8",
+    "r9",
+    "r10",
+    "r11",
+    "r12",
+    "r13",
+    "r14",
+    "r15",
+    "r16",
+    "r17",
+    "r18",
+    "r19",
+    "r20",
+    "r21",
+    "r22",
+    "r23",
+    "r24",
+    "r25",
+    "r26",
+    "r27",
+    "r28",
+    "r29",
+    "r30"
+   ],
+   "new restage.txt": [
+    "s1",
+    "S2",
+    "s3",
+    "s4",
+    "s5",
+    "s6"
+   ],
+   "old restage.txt": [
+    "s1",
+    "s2",
+    "s3",
+    "s4",
+    "s5",
+    "s6"
+   ],
+   "new tracked\nnl.txt": [
+    "one",
+    "TWO"
+   ],
+   "new u\nnl.txt": [
+    "newline name"
+   ],
+   "new crlf.txt": [
+    "x\r",
+    "Y\r"
+   ],
+   "new noeol.txt": [
+    "p",
+    "Q"
+   ],
+   "old noeol.txt": [
+    "p",
+    "q"
+   ],
+   "new missing.txt": null,
+   "new staged.txt": [
+    "staged one",
+    "staged two"
+   ],
+   "old staged.txt": null
+  }
+ },
+ "untracked budget": {
+  "files": [
+   {
+    "path": "a.txt",
+    "oldPath": null,
+    "status": "modified",
+    "binary": false,
+    "additions": 2,
+    "deletions": 2,
+    "hunks": [
+     {
+      "id": "4e6a37e852f3",
+      "kind": "text",
+      "header": "@@ -1,6 +1,6 @@",
+      "oldStart": 1,
+      "oldLines": 6,
+      "newStart": 1,
+      "newLines": 6,
+      "lines": [
+       {
+        "t": "ctx",
+        "old": 1,
+        "new": 1,
+        "text": "l1"
+       },
+       {
+        "t": "ctx",
+        "old": 2,
+        "new": 2,
+        "text": "l2"
+       },
+       {
+        "t": "del",
+        "old": 3,
+        "new": null,
+        "text": "l3"
+       },
+       {
+        "t": "add",
+        "old": null,
+        "new": 3,
+        "text": "changed-3"
+       },
+       {
+        "t": "ctx",
+        "old": 4,
+        "new": 4,
+        "text": "l4"
+       },
+       {
+        "t": "ctx",
+        "old": 5,
+        "new": 5,
+        "text": "l5"
+       },
+       {
+        "t": "ctx",
+        "old": 6,
+        "new": 6,
+        "text": "l6"
+       }
+      ]
+     },
+     {
+      "id": "d3c8d6852ed2",
+      "kind": "text",
+      "header": "@@ -12,7 +12,7 @@ l11",
+      "oldStart": 12,
+      "oldLines": 7,
+      "newStart": 12,
+      "newLines": 7,
+      "lines": [
+       {
+        "t": "ctx",
+        "old": 12,
+        "new": 12,
+        "text": "l12"
+       },
+       {
+        "t": "ctx",
+        "old": 13,
+        "new": 13,
+        "text": "l13"
+       },
+       {
+        "t": "ctx",
+        "old": 14,
+        "new": 14,
+        "text": "l14"
+       },
+       {
+        "t": "del",
+        "old": 15,
+        "new": null,
+        "text": "l15"
+       },
+       {
+        "t": "add",
+        "old": null,
+        "new": 15,
+        "text": "changed-15"
+       },
+       {
+        "t": "ctx",
+        "old": 16,
+        "new": 16,
+        "text": "l16"
+       },
+       {
+        "t": "ctx",
+        "old": 17,
+        "new": 17,
+        "text": "l17"
+       },
+       {
+        "t": "ctx",
+        "old": 18,
+        "new": 18,
+        "text": "l18"
+       }
+      ]
+     }
+    ],
+    "oldBlob": "86bba901de6526d849fcca3181beda8cdd68551e",
+    "newBlob": "3fc4b0995b60ff4cdf67c125e67d9abac3c21f45",
+    "oldMode": "100644",
+    "newMode": "100644"
+   },
+   {
+    "path": "bin.dat",
+    "oldPath": null,
+    "status": "modified",
+    "binary": true,
+    "additions": 0,
+    "deletions": 0,
+    "hunks": [
+     {
+      "id": "963b70d38405",
+      "kind": "file",
+      "lines": []
+     }
+    ],
+    "oldBlob": "ba71a782e93f3fb63a428383706065e3ec2828e9",
+    "newBlob": "76814d559f270a2a94363d5abdb0b6993cf250e4",
+    "oldMode": "100644",
+    "newMode": "100644"
+   },
+   {
+    "path": "crlf.txt",
+    "oldPath": null,
+    "status": "modified",
+    "binary": false,
+    "additions": 1,
+    "deletions": 1,
+    "hunks": [
+     {
+      "id": "5754c079fbf3",
+      "kind": "text",
+      "header": "@@ -1,2 +1,2 @@",
+      "oldStart": 1,
+      "oldLines": 2,
+      "newStart": 1,
+      "newLines": 2,
+      "lines": [
+       {
+        "t": "ctx",
+        "old": 1,
+        "new": 1,
+        "text": "x\r"
+       },
+       {
+        "t": "del",
+        "old": 2,
+        "new": null,
+        "text": "y\r"
+       },
+       {
+        "t": "add",
+        "old": null,
+        "new": 2,
+        "text": "Y\r"
+       }
+      ]
+     }
+    ],
+    "oldBlob": "0aa0f34a605ee4e3ba45a2cad9d9bee05abbb12b",
+    "newBlob": "a092d71a091d0e2572f1401bce3ba441404829a9",
+    "oldMode": "100644",
+    "newMode": "100644"
+   },
+   {
+    "path": "del.txt",
+    "oldPath": null,
+    "status": "deleted",
+    "binary": false,
+    "additions": 0,
+    "deletions": 5,
+    "hunks": [
+     {
+      "id": "01c8a7fe41cc",
+      "kind": "text",
+      "header": "@@ -1,5 +0,0 @@",
+      "oldStart": 1,
+      "oldLines": 5,
+      "newStart": 0,
+      "newLines": 0,
+      "lines": [
+       {
+        "t": "del",
+        "old": 1,
+        "new": null,
+        "text": "d1"
+       },
+       {
+        "t": "del",
+        "old": 2,
+        "new": null,
+        "text": "d2"
+       },
+       {
+        "t": "del",
+        "old": 3,
+        "new": null,
+        "text": "d3"
+       },
+       {
+        "t": "del",
+        "old": 4,
+        "new": null,
+        "text": "d4"
+       },
+       {
+        "t": "del",
+        "old": 5,
+        "new": null,
+        "text": "d5"
+       }
+      ]
+     }
+    ],
+    "oldMode": "100644",
+    "oldBlob": "3c3103cc92a77d1aed21b697fceec5edefe878c3",
+    "newBlob": "0000000000000000000000000000000000000000"
+   },
+   {
+    "path": "noeol.txt",
+    "oldPath": null,
+    "status": "modified",
+    "binary": false,
+    "additions": 1,
+    "deletions": 1,
+    "hunks": [
+     {
+      "id": "244b2c5a7edc",
+      "kind": "text",
+      "header": "@@ -1,2 +1,2 @@",
+      "oldStart": 1,
+      "oldLines": 2,
+      "newStart": 1,
+      "newLines": 2,
+      "lines": [
+       {
+        "t": "ctx",
+        "old": 1,
+        "new": 1,
+        "text": "p"
+       },
+       {
+        "t": "del",
+        "old": 2,
+        "new": null,
+        "text": "q",
+        "noEol": true
+       },
+       {
+        "t": "add",
+        "old": null,
+        "new": 2,
+        "text": "Q",
+        "noEol": true
+       }
+      ]
+     }
+    ],
+    "oldBlob": "8d7864f1cbaf21a9cb5ec9a1371bb26ebc10d4ce",
+    "newBlob": "79cb5ec105303ebac540ca191c3bdc79b21f4c44",
+    "oldMode": "100644",
+    "newMode": "100644"
+   },
+   {
+    "path": "ren-dst.txt",
+    "oldPath": "ren-src.txt",
+    "status": "renamed",
+    "binary": false,
+    "additions": 1,
+    "deletions": 1,
+    "hunks": [
+     {
+      "id": "49ba3b3de439",
+      "kind": "text",
+      "header": "@@ -4,7 +4,7 @@ r3",
+      "oldStart": 4,
+      "oldLines": 7,
+      "newStart": 4,
+      "newLines": 7,
+      "lines": [
+       {
+        "t": "ctx",
+        "old": 4,
+        "new": 4,
+        "text": "r4"
+       },
+       {
+        "t": "ctx",
+        "old": 5,
+        "new": 5,
+        "text": "r5"
+       },
+       {
+        "t": "ctx",
+        "old": 6,
+        "new": 6,
+        "text": "r6"
+       },
+       {
+        "t": "del",
+        "old": 7,
+        "new": null,
+        "text": "r7"
+       },
+       {
+        "t": "add",
+        "old": null,
+        "new": 7,
+        "text": "r7-edited"
+       },
+       {
+        "t": "ctx",
+        "old": 8,
+        "new": 8,
+        "text": "r8"
+       },
+       {
+        "t": "ctx",
+        "old": 9,
+        "new": 9,
+        "text": "r9"
+       },
+       {
+        "t": "ctx",
+        "old": 10,
+        "new": 10,
+        "text": "r10"
+       }
+      ]
+     }
+    ],
+    "oldBlob": "229a82286c972dc87eb4608f10655545cb920343",
+    "newBlob": "35b0917e32601fd44a6eb19a3a03bcbff14b8f55",
+    "oldMode": "100644",
+    "newMode": "100644"
+   },
+   {
+    "path": "restage-big.txt",
+    "oldPath": null,
+    "status": "modified",
+    "binary": false,
+    "additions": 1,
+    "deletions": 1,
+    "hunks": [
+     {
+      "id": "fdd2004e6f86",
+      "kind": "text",
+      "header": "@@ -1 +1 @@",
+      "oldStart": 1,
+      "oldLines": 1,
+      "newStart": 1,
+      "newLines": 1,
+      "lines": [
+       {
+        "t": "del",
+        "old": 1,
+        "new": null,
+        "text": "small"
+       },
+       {
+        "t": "add",
+        "old": null,
+        "new": 1,
+        "text": "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB"
+       }
+      ]
+     }
+    ],
+    "oldBlob": "ac790413e2d7a26c3767e78c57bb28716686eebc",
+    "newBlob": "b2f57deafc4c0cfe2f427d748914c4d84f67d6e1",
+    "oldMode": "100644",
+    "newMode": "100644"
+   },
+   {
+    "path": "restage-gone.txt",
+    "oldPath": null,
+    "status": "deleted",
+    "binary": false,
+    "additions": 0,
+    "deletions": 1,
+    "hunks": [
+     {
+      "id": "2b66e6237df4",
+      "kind": "text",
+      "header": "@@ -1 +0,0 @@",
+      "oldStart": 1,
+      "oldLines": 1,
+      "newStart": 0,
+      "newLines": 0,
+      "lines": [
+       {
+        "t": "del",
+        "old": 1,
+        "new": null,
+        "text": "g"
+       }
+      ]
+     }
+    ],
+    "oldMode": "100644",
+    "oldBlob": "01058d844a98d293a3b03a8615a34700e4ed2be3",
+    "newBlob": "0000000000000000000000000000000000000000"
+   },
+   {
+    "path": "restage.txt",
+    "oldPath": null,
+    "status": "modified",
+    "binary": false,
+    "additions": 1,
+    "deletions": 1,
+    "hunks": [
+     {
+      "id": "6f1e8e9a885f",
+      "kind": "text",
+      "header": "@@ -1,5 +1,5 @@",
+      "oldStart": 1,
+      "oldLines": 5,
+      "newStart": 1,
+      "newLines": 5,
+      "lines": [
+       {
+        "t": "ctx",
+        "old": 1,
+        "new": 1,
+        "text": "s1"
+       },
+       {
+        "t": "del",
+        "old": 2,
+        "new": null,
+        "text": "s2"
+       },
+       {
+        "t": "add",
+        "old": null,
+        "new": 2,
+        "text": "S2"
+       },
+       {
+        "t": "ctx",
+        "old": 3,
+        "new": 3,
+        "text": "s3"
+       },
+       {
+        "t": "ctx",
+        "old": 4,
+        "new": 4,
+        "text": "s4"
+       },
+       {
+        "t": "ctx",
+        "old": 5,
+        "new": 5,
+        "text": "s5"
+       }
+      ]
+     }
+    ],
+    "oldBlob": "2ca0a9861399e49be6eed8daa081dae312e8a803",
+    "newBlob": "484188a57114e03d8ef0f693db6e191b270f07af",
+    "oldMode": "100644",
+    "newMode": "100644"
+   },
+   {
+    "path": "staged.txt",
+    "oldPath": null,
+    "status": "added",
+    "binary": false,
+    "additions": 2,
+    "deletions": 0,
+    "hunks": [
+     {
+      "id": "b55bf8f9d8bc",
+      "kind": "text",
+      "header": "@@ -0,0 +1,2 @@",
+      "oldStart": 0,
+      "oldLines": 0,
+      "newStart": 1,
+      "newLines": 2,
+      "lines": [
+       {
+        "t": "add",
+        "old": null,
+        "new": 1,
+        "text": "staged one"
+       },
+       {
+        "t": "add",
+        "old": null,
+        "new": 2,
+        "text": "staged two"
+       }
+      ]
+     }
+    ],
+    "newMode": "100644",
+    "oldBlob": "0000000000000000000000000000000000000000",
+    "newBlob": "108b20d9eb0e5ae264da72349a3edab7f4033363"
+   },
+   {
+    "path": "tracked\nnl.txt",
+    "oldPath": null,
+    "status": "modified",
+    "binary": false,
+    "additions": 1,
+    "deletions": 1,
+    "hunks": [
+     {
+      "id": "d24140d4ba2a",
+      "kind": "text",
+      "header": "@@ -1,2 +1,2 @@",
+      "oldStart": 1,
+      "oldLines": 2,
+      "newStart": 1,
+      "newLines": 2,
+      "lines": [
+       {
+        "t": "ctx",
+        "old": 1,
+        "new": 1,
+        "text": "one"
+       },
+       {
+        "t": "del",
+        "old": 2,
+        "new": null,
+        "text": "two"
+       },
+       {
+        "t": "add",
+        "old": null,
+        "new": 2,
+        "text": "TWO"
+       }
+      ]
+     }
+    ],
+    "oldBlob": "814f4a422927b82f5f8a43f8fab6d3839e3983f2",
+    "newBlob": "879de50b9a967adae6ab5fe536d4ef6e0af21bb1",
+    "oldMode": "100644",
+    "newMode": "100644"
+   },
+   {
+    "path": "m-mid.txt",
+    "oldPath": null,
+    "status": "added",
+    "binary": false,
+    "additions": 1,
+    "deletions": 0,
+    "hunks": [
+     {
+      "id": "0b5987919c91",
+      "kind": "text",
+      "header": "@@ -0,0 +1 @@",
+      "oldStart": 0,
+      "oldLines": 0,
+      "newStart": 1,
+      "newLines": 1,
+      "lines": [
+       {
+        "t": "add",
+        "old": null,
+        "new": 1,
+        "text": "MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM"
+       }
+      ]
+     }
+    ],
+    "newMode": "100644",
+    "oldBlob": "0000000000000000000000000000000000000000",
+    "newBlob": "acc8ad433d92332b8d7eef4ebfcf04ac02ca57d6"
+   },
+   {
+    "path": "n-mid.txt",
+    "oldPath": null,
+    "status": "added",
+    "binary": false,
+    "additions": 1,
+    "deletions": 0,
+    "hunks": [
+     {
+      "id": "3f6deb6f7032",
+      "kind": "text",
+      "header": "@@ -0,0 +1 @@",
+      "oldStart": 0,
+      "oldLines": 0,
+      "newStart": 1,
+      "newLines": 1,
+      "lines": [
+       {
+        "t": "add",
+        "old": null,
+        "new": 1,
+        "text": "NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN"
+       }
+      ]
+     }
+    ],
+    "newMode": "100644",
+    "oldBlob": "0000000000000000000000000000000000000000",
+    "newBlob": "2e6fb01eca465ef3ef33d4a9413cc6097537af45"
+   },
+   {
+    "path": "u\nnl.txt",
+    "oldPath": null,
+    "status": "added",
+    "binary": false,
+    "additions": 1,
+    "deletions": 0,
+    "hunks": [
+     {
+      "id": "fd6adcdcf1ea",
+      "kind": "text",
+      "header": "@@ -0,0 +1 @@",
+      "oldStart": 0,
+      "oldLines": 0,
+      "newStart": 1,
+      "newLines": 1,
+      "lines": [
+       {
+        "t": "add",
+        "old": null,
+        "new": 1,
+        "text": "newline name"
+       }
+      ]
+     }
+    ],
+    "newMode": "100644",
+    "oldBlob": "0000000000000000000000000000000000000000",
+    "newBlob": "7249b2f60bf1b1faef75b5034cfa0edcdb2e9567"
+   },
+   {
+    "path": "u1.txt",
+    "oldPath": null,
+    "status": "added",
+    "binary": false,
+    "additions": 1,
+    "deletions": 0,
+    "hunks": [
+     {
+      "id": "939502d4d782",
+      "kind": "text",
+      "header": "@@ -0,0 +1 @@",
+      "oldStart": 0,
+      "oldLines": 0,
+      "newStart": 1,
+      "newLines": 1,
+      "lines": [
+       {
+        "t": "add",
+        "old": null,
+        "new": 1,
+        "text": "u1"
+       }
+      ]
+     }
+    ],
+    "newMode": "100644",
+    "oldBlob": "0000000000000000000000000000000000000000",
+    "newBlob": "db723f9f24003e5cd357eb5dada65c32d48882b3"
+   },
+   {
+    "path": "ubin.dat",
+    "oldPath": null,
+    "status": "added",
+    "binary": true,
+    "additions": 0,
+    "deletions": 0,
+    "hunks": [
+     {
+      "id": "2af8cd2cf964",
+      "kind": "file",
+      "lines": []
+     }
+    ],
+    "newMode": "100644",
+    "oldBlob": "0000000000000000000000000000000000000000",
+    "newBlob": "b01f5cb57a07ae9a2218d7b6ed46fd47b5ee8dee"
+   },
+   {
+    "path": "v-vanish.txt",
+    "oldPath": null,
+    "status": "added",
+    "binary": false,
+    "tooLarge": true,
+    "additions": 0,
+    "deletions": 0,
+    "hunks": [
+     {
+      "id": "2c4c401c0459",
+      "kind": "file",
+      "lines": []
+     }
+    ]
+   },
+   {
+    "path": "w-big.txt",
+    "oldPath": null,
+    "status": "added",
+    "binary": false,
+    "tooLarge": true,
+    "additions": 0,
+    "deletions": 0,
+    "hunks": [
+     {
+      "id": "2b9f4ab59df7",
+      "kind": "file",
+      "lines": []
+     }
+    ]
+   },
+   {
+    "path": "x-past-cap.txt",
+    "oldPath": null,
+    "status": "added",
+    "binary": false,
+    "tooLarge": true,
+    "additions": 0,
+    "deletions": 0,
+    "hunks": [
+     {
+      "id": "e0655514f694",
+      "kind": "file",
+      "lines": []
+     }
+    ]
+   }
+  ],
+  "fingerprint": "353fa558633c64e34f53cd507dd4b68c57a499b2250e83ca8058f56ee28fc431",
+  "sides": {
+   "new a.txt": [
+    "l1",
+    "l2",
+    "changed-3",
+    "l4",
+    "l5",
+    "l6",
+    "l7",
+    "l8",
+    "l9",
+    "l10",
+    "l11",
+    "l12",
+    "l13",
+    "l14",
+    "changed-15",
+    "l16",
+    "l17",
+    "l18",
+    "l19",
+    "l20"
+   ],
+   "old a.txt": [
+    "l1",
+    "l2",
+    "l3",
+    "l4",
+    "l5",
+    "l6",
+    "l7",
+    "l8",
+    "l9",
+    "l10",
+    "l11",
+    "l12",
+    "l13",
+    "l14",
+    "l15",
+    "l16",
+    "l17",
+    "l18",
+    "l19",
+    "l20"
+   ],
+   "old del.txt": [
+    "d1",
+    "d2",
+    "d3",
+    "d4",
+    "d5"
+   ],
+   "new del.txt": null,
+   "new ren-dst.txt": [
+    "r1",
+    "r2",
+    "r3",
+    "r4",
+    "r5",
+    "r6",
+    "r7-edited",
+    "r8",
+    "r9",
+    "r10",
+    "r11",
+    "r12",
+    "r13",
+    "r14",
+    "r15",
+    "r16",
+    "r17",
+    "r18",
+    "r19",
+    "r20",
+    "r21",
+    "r22",
+    "r23",
+    "r24",
+    "r25",
+    "r26",
+    "r27",
+    "r28",
+    "r29",
+    "r30"
+   ],
+   "old ren-dst.txt": [
+    "r1",
+    "r2",
+    "r3",
+    "r4",
+    "r5",
+    "r6",
+    "r7",
+    "r8",
+    "r9",
+    "r10",
+    "r11",
+    "r12",
+    "r13",
+    "r14",
+    "r15",
+    "r16",
+    "r17",
+    "r18",
+    "r19",
+    "r20",
+    "r21",
+    "r22",
+    "r23",
+    "r24",
+    "r25",
+    "r26",
+    "r27",
+    "r28",
+    "r29",
+    "r30"
+   ],
+   "new restage.txt": [
+    "s1",
+    "S2",
+    "s3",
+    "s4",
+    "s5",
+    "s6"
+   ],
+   "old restage.txt": [
+    "s1",
+    "s2",
+    "s3",
+    "s4",
+    "s5",
+    "s6"
+   ],
+   "new tracked\nnl.txt": [
+    "one",
+    "TWO"
+   ],
+   "new u\nnl.txt": [
+    "newline name"
+   ],
+   "new crlf.txt": [
+    "x\r",
+    "Y\r"
+   ],
+   "new noeol.txt": [
+    "p",
+    "Q"
+   ],
+   "old noeol.txt": [
+    "p",
+    "q"
+   ],
+   "new missing.txt": null,
+   "new staged.txt": [
+    "staged one",
+    "staged two"
+   ],
+   "old staged.txt": null
+  }
+ },
+ "uncommitted review": {
+  "fingerprints": [
+   "73a367dfb1f64ebf3fc37d15a9bd2ad224c813e640f50e1737b6e30eda0c396b",
+   "58597acd69d9f98716fbcaafc931b79259f931940e7b62f2083696b9f2c559e4"
+  ],
+  "refreshed": {
+   "ok": true,
+   "unchanged": false,
+   "round": 2,
+   "hunks": {
+    "kept": 0,
+    "reset": 0,
+    "new": 0
+   },
+   "threads": {
+    "moved": 0,
+    "drifted": 0,
+    "outdated": 0,
+    "dropped": 0
+   }
+  },
+  "files": [
+   {
+    "path": "a.js",
+    "oldPath": null,
+    "status": "modified",
+    "binary": false,
+    "tooLarge": false,
+    "additions": 4,
+    "deletions": 2,
+    "hunks": 1,
+    "verdicts": null,
+    "threads": {
+     "open": 2,
+     "resolved": 0,
+     "outdated": 0
+    },
+    "unread": 0
+   },
+   {
+    "path": "r2.txt",
+    "oldPath": "r.txt",
+    "status": "renamed",
+    "binary": false,
+    "tooLarge": false,
+    "additions": 1,
+    "deletions": 1,
+    "hunks": 1,
+    "verdicts": null,
+    "threads": {
+     "open": 1,
+     "resolved": 0,
+     "outdated": 0
+    },
+    "unread": 0
+   },
+   {
+    "path": "u\nnl.txt",
+    "oldPath": null,
+    "status": "added",
+    "binary": false,
+    "tooLarge": false,
+    "additions": 4,
+    "deletions": 0,
+    "hunks": 1,
+    "verdicts": null,
+    "threads": {
+     "open": 1,
+     "resolved": 0,
+     "outdated": 0
+    },
+    "unread": 0
+   }
+  ],
+  "threads": [
+   {
+    "id": "t1",
+    "anchor": {
+     "file": "a.js",
+     "side": "new",
+     "startLine": 12,
+     "endLine": 12,
+     "round": 1,
+     "linesHash": "e4432baa90819aae",
+     "lines": [
+      "ten"
+     ],
+     "ctxBefore": {
+      "hash": "fc85fb4a41f21d9c",
+      "n": 3
+     },
+     "ctxAfter": {
+      "hash": "0133205dab4fbf6b",
+      "n": 3
+     },
+     "drifted": false,
+     "hunkId": "e238c6e1ab79"
+    }
+   },
+   {
+    "id": "t2",
+    "anchor": {
+     "file": "a.js",
+     "side": "old",
+     "startLine": 4,
+     "endLine": 4,
+     "round": 1,
+     "linesHash": "9f102fe3a7d618f9",
+     "lines": [
+      "l4"
+     ],
+     "ctxBefore": {
+      "hash": "569891276174e4a0",
+      "n": 3
+     },
+     "ctxAfter": {
+      "hash": "15611d1fe799da74",
+      "n": 3
+     },
+     "drifted": false,
+     "hunkId": "e238c6e1ab79"
+    }
+   },
+   {
+    "id": "t3",
+    "anchor": {
+     "file": "r2.txt",
+     "side": "new",
+     "startLine": 9,
+     "endLine": 10,
+     "round": 1,
+     "linesHash": "55f1965d4b7983cb",
+     "lines": [
+      "r9!",
+      "r10"
+     ],
+     "ctxBefore": {
+      "hash": "1896f9cd0428f8d1",
+      "n": 3
+     },
+     "ctxAfter": {
+      "hash": "f2ca1606795c471e",
+      "n": 2
+     },
+     "drifted": false,
+     "hunkId": "96d9c08fd262"
+    }
+   },
+   {
+    "id": "t5",
+    "anchor": {
+     "file": "u\nnl.txt",
+     "side": "new",
+     "startLine": 3,
+     "endLine": 3,
+     "round": 1,
+     "linesHash": "3fc4ccfe745870e2",
+     "lines": [
+      "two"
+     ],
+     "ctxBefore": {
+      "hash": "82d9b71108a93075",
+      "n": 2
+     },
+     "ctxAfter": {
+      "hash": "8b5b9db0c13db242",
+      "n": 1
+     },
+     "drifted": false,
+     "hunkId": "f3e20ca1d8e1"
+    }
+   }
+  ],
+  "dropped": [
+   "t4"
+  ],
+  "diff": [
+   {
+    "path": "a.js",
+    "hunks": [
+     {
+      "id": "e238c6e1ab79",
+      "kind": "text",
+      "header": "@@ -1,13 +1,15 @@",
+      "oldStart": 1,
+      "oldLines": 13,
+      "newStart": 1,
+      "newLines": 15,
+      "lines": [
+       {
+        "t": "add",
+        "old": null,
+        "new": 1,
+        "text": "ins-1"
+       },
+       {
+        "t": "add",
+        "old": null,
+        "new": 2,
+        "text": "ins-2"
+       },
+       {
+        "t": "ctx",
+        "old": 1,
+        "new": 3,
+        "text": "l1"
+       },
+       {
+        "t": "ctx",
+        "old": 2,
+        "new": 4,
+        "text": "l2"
+       },
+       {
+        "t": "ctx",
+        "old": 3,
+        "new": 5,
+        "text": "l3"
+       },
+       {
+        "t": "del",
+        "old": 4,
+        "new": null,
+        "text": "l4"
+       },
+       {
+        "t": "add",
+        "old": null,
+        "new": 6,
+        "text": "four"
+       },
+       {
+        "t": "ctx",
+        "old": 5,
+        "new": 7,
+        "text": "l5"
+       },
+       {
+        "t": "ctx",
+        "old": 6,
+        "new": 8,
+        "text": "l6"
+       },
+       {
+        "t": "ctx",
+        "old": 7,
+        "new": 9,
+        "text": "l7"
+       },
+       {
+        "t": "ctx",
+        "old": 8,
+        "new": 10,
+        "text": "l8"
+       },
+       {
+        "t": "ctx",
+        "old": 9,
+        "new": 11,
+        "text": "l9"
+       },
+       {
+        "t": "del",
+        "old": 10,
+        "new": null,
+        "text": "l10"
+       },
+       {
+        "t": "add",
+        "old": null,
+        "new": 12,
+        "text": "ten"
+       },
+       {
+        "t": "ctx",
+        "old": 11,
+        "new": 13,
+        "text": "l11"
+       },
+       {
+        "t": "ctx",
+        "old": 12,
+        "new": 14,
+        "text": "l12"
+       },
+       {
+        "t": "ctx",
+        "old": 13,
+        "new": 15,
+        "text": "l13"
+       }
+      ],
+      "verdict": null
+     }
+    ],
+    "threads": [
+     [
+      "t1",
+      {
+       "file": "a.js",
+       "side": "new",
+       "startLine": 12,
+       "endLine": 12,
+       "hunkId": "e238c6e1ab79",
+       "round": 2,
+       "linesHash": "e4432baa90819aae",
+       "drifted": false
+      }
+     ],
+     [
+      "t2",
+      {
+       "file": "a.js",
+       "side": "old",
+       "startLine": 4,
+       "endLine": 4,
+       "hunkId": "e238c6e1ab79",
+       "round": 2,
+       "linesHash": "9f102fe3a7d618f9",
+       "drifted": false
+      }
+     ]
+    ]
+   },
+   {
+    "path": "r2.txt",
+    "hunks": [
+     {
+      "id": "96d9c08fd262",
+      "kind": "text",
+      "header": "@@ -6,7 +6,7 @@ r5",
+      "oldStart": 6,
+      "oldLines": 7,
+      "newStart": 6,
+      "newLines": 7,
+      "lines": [
+       {
+        "t": "ctx",
+        "old": 6,
+        "new": 6,
+        "text": "r6"
+       },
+       {
+        "t": "ctx",
+        "old": 7,
+        "new": 7,
+        "text": "r7"
+       },
+       {
+        "t": "ctx",
+        "old": 8,
+        "new": 8,
+        "text": "r8"
+       },
+       {
+        "t": "del",
+        "old": 9,
+        "new": null,
+        "text": "r9"
+       },
+       {
+        "t": "add",
+        "old": null,
+        "new": 9,
+        "text": "r9!"
+       },
+       {
+        "t": "ctx",
+        "old": 10,
+        "new": 10,
+        "text": "r10"
+       },
+       {
+        "t": "ctx",
+        "old": 11,
+        "new": 11,
+        "text": "r11"
+       },
+       {
+        "t": "ctx",
+        "old": 12,
+        "new": 12,
+        "text": "r12"
+       }
+      ],
+      "verdict": null
+     }
+    ],
+    "threads": [
+     [
+      "t3",
+      {
+       "file": "r2.txt",
+       "side": "new",
+       "startLine": 9,
+       "endLine": 10,
+       "hunkId": "96d9c08fd262",
+       "round": 2,
+       "linesHash": "55f1965d4b7983cb",
+       "drifted": false
+      }
+     ]
+    ]
+   },
+   {
+    "path": "u\nnl.txt",
+    "hunks": [
+     {
+      "id": "f3e20ca1d8e1",
+      "kind": "text",
+      "header": "@@ -0,0 +1,4 @@",
+      "oldStart": 0,
+      "oldLines": 0,
+      "newStart": 1,
+      "newLines": 4,
+      "lines": [
+       {
+        "t": "add",
+        "old": null,
+        "new": 1,
+        "text": "zero"
+       },
+       {
+        "t": "add",
+        "old": null,
+        "new": 2,
+        "text": "one"
+       },
+       {
+        "t": "add",
+        "old": null,
+        "new": 3,
+        "text": "two"
+       },
+       {
+        "t": "add",
+        "old": null,
+        "new": 4,
+        "text": "three"
+       }
+      ],
+      "verdict": null
+     }
+    ],
+    "threads": [
+     [
+      "t5",
+      {
+       "file": "u\nnl.txt",
+       "side": "new",
+       "startLine": 3,
+       "endLine": 3,
+       "hunkId": "f3e20ca1d8e1",
+       "round": 2,
+       "linesHash": "3fc4ccfe745870e2",
+       "drifted": false
+      }
+     ]
+    ]
+   }
+  ]
+ }
+}

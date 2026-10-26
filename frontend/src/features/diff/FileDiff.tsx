@@ -16,6 +16,7 @@ import { isWhitespaceOnly } from '@/lib/whitespace';
 import { useDiffPrefs } from '@/state/diffPrefs';
 import { useDropped } from '@/state/dropped';
 import { useReviewCtx } from '@/state/reviewContext';
+import { CodeGitFileLink } from '@/features/common/CodeGitLink';
 import { Empty, ErrorState, Loading } from '@/features/common/States';
 import { Composer } from '@/features/threads/Composer';
 import { CitedExcerpt } from './CitedExcerpt';
@@ -53,6 +54,7 @@ function FileHeader({ file, files, onBack, extra, view, options }: { file: DiffF
       <Badge variant="outline">{file.status}</Badge>
       <span className="text-xs"><span className="text-success">+{file.additions}</span> <span className="text-destructive">−{file.deletions}</span></span>
       <FileVerdict file={file} />
+      <CodeGitFileLink file={file} />
       {view && <ViewToggle view={view.chosen} onChange={view.choose} />}
       {options && <DiffOptions />}
       <Button variant="ghost" size="icon-sm" aria-label="Previous file" disabled={i <= 0} onClick={() => go(files[i - 1].path)}><ChevronLeftIcon /></Button>

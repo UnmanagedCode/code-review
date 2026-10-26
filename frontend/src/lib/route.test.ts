@@ -1,6 +1,6 @@
 import { act, renderHook } from '@testing-library/react';
 import { expect, test, vi } from 'vitest';
-import { LEAVE_FILE, navigate, parseCompare, parseRoute, REVIEW_SCOPED, toSearch, useRoute, type Route } from './route';
+import { LEAVE_FILE, navigate, NEW_REVIEW_CLOSED, parseCompare, parseRoute, REVIEW_SCOPED, toSearch, useRoute, type Route } from './route';
 
 test('parse∘serialise round-trips every param', () => {
   const full: Route = { project: 'app', worktree: 'feature', review: 'r-1', file: 'src/a b.ts', side: 'old', lines: '10-20', thread: 't-3', commit: 'abc1234', round: '12', compare: '1..3', view: 'threads' };
@@ -69,4 +69,26 @@ test('LEAVE_FILE clears exactly the file position', () => {
   history.replaceState(null, '', toSearch({ project: 'app', review: 'r-1', file: 'a.js', side: 'old', lines: '3', thread: 't-1', commit: 'abc1234', round: '1', compare: '1..2', view: 'history' }));
   navigate(LEAVE_FILE);
   expect(parseRoute(location.search)).toEqual({ project: 'app', review: 'r-1', commit: 'abc1234', round: '1', compare: '1..2', view: 'history' });
+});
+
+// Invariant: the New review link contract (docs/protocol.md) is canonical: what code-git builds is what toSearch writes back.
+test('a New review prefill link parses to its keys and serialises back byte for byte', () => {
+  for (const search of [
+    '?project=p&worktree=w&view=new&range=main...HEAD',
+    '?project=p&view=new&range=feat%2Fx..0123abc',
+    `?project=p&worktree=w&view=new&sha=${'a'.repeat(40)}`,
+  ]) expect(toSearch(parseRoute(search)), search).toBe(search);
+  expect(parseRoute('?project=p&worktree=w&view=new&range=main...HEAD')).toEqual({ project: 'p', worktree: 'w', view: 'new', range: 'main...HEAD' });
+  expect(parseRoute('?project=p&view=new&sha=abc')).toEqual({ project: 'p', view: 'new', sha: 'abc' });
+  expect(parseRoute('?project=p&view=new&range=&sha=')).toEqual({ project: 'p', view: 'new' });
+});
+
+// Invariant: a link's prefill never leaks into a review it leads to, nor into the next New review dialog.
+test('REVIEW_SCOPED and NEW_REVIEW_CLOSED drop range and sha', () => {
+  history.replaceState(null, '', '?project=p&view=new&range=a...b&sha=c');
+  navigate({ review: 'r-1', ...REVIEW_SCOPED });
+  expect(parseRoute(location.search)).toEqual({ project: 'p', review: 'r-1' });
+  history.replaceState(null, '', '?project=p&worktree=w&view=new&range=a...b&sha=c');
+  navigate(NEW_REVIEW_CLOSED);
+  expect(parseRoute(location.search)).toEqual({ project: 'p', worktree: 'w' });
 });

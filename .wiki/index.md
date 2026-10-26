@@ -14,6 +14,7 @@
   - [diff-display.md](gotchas/diff-display.md) — Diff options display-only (why not `-w`/`-U`), display hunk copies, trim-then-fold, `keepTail`, effective expansion, folded rows, open threads vs the whitespace collapse, the word-diff budget, per-language highlight caps with measured worst cases, the side cache, Prism as data, `DiffLine`-keyed decorations, token colour properties.
   - [round-compare.md](gotchas/round-compare.md) — comparison coordinates (old = A's head, new = B's), copies via `threadsAt`, derived `outdatedIn`, repeated ids and same-row dedupe, gap-line source, the reviewed-path filter.
   - [cc-metadata.md](gotchas/cc-metadata.md) — the cc GET routes used, session places (`ownerSessionId`, conductor spawn history), the exec refusal mapping, retry rules and the operator log, old-cc 404, unreachable ≠ gone, liveness, session labels from `displayLabel`, conductor rule, no session role.
+  - [cross-plugin-links.md](gotchas/cross-plugin-links.md) — "Open in code-git" as a top-frame fragment navigation (why no reload, `topBase`, the `closeView` cost, the backend-owned id, full shas only, hidden file links), and New review link prefill (dialog keyed by prefill, applied once, fork-point ref vs resolved sha, head must be HEAD, server-only ref validation).
   - [recipient-and-roles.md](gotchas/recipient-and-roles.md) — agent opener = recipient, conductor `author`, `roleOf`/`recipientRole`, reuse, resolve rights (`mayClose`), thread owner.
 - architecture/
   - [serving.md](architecture/serving.md) — `server.js` middleware order and exports.

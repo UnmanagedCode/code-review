@@ -291,15 +291,23 @@ export async function renames(place, from, to) {
   return map;
 }
 
+// One commit record per `\x1e`, its fields split by `\x1f`; read by parseLog.
+const LOG_FORMAT = '--format=%H%x1f%h%x1f%an%x1f%aI%x1f%P%x1f%s%x1e';
+const parseLog = (stdout) => stdout.split('\x1e').map((s) => s.trim()).filter(Boolean).map((rec) => {
+  const [sha, short, author, date, parents, subject] = rec.split('\x1f');
+  return { sha, short, author, date, subject, merge: parents.split(' ').filter(Boolean).length > 1 };
+});
+
 /** Commits, newest first. `range` is `a..b`; otherwise the last `limit` commits from HEAD. */
 export async function commitLog(place, { range, limit = 50 } = {}) {
-  const fmt = '--format=%H%x1f%h%x1f%an%x1f%aI%x1f%P%x1f%s%x1e';
-  const args = range ? ['log', fmt, range] : ['log', fmt, '-n', String(limit), 'HEAD'];
+  const args = range ? ['log', LOG_FORMAT, range] : ['log', LOG_FORMAT, '-n', String(limit), 'HEAD'];
   const r = await read(place, args, { ok: [0, 128] });
-  return r.stdout.split('\x1e').map((s) => s.trim()).filter(Boolean).map((rec) => {
-    const [sha, short, author, date, parents, subject] = rec.split('\x1f');
-    return { sha, short, author, date, subject, merge: parents.split(' ').filter(Boolean).length > 1 };
-  });
+  return parseLog(r.stdout);
+}
+
+/** The record of one commit (a full sha, already resolved), shaped as a `commitLog` row. */
+export async function commitOf(place, sha) {
+  return parseLog((await read(place, ['log', LOG_FORMAT, '-n', '1', sha])).stdout)[0];
 }
 
 /** Current branch name, or 'HEAD' when detached. Works on an unborn branch. */

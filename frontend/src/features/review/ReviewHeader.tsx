@@ -6,6 +6,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { getBridge } from '@/lib/bridge';
+import { useCodeGitHref } from '@/lib/codeGit';
 import { bridgeMessage } from '@/lib/refusals';
 import { REVIEW_SCOPED } from '@/lib/route';
 import { useReviewAdmin } from '@/state/admin';
@@ -32,6 +33,7 @@ export function ReviewHeader() {
   const author = review.author ? sessions.find((s) => s.sessionId === review.author) : undefined;
   const bridge = getBridge();
   const canOpenAgent = !!bridge && !!review.recipient;
+  const codeGitHref = useCodeGitHref({ project: review.project, worktree: review.worktree, commit: round?.headSha ?? review.headSha });
 
   const openAgent = async () => {
     const res = await bridge!.openSession(review.recipient!);
@@ -62,13 +64,14 @@ export function ReviewHeader() {
         ) : <span className="px-2 py-1 text-xs">Recipient: {recipientLabel}</span>}
         {review.author && <span className="text-xs text-muted-foreground">Author: {author?.label || review.author}</span>}
         <span className="flex-1" />
-        {(writable || canOpenAgent) && (
+        {(writable || canOpenAgent || codeGitHref) && (
           <DropdownMenu>
             <DropdownMenuTrigger asChild><Button variant="outline" size="icon" aria-label="Review actions"><MoreHorizontalIcon /></Button></DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               {writable && <DropdownMenuItem onSelect={() => admin.patch({ status: review.status === 'open' ? 'closed' : 'open' })}>{review.status === 'open' ? 'Close review' : 'Reopen review'}</DropdownMenuItem>}
               {writable && <DropdownMenuItem onSelect={() => actions.markRead()}>Mark all read</DropdownMenuItem>}
               {canOpenAgent && <DropdownMenuItem onSelect={openAgent}>Open agent</DropdownMenuItem>}
+              {codeGitHref && <DropdownMenuItem asChild><a href={codeGitHref} target="_top">Open head in code-git</a></DropdownMenuItem>}
               {writable && (
                 <>
                   <DropdownMenuSeparator />

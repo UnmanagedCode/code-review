@@ -54,7 +54,9 @@ REST under `/api` (JSON), an SSE stream, and the cc MCP endpoint. Behaviour behi
 | `GET /projects` | | `{projects:[{name}]}` (every cc project, local or on a System) | `CONDUCTOR_UNAVAILABLE` |
 | `GET /checkout` | `?project&worktree` (omit `worktree` for main) | `{checkout:{project, worktree, path, branch, headSha, dirty, exists}, forkPoints:[{ref,label,forkSha}], worktrees:[{worktreeName,branch}]}` | `INVALID_ARGUMENT`, `PROJECT_*`, `CHECKOUT_UNKNOWN`, `SYSTEM_UNREACHABLE` `GIT_TIMEOUT` `GIT_UNAVAILABLE` |
 | `GET /checkout/commits` | `?project&worktree&limit` (default 50, max 500) | `{commits:[{sha, short, author, date, subject, merge}]}` | as above, `CHECKOUT_GONE` |
+| `GET /checkout/commit` | `?project&worktree&ref` (any ref, full or abbreviated sha, `HEAD`…) | `{commit:{sha, short, author, date, subject, merge}}`: the commit `ref` names | as above, `BAD_REF` (also for a missing `ref`), `REF_UNKNOWN`: the same ref validation as `POST /reviews` |
 | `GET /sessions` | `?project&worktree` | `{sessions:[Session]}` (all cc sessions; `attached` is relative to the checkout) | `INVALID_ARGUMENT`, `CONDUCTOR_UNAVAILABLE` |
+| `GET /integrations` | | `{codeGit:{id} \| null}`: code-git's plugin id when cc's `GET /api/plugins` has a row with `id` `code-git` (`CODE_GIT_PLUGIN` in `src/integrations.js`), `enabled` and `hasFrontend`; else null | `CONDUCTOR_UNAVAILABLE` |
 | `GET /sessions/:sessionId/places` | | `{places:[SessionPlace]}`: the session's own checkout, then the checkouts of the workers it owns (live, by project name), then those it has spawned workers into (`lastSpawnAt` (ISO string) newest first, then project name); `.conduct` omitted; an unknown id gives `[]` | `CONDUCTOR_UNAVAILABLE` (instances route only: a failing history route is logged and the places come from live rows alone) |
 | `GET /reviews` | `?project&worktree&status` (`open`, `closed` or `all`; `all` or no `status` = every status); no `worktree` = every checkout, empty `worktree=` = main | `{reviews:[ReviewSummary]}` newest first | |
 | `GET /inbox` | | `{reviews:[InboxItem]}`: every open review of every project and checkout, `lastActivityAt` descending, then `id` descending. Reads the store and cc's project list (once) and worktree lists (once per project with an open worktree review); runs no git. A failed cc lookup gives `checkoutGone:null`, never a refusal | |
@@ -162,6 +164,8 @@ The page keeps its state in the query string (`?…`, never the hash) and writes
 | `commit` | Range reviews: commit-filter view (read-only) |
 | `round` | Range reviews: past-round view (read-only), a positive integer; ignored with `commit`, dropped when it names the current round or a later one. Focusing a thread there marks nothing read |
 | `compare` | Range reviews: round comparison (read-only), `A..B` of positive integers. Ignored with `commit`; beats `round` (which is dropped); dropped when the review is not a range review, `A` ≥ `B`, or `B` is past the current round. There `side=old` means round A's lines and `new` round B's |
+| `range` | With `view=new`: prefill a range review, `<BASE>...<HEAD>` or `<BASE>..<HEAD>` (see New review links). Kept raw by the parser; cleared with the dialog and by every review-scoped reset |
+| `sha` | With `view=new`: prefill a one-commit review of that ref or sha. As `range` otherwise |
 | `view` | Outside a review: `new` (New review dialog) or `inbox` (the side pane's Inbox tab; absent = Checkout, written with `replace`; session following keeps it). Inside one, the side pane's tab: `threads` or `history` (History only on range reviews; elsewhere it shows Files); absent = Files. Tab clicks write it with `replace`; every other in-review navigation keeps it; opening or leaving a review clears it |
 
 **Links.** MCP results carry origin-relative links (never absolute: cc supplies the host) that open the review or a thread in the plugin view; built by `src/links.js`.
@@ -174,5 +178,27 @@ The page keeps its state in the query string (`?…`, never the hash) and writes
 | open, resolved | `file`, `side`, `thread` (no `lines`) |
 | outdated, anchor on the new side | `compare=R..R+1`, `file`, `side=old`, `lines`, `thread` (R = `anchor.round`) |
 | outdated, anchor on the old side | `round=R`, `file`, `side=old`, `lines`, `thread` |
+
+**New review links.** A link opens the New review dialog prefilled; the human still picks the recipient and clicks Open review (nothing is created from a link, and no URL key sets the recipient).
+- Format: `#plugin/code-review/?project=<P>[&worktree=<W>]&view=new&range=<BASE>...<HEAD>` (`..` means the same) or `…&view=new&sha=<COMMIT>`. `project` is required; values are encoded as `URLSearchParams` does, keys in the route serialiser's order (`project, worktree, …, view, range, sha`).
+- `range` splits at the first `...`, else the first `..` (`parsePrefill` in `frontend/src/lib/prefill.ts`). Either form is a range review of `BASE..HEAD` diffed from `merge-base(BASE, HEAD)`. Each side is a ref or a full or abbreviated sha, resolved through `GET /checkout/commit`.
+- `<HEAD>` must resolve to the checkout's current HEAD: a range review always ends there.
+- A base equal to one of the checkout's fork-point refs selects that radio, so the review's base stays the ref; any other base selects Another commit with the resolved full sha.
+- `sha` selects One commit with the resolved full sha (reviewed against its first parent).
+- A link that cannot be used leaves the dialog's defaults (Range, nearest fork point) and shows an alert saying why: both `range` and `sha`, a `range` without `..`, an empty side, a `BAD_REF`/`REF_UNKNOWN` refusal, or a head other than HEAD. An unknown project or worktree shows its refusal and disables Open review.
+- `review` in the same URL wins (the review opens, not the dialog).
+
+**Open in code-git.** Built by `frontend/src/lib/codeGit.ts`; shown only when embedded (a bridge and a readable `window.top`) and `GET /integrations` names code-git.
+- Link: an `<a target="_top">` whose href is cc's current path and query plus `#plugin/<code-git id>/<subpath>`, so following it is a fragment navigation of cc's top document (no reload) that cc's hash router opens as code-git's view.
+- Subpath, keys in this order, values encoded as `URLSearchParams` does:
+
+| Subpath | code-git opens |
+|---|---|
+| `?project=<P>[&worktree=<W>]` | the checkout's tab |
+| `…&commit=<full sha>` | the tab, with that commit selected |
+| `…&commit=<full sha>&path=<repo-relative path>` | the tab, with that file's history at that commit |
+
+- `path` only with `commit`; `commit` is always a full sha. code-git reads these on load and on `popstate`.
+- Limitation: cc does not record the jump as one of its own view visits, so closing code-git's view (Escape or close) goes to the session, not back to the review; the browser's Back returns to the review.
 
 **Citation links.** A message citation (`path#L10-L20`) renders as `?<route>&file=<path>&side=new&lines=10-20`, built from the route serialiser, never from the message text. Inside a comparison it also sets `round=<the message's round>` and clears `compare`. Paths that start with `/` or contain a `..` segment are left as text, like the backend's citation resolver. A markdown link whose destination is a listed citation (`[label](path#L10-L20)`) renders the same route link, labelled by its label.

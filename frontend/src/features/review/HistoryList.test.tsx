@@ -3,6 +3,8 @@ import userEvent from '@testing-library/user-event';
 import { expect, test } from 'vitest';
 import { parseRoute } from '@/lib/route';
 import type { Round } from '@/lib/types';
+import { installBridge } from '@/test/fakeBridge';
+import { installTop } from '@/test/fakeTop';
 import { refusal, review } from '@/test/fixtures';
 import { renderInReview } from '@/test/renderCtx';
 import { stubFetch } from '@/test/stubFetch';
@@ -118,4 +120,40 @@ test('a failed commits fetch shows the error with Retry, which fetches again', a
   await userEvent.setup().click(retry);
   await waitFor(() => expect(net.count('GET api/reviews/r-1/commits')).toBe(2));
   expect(await screen.findByRole('button', { name: 'Retry' })).toBeTruthy();
+});
+
+const FULL = [`abc1234${'0'.repeat(33)}`, `def5678${'0'.repeat(33)}`];
+const embedded = (codeGit: unknown) => {
+  installBridge();
+  installTop({ pathname: '/', search: '?s=1' });
+  const commits = { commits: FULL.map((sha, i) => ({ sha, short: sha.slice(0, 7), author: 'a', date: 'd', subject: ['first', 'second'][i], merge: false })) };
+  const net = stubFetch({ 'GET api/reviews/r-1/commits': commits, 'GET api/integrations': codeGit });
+  renderInReview(<HistoryList />, { review: review({ kind: 'range', round: 1 }), rounds: rounds(1) });
+  return net;
+};
+
+// Invariant: each commit row offers its own commit in code-git, as a top-frame link beside (not inside) the row's route link.
+test('each commit row links to that commit in code-git', async () => {
+  embedded({ codeGit: { id: 'code-git' } });
+  const a = await screen.findByRole('link', { name: 'Open def5678 in code-git' });
+  expect(a.getAttribute('target')).toBe('_top');
+  expect(a.getAttribute('href')).toBe(`/?s=1#plugin/code-git/?project=app&worktree=feature&commit=${FULL[1]}`);
+  expect(a.closest('li')!.contains(link(/def5678 second/))).toBe(true);
+  expect(link(/def5678 second/).contains(a)).toBe(false);
+  expect(screen.getAllByRole('link', { name: /in code-git$/ })).toHaveLength(2);
+});
+
+test.each([['absent', { codeGit: null }], ['failing', refusal('CONDUCTOR_UNAVAILABLE', 502)]])('no code-git link when integrations are %s', async (_what, answer) => {
+  const net = embedded(answer);
+  await within(nav()).findByRole('link', { name: /def5678/ });
+  await waitFor(() => expect(net.count('GET api/integrations')).toBe(1));
+  await new Promise((r) => setTimeout(r, 0));
+  expect(screen.queryByRole('link', { name: /in code-git$/ })).toBeNull();
+});
+
+test('no code-git link and no integrations request standalone', async () => {
+  const { net } = show(1);
+  await within(nav()).findByRole('link', { name: /def5678/ });
+  expect(screen.queryByRole('link', { name: /in code-git$/ })).toBeNull();
+  expect(net.count('GET api/integrations')).toBe(0);
 });

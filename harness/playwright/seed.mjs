@@ -51,6 +51,8 @@ export async function seed() {
     // s-rev has spawned workers into project `other`; s-author owns none.
     w.cc.state.projects.push({ name: 'other', path: '/o' });
     w.cc.state.conductorProjects['s-rev'] = [{ project: 'other', lastSpawnAt: '2026-01-01T00:00:01.000Z', worktrees: ['x'] }];
+    // code-git is enabled in cc: "Open in code-git" links show wherever the page is framed (golden step 18).
+    w.cc.state.plugins.push({ id: 'code-git', name: 'Code Git', enabled: true, hasFrontend: true });
 
     srv = await bootServer({ cwd: projectRoot, entry: 'server.js', silent: true, env: { CODE_REVIEW_STORE: w.store.dir, CONDUCTOR_URL: process.env.CONDUCTOR_URL } });
     const call = async (method, p, body) => {

@@ -23,3 +23,5 @@ export const worktrees = (project) => get(`/api/projects/${encodeURIComponent(pr
 export const instances = () => get('/api/instances');
 /** {[rootSessionId]: [{project, lastSpawnAt (ISO string), worktrees?: string[] | null}]}, newest spawn first: where each session's workers have ever been spawned. */
 export const conductorProjects = () => get('/api/conductors/projects');
+/** {rows: [{id, enabled, hasFrontend, …}], notices}: every plugin cc knows. */
+export const plugins = () => get('/api/plugins');

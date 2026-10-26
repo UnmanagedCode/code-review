@@ -3,8 +3,10 @@ import { useSyncExternalStore } from 'react';
 export interface Route {
   project?: string; worktree?: string; review?: string; file?: string; side?: 'old' | 'new';
   lines?: string; thread?: string; commit?: string; round?: string; compare?: string; view?: 'new' | 'threads' | 'history' | 'inbox';
+  /** New review prefill (`view=new`), kept raw: `lib/prefill.ts` reads them so the dialog can say why one is unusable. */
+  range?: string; sha?: string;
 }
-const KEYS = ['project', 'worktree', 'review', 'file', 'side', 'lines', 'thread', 'commit', 'round', 'compare', 'view'] as const;
+const KEYS = ['project', 'worktree', 'review', 'file', 'side', 'lines', 'thread', 'commit', 'round', 'compare', 'view', 'range', 'sha'] as const;
 
 /**
  * Every key that belongs to the open review (its file position, filters, views). Spread it into any patch that opens,
@@ -12,7 +14,11 @@ const KEYS = ['project', 'worktree', 'review', 'file', 'side', 'lines', 'thread'
  */
 export const REVIEW_SCOPED = {
   file: undefined, side: undefined, lines: undefined, thread: undefined, commit: undefined, round: undefined, compare: undefined, view: undefined,
+  range: undefined, sha: undefined,
 } as const satisfies Route;
+
+/** Closes the New review dialog and drops its prefill, so the next one opens with the defaults. */
+export const NEW_REVIEW_CLOSED = { view: undefined, range: undefined, sha: undefined } as const satisfies Route;
 
 /** Leaves the open file position (file, lines, side, focused thread) and nothing else: filters, views and the pane tab stay. */
 export const LEAVE_FILE = { file: undefined, lines: undefined, side: undefined, thread: undefined } as const satisfies Route;

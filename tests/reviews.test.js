@@ -47,7 +47,7 @@ test('commit kind defaults to HEAD, resolves to a full sha, reuses, and refuses 
   assert.deepEqual(review.target, { sha });
   assert.equal(review.label, `commit ${sha.slice(0, 7)}`);
   assert.equal(ok(await open({ kind: 'commit', sha: 'HEAD' })).review.id, review.id);
-  assert.equal(codeOf(await reviews.refreshReview(review.id)), 'IMMUTABLE_TARGET');
+  assert.equal(codeOf(await reviews.refreshReview(review.id, HUMAN)), 'IMMUTABLE_TARGET');
 });
 
 const cond = agent('s-cond', '.conduct');
@@ -282,7 +282,7 @@ test('accept-file after a rename: the old path is FILE_NOT_IN_DIFF; the new path
   wt.commit({ 'b.js': lines(10, 'b') });
   wt.git('mv', 'b.js', 'c.js');
   wt.commit({});
-  ok(await reviews.refreshReview(review.id));
+  ok(await reviews.refreshReview(review.id, HUMAN));
   assert.equal(codeOf(await reviews.acceptFile(review.id, 'b.js', old.hunks.map((h) => h.id))), 'FILE_NOT_IN_DIFF');
   const [renamed] = ok(await reviews.diff(review.id, {})).files;
   assert.deepEqual([renamed.path, renamed.oldPath, renamed.hunks.length, renamed.hunks[0].kind], ['c.js', 'b.js', 1, 'file']);
@@ -296,7 +296,7 @@ test('refresh: an untouched hunk keeps its verdict, a changed hunk resets, and t
   const t = ok(await threads.annotate(review.id, HUMAN, { anchor: { file: 'a.js', side: 'new', startLine: 18, endLine: 18 }, kind: 'comment', body: 'hm' }));
   const head = wt.commit({ 'a.js': ['ins1', 'ins2', ...editLines({ 2: 'top-edit-2', 18: 'bottom-edit' }).split('\n')].join('\n') });
   assert.equal(ok(await reviews.getReview(review.id)).review.headMoved, true);
-  const res = ok(await reviews.refreshReview(review.id));
+  const res = ok(await reviews.refreshReview(review.id, HUMAN));
   assert.equal(res.unchanged, false);
   assert.equal(res.round, 2);
   assert.deepEqual(res.hunks, { kept: 1, reset: 1, new: 1 });
@@ -317,7 +317,7 @@ test('refresh: a thread on edited lines with intact surroundings drifts; one who
   const onEdit = await mk(2);
   const inContext = await mk(10);
   wt.commit({ 'a.js': editLines({ 2: 'top-edit-again', 18: 'bottom-edit', 7: 'q7', 8: 'q8', 9: 'q9', 10: 'q10', 11: 'q11', 12: 'q12', 13: 'q13' }) });
-  const res = ok(await reviews.refreshReview(review.id));
+  const res = ok(await reviews.refreshReview(review.id, HUMAN));
   assert.equal(res.threads.drifted, 1);
   assert.equal(res.threads.outdated, 1);
   const detail = ok(await reviews.getReview(review.id));
@@ -328,7 +328,7 @@ test('refresh: a thread on edited lines with intact surroundings drifts; one who
 
 test('refresh with an unchanged HEAD reports unchanged and does not add a round', async () => {
   const { review } = await twoHunkReview();
-  const res = ok(await reviews.refreshReview(review.id));
+  const res = ok(await reviews.refreshReview(review.id, HUMAN));
   assert.deepEqual([res.unchanged, res.round], [true, 1]);
   assert.equal(ok(await reviews.getReview(review.id)).rounds.length, 1);
 });
@@ -339,7 +339,7 @@ test('a range review whose worktree is gone stays readable; refresh is refused C
   const detail = ok(await reviews.getReview(review.id));
   assert.equal(detail.review.checkoutGone, true);
   assert.equal(detail.files.length, 1);
-  assert.equal(codeOf(await reviews.refreshReview(review.id)), 'CHECKOUT_GONE');
+  assert.equal(codeOf(await reviews.refreshReview(review.id, HUMAN)), 'CHECKOUT_GONE');
   ok(await threads.annotate(review.id, HUMAN, { anchor: { file: 'a.js', side: 'new', startLine: 2, endLine: 2 }, kind: 'comment', body: 'still here' }));
 });
 
@@ -347,7 +347,7 @@ test('a closed review refuses verdicts, threads, refresh; reopening restores the
   const { review, hunks } = await twoHunkReview();
   ok(await reviews.patchReview(review.id, { status: 'closed' }));
   assert.equal(codeOf(await reviews.setVerdict(review.id, hunks[0].id, 'rejected')), 'REVIEW_CLOSED');
-  assert.equal(codeOf(await reviews.refreshReview(review.id)), 'REVIEW_CLOSED');
+  assert.equal(codeOf(await reviews.refreshReview(review.id, HUMAN)), 'REVIEW_CLOSED');
   assert.equal(codeOf(await threads.annotate(review.id, HUMAN, { anchor: { file: 'a.js', side: 'new', startLine: 2, endLine: 2 }, kind: 'comment', body: 'x' })), 'REVIEW_CLOSED');
   ok(await reviews.patchReview(review.id, { status: 'open' }));
   ok(await reviews.setVerdict(review.id, hunks[0].id, 'rejected'));
@@ -434,7 +434,7 @@ test('refresh re-rounds a re-anchored thread: its anchor round becomes the new r
   const t = ok(await threads.annotate(review.id, HUMAN, { anchor: { file: 'a.js', side: 'new', startLine: 18, endLine: 18 }, kind: 'comment', body: 'x' })).thread;
   assert.equal(t.anchor.round, 1);
   wt.commit({ 'a.js': ['ins1', ...editLines({ 2: 'top-edit', 18: 'bottom-edit' }).split('\n')].join('\n') });
-  ok(await reviews.refreshReview(review.id));
+  ok(await reviews.refreshReview(review.id, HUMAN));
   const after = ok(await reviews.diff(review.id, {})).files[0].threads.find((x) => x.id === t.id);
   assert.equal(after.anchor.round, 2);
   const stored = store.read(review.id).threads.find((x) => x.id === t.id);
@@ -447,9 +447,9 @@ test('a thread starts with no earlier positions, and gains one per range refresh
   const pastOf = () => store.read(review.id).threads.find((x) => x.id === t.id).pastAnchors;
   assert.deepEqual(pastOf(), []);
   wt.commit({ 'a.js': ['ins1', ...editLines({ 2: 'top-edit', 18: 'bottom-edit' }).split('\n')].join('\n') });
-  ok(await reviews.refreshReview(review.id));
+  ok(await reviews.refreshReview(review.id, HUMAN));
   wt.commit({ 'b.js': 'unrelated\n' });
-  ok(await reviews.refreshReview(review.id));
+  ok(await reviews.refreshReview(review.id, HUMAN));
   assert.deepEqual(pastOf().map((a) => [a.round, a.startLine]), [[1, 18], [2, 19]]);
   assert.equal(store.read(review.id).threads.find((x) => x.id === t.id).anchor.round, 3);
 });
@@ -458,9 +458,9 @@ test('an outdated thread records no further positions: its last one is its curre
   const { wt, review } = await twoHunkReview();
   const t = ok(await threads.annotate(review.id, HUMAN, { anchor: { file: 'a.js', side: 'new', startLine: 2, endLine: 2 }, kind: 'comment', body: 'x' })).thread;
   wt.commit({ 'a.js': editLines({ 1: 'r1', 2: 'r2', 3: 'r3', 4: 'r4', 18: 'bottom-edit' }) });
-  assert.equal(ok(await reviews.refreshReview(review.id)).threads.outdated, 1);
+  assert.equal(ok(await reviews.refreshReview(review.id, HUMAN)).threads.outdated, 1);
   wt.commit({ 'b.js': 'unrelated\n' });
-  ok(await reviews.refreshReview(review.id));
+  ok(await reviews.refreshReview(review.id, HUMAN));
   const stored = store.read(review.id).threads.find((x) => x.id === t.id);
   assert.equal(stored.status, 'outdated');
   assert.deepEqual(stored.pastAnchors, []);
@@ -478,7 +478,7 @@ test('uncommitted: sweeps record no earlier positions, within a round or after a
   ok(await reviews.diff(review.id, { file: 'a.js' }));
   assert.equal(stored().anchor.startLine, 11);
   assert.deepEqual(stored().pastAnchors, []);
-  assert.equal(ok(await reviews.refreshReview(review.id)).round, 2);
+  assert.equal(ok(await reviews.refreshReview(review.id, HUMAN)).round, 2);
   ok(await reviews.diff(review.id, { file: 'a.js' }));
   assert.equal(stored().anchor.round, 2, 'the sweep did move the thread into round 2');
   assert.deepEqual(stored().pastAnchors, []);
@@ -489,12 +489,12 @@ test('drift is not sticky: it is counted each time it happens and cleared once t
   const t = ok(await threads.annotate(review.id, HUMAN, { anchor: { file: 'a.js', side: 'new', startLine: 2, endLine: 2 }, kind: 'comment', body: 'x' })).thread;
   const anchorOf = async () => ok(await reviews.diff(review.id, {})).files[0].threads.find((x) => x.id === t.id).anchor;
   wt.commit({ 'a.js': editLines({ 2: 'drift-1', 18: 'bottom-edit' }) });
-  assert.equal(ok(await reviews.refreshReview(review.id)).threads.drifted, 1);
+  assert.equal(ok(await reviews.refreshReview(review.id, HUMAN)).threads.drifted, 1);
   assert.equal((await anchorOf()).drifted, true);
   wt.commit({ 'a.js': editLines({ 2: 'drift-2', 18: 'bottom-edit' }) });
-  assert.equal(ok(await reviews.refreshReview(review.id)).threads.drifted, 1, 'a second drift is counted too');
+  assert.equal(ok(await reviews.refreshReview(review.id, HUMAN)).threads.drifted, 1, 'a second drift is counted too');
   wt.commit({ 'b.js': 'unrelated\n' });
-  const calm = ok(await reviews.refreshReview(review.id));
+  const calm = ok(await reviews.refreshReview(review.id, HUMAN));
   assert.deepEqual([calm.threads.drifted, calm.threads.moved, calm.threads.outdated], [0, 0, 0]);
   assert.equal((await anchorOf()).drifted, false);
 });
@@ -502,9 +502,9 @@ test('drift is not sticky: it is counted each time it happens and cleared once t
 test('a reverted edit does not resurrect the verdict its hunk had before the edit', async () => {
   const { wt, review, hunks } = await twoHunkReview();
   wt.commit({ 'a.js': editLines({ 2: 'changed', 18: 'bottom-edit' }) });
-  assert.equal(ok(await reviews.refreshReview(review.id)).hunks.reset, 1);
+  assert.equal(ok(await reviews.refreshReview(review.id, HUMAN)).hunks.reset, 1);
   wt.commit({ 'a.js': editLines({ 2: 'top-edit', 18: 'bottom-edit' }) });
-  ok(await reviews.refreshReview(review.id));
+  ok(await reviews.refreshReview(review.id, HUMAN));
   const verdicts = Object.fromEntries(ok(await reviews.diff(review.id, {})).files[0].hunks.map((h) => [h.id, h.verdict]));
   assert.equal(verdicts[hunks[0].id], 'pending');
   assert.equal(verdicts[hunks[1].id], 'accepted');
@@ -516,7 +516,7 @@ test('refresh is not unchanged when HEAD is the same but the merge-base moved', 
   wt.commit({ 'g.js': '2\n' });
   const { review } = await open().then(ok);
   w.repo.git('update-ref', 'refs/heads/main', c1);
-  const res = ok(await reviews.refreshReview(review.id));
+  const res = ok(await reviews.refreshReview(review.id, HUMAN));
   assert.deepEqual([res.unchanged, res.round], [false, 2]);
   assert.equal(ok(await reviews.getReview(review.id)).review.baseSha, c1);
 });

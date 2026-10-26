@@ -87,3 +87,20 @@ export function threadView(t) {
 
 /** Hunk as the API shows it (`verdict` null when verdicts do not apply). */
 export const hunkView = (review, h, withVerdict = true) => ({ ...h, verdict: withVerdict && review.kind !== 'uncommitted' ? verdictOf(review, h.id) : null });
+
+/**
+ * Whose move a review waits on: 'agent' when the newest submission was delivered and no agent has written or refreshed into a
+ * new round since it was composed; else 'human'. Compose supersedes older pending and failed submissions, so the last is the live one.
+ */
+export function turnOf(review) {
+  const last = review.submissions[review.submissions.length - 1];
+  return last?.status === 'delivered' && review.agentSeq <= last.seq ? 'agent' : 'human';
+}
+
+/** InboxItem: a stored review as the inbox lists it. `checkoutGone` is true, false or null (cc could not say). */
+export const inboxItem = (review, checkoutGone) => ({
+  id: review.id, project: review.project, worktree: review.worktree, branch: review.branch,
+  kind: review.kind, label: targetLabel(review), title: review.title, round: currentRound(review).n,
+  unread: review.threads.reduce((n, t) => n + unreadOf(t), 0), seenByHuman: review.seenByHuman,
+  lastActivityAt: review.lastActivityAt, turn: turnOf(review), checkoutGone,
+});

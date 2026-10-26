@@ -11,9 +11,10 @@ test('unknown params and malformed values are dropped', () => {
   expect(parseRoute('?project=app&evil=1&side=sideways&lines=a-b&view=other')).toEqual({ project: 'app' });
 });
 
-// Invariant: every pane tab but Files has a view= value, and only those values parse.
-test('view keeps new, threads and history only', () => {
+// Invariant: every pane tab but Files, and the inbox list tab, has a view= value, and only those values parse.
+test('view keeps new, threads, history and inbox only', () => {
   for (const v of ['new', 'threads', 'history'] as const) expect(parseRoute(toSearch({ review: 'r-1', view: v })).view, v).toBe(v);
+  expect(parseRoute('?project=app&view=inbox')).toEqual({ project: 'app', view: 'inbox' });
   expect(parseRoute('?review=r-1&view=bogus')).toEqual({ review: 'r-1' });
 });
 

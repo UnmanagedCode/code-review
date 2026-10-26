@@ -24,6 +24,14 @@ test('"Reviews" from a past-round view leaves every review-scoped key behind, ro
   expect(parseRoute(location.search)).toEqual({ project: 'app', worktree: 'feature' });
 });
 
+// Invariant: the Inbox link leaves the review with every review-scoped key and lands on view=inbox in the same checkout.
+test('"Inbox" leaves the review and its review-scoped keys and opens the inbox', async () => {
+  history.replaceState(null, '', '?project=app&worktree=feature&review=r-1&round=1&file=a.js&lines=3&thread=t-1&view=threads');
+  renderInReview(<ReviewHeader />, { round: 1, readOnly: true });
+  await userEvent.setup().click(screen.getByRole('link', { name: 'Inbox' }));
+  expect(parseRoute(location.search)).toEqual({ project: 'app', worktree: 'feature', view: 'inbox' });
+});
+
 test('a past-round view offers no review-level writes: no Submit round, no actions menu, no recipient picker', () => {
   renderInReview(<ReviewHeader />, { round: 1, readOnly: true });
   expect(screen.queryByRole('button', { name: 'Submit round' })).toBeNull();

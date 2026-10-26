@@ -2,6 +2,7 @@ import express from 'express';
 import * as cc from './cc.js';
 import * as store from './store.js';
 import * as reviews from './reviews.js';
+import * as inbox from './inbox.js';
 import * as rounds from './rounds.js';
 import * as compare from './compare.js';
 import * as threads from './threads.js';
@@ -64,6 +65,7 @@ export function apiRouter() {
     worktree: 'worktree' in req.query ? req.query.worktree || null : undefined,
     status: req.query.status,
   })));
+  r.get('/inbox', route(() => inbox.listInbox()));
   r.post('/reviews', route((req) => reviews.openReview(req.body ?? {}, HUMAN)));
   r.get('/reviews/:id', route((req) => reviews.getReview(req.params.id)));
   r.patch('/reviews/:id', route((req) => reviews.patchReview(req.params.id, req.body ?? {})));
@@ -79,7 +81,7 @@ export function apiRouter() {
   r.post('/reviews/:id/threads', route((req) => threads.annotate(req.params.id, HUMAN, req.body ?? {})));
   r.post('/reviews/:id/threads/:tid/messages', route((req) => threads.reply(req.params.id, HUMAN, req.params.tid, req.body ?? {})));
   r.patch('/reviews/:id/threads/:tid', route((req) => threads.setThreadStatus(req.params.id, req.params.tid, req.body ?? {})));
-  r.post('/reviews/:id/refresh', route((req) => reviews.refreshReview(req.params.id)));
+  r.post('/reviews/:id/refresh', route((req) => reviews.refreshReview(req.params.id, HUMAN)));
   r.post('/reviews/:id/submissions', route((req) => submissions.composeSubmission(req.params.id)));
   r.post('/reviews/:id/submissions/:sid/result', route((req) => submissions.recordResult(req.params.id, req.params.sid, req.body ?? {})));
   r.post('/reviews/:id/read', route((req) => threads.markRead(req.params.id, req.body ?? {})));

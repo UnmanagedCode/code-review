@@ -60,6 +60,14 @@ export interface ReviewSummary {
   snapshotError?: 'CHECKOUT_GONE' | 'SNAPSHOT_GONE' | 'DIFF_TOO_LARGE' | 'SYSTEM_UNREACHABLE' | 'GIT_TIMEOUT' | 'GIT_UNAVAILABLE' | 'TEMP_UNUSABLE';
 }
 
+/** Whose move an open review waits on: 'agent' = waiting on the agent, 'human' = your turn (docs/protocol.md → InboxItem). */
+export type Turn = 'human' | 'agent';
+/** An open review as `GET /inbox` lists it; `checkoutGone` null = cc could not say. */
+export interface InboxItem {
+  id: string; project: string; worktree: string | null; branch: string | null; kind: Kind; label: string; title: string; round: number;
+  unread: number; seenByHuman: boolean; lastActivityAt: string; turn: Turn; checkoutGone: boolean | null;
+}
+
 export interface Session { sessionId: string; project: string; worktree: string | null; label: string | null; status: string; live: boolean; conductor: boolean; conducted: boolean; attached: boolean }
 /** A project the active session is working on; `main` = something of it is on the main checkout. */
 export interface SessionPlace { project: string; main: boolean; worktrees: string[] }

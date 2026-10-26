@@ -1,4 +1,4 @@
-import type { Author, DiffFile, DiffLine, FileState, Message, ReviewSummary, TextHunk, Thread } from '@/lib/types';
+import type { Author, DiffFile, DiffLine, FileState, InboxItem, Message, ReviewSummary, TextHunk, Thread } from '@/lib/types';
 
 export const HUMAN: Author = { kind: 'human' };
 export const agent = (sessionId = 's-rev', role: 'author' | 'reviewer' | 'conductor' = 'reviewer'): Author => ({ kind: 'session', sessionId, role });
@@ -50,3 +50,9 @@ export const thread = (over: Partial<Thread> = {}): Thread => ({
 
 export const json = (body: unknown, status = 200): Response => new Response(JSON.stringify(body), { status });
 export const refusal = (code: string, status = 409, reason = 'because'): Response => json({ ok: false, code, reason }, status);
+
+export const inboxItem = (over: Partial<InboxItem> = {}): InboxItem => ({
+  id: 'r-1', project: 'app', worktree: 'feature', branch: 'feature', kind: 'range', label: 'main…feature', title: '', round: 1,
+  unread: 0, seenByHuman: true, lastActivityAt: '2026-01-01T00:00:00Z', turn: 'human', checkoutGone: false,
+  ...over,
+});

@@ -226,7 +226,7 @@ test('resolve: neither the conductor nor the opener closes an outdated agent thr
   const review = await open({ recipient: 's-author' });
   const t = ok(await say(review.id, at('a.js', 10), {}, reviewer)).thread;
   wt.commit({ 'a.js': editLines({ 2: 'top-edit-again', 18: 'bottom-edit', 7: 'q7', 8: 'q8', 9: 'q9', 10: 'q10', 11: 'q11', 12: 'q12', 13: 'q13' }) });
-  ok(await reviews.refreshReview(review.id));
+  ok(await reviews.refreshReview(review.id, HUMAN));
   const res = ok(await threads.reply(review.id, conductor, t.id, { body: 'ok', resolve: true })).thread;
   assert.deepEqual([res.status, res.resolveProposed], ['outdated', true]);
   const byOpener = ok(await threads.reply(review.id, reviewer, t.id, { body: 'ok', resolve: true })).thread;

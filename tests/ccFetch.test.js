@@ -158,6 +158,7 @@ test('git read-only calls retry on a reset and side-effecting ones never do', as
     ['parentOf', argvHas('rev-list'), () => git.parentOf(at, sha), true],
     ['show', argvHas('show'), () => git.show(at, sha, 'a.txt'), true],
     ['statusOf', argvHas('status'), () => git.statusOf(at), true],
+    ['probe', script('w=checkout'), () => git.probe(at, { path: at.path, status: true, shas: [sha] }), true],
     ['diffBetween', argvHas('--full-index'), () => git.diffBetween(at, sha, sha), true],
     ['renames', argvHas('--name-status'), () => git.renames(at, sha, sha), true],
     ['commitLog', argvHas('log'), () => git.commitLog(at), true],

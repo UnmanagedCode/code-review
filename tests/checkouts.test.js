@@ -125,7 +125,7 @@ test('statusOf: a clean checkout with an upstream (branch.upstream and branch.ab
   }
 });
 
-test('checkoutInfo reads head, branch and dirty state in one status call after the existence probe', async () => {
+test('checkoutInfo reads existence, head, branch and dirty state in one exec call', async () => {
   const r = makeRepo();
   try {
     const sha = r.commit({ 'a.txt': 'a\n' });
@@ -134,7 +134,7 @@ test('checkoutInfo reads head, branch and dirty state in one status call after t
     cc.state.execCalls = [];
     const { checkout } = await checkoutInfo({ project: 'real', worktree: null });
     assert.deepEqual(checkout, { project: 'real', worktree: null, path: r.dir, branch: 'main', headSha: sha, dirty: true, exists: true });
-    assert.equal(cc.state.execCalls.length, 2);
+    assert.equal(cc.state.execCalls.length, 1);
     const gone = await checkoutInfo({ project: 'bare', worktree: null });
     assert.deepEqual(gone.checkout, { project: 'bare', worktree: null, path: '/b', branch: null, headSha: null, dirty: false, exists: false });
   } finally {

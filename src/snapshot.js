@@ -99,14 +99,18 @@ async function readUncommitted(repo, headSha, limits, opts) {
   return files;
 }
 
+/** The refusal for a round whose commit is no longer in the object store. */
+export const snapshotGone = (sha) => new Refusal('SNAPSHOT_GONE', `commit ${sha.slice(0, 8)} is no longer in the repository`);
+
 /**
- * Builds the snapshot for one round: {files, fingerprint, lines(side, path)}.
+ * Builds the snapshot for one round: {files, fingerprint, baseSha, headSha, lines(side, path)}.
  * `repo` (a place) supplies git objects; `checkout` (a place) supplies the working tree (uncommitted only).
+ * `verified`: the caller already found both shas in `repo`'s object store.
  */
-export async function buildSnapshot({ kind, repo, checkout, baseSha, headSha, limits: given = {} }) {
+export async function buildSnapshot({ kind, repo, checkout, baseSha, headSha, verified = false, limits: given = {} }) {
   const limits = { maxFileBytes: git.MAX_FILE_BYTES, maxUntracked: git.MAX_UNTRACKED_FILES, maxDiffBytes: git.MAX_DIFF_BYTES, ...given };
-  const missing = await git.objectsExist(repo, [baseSha, headSha]);
-  if (missing) throw new Refusal('SNAPSHOT_GONE', `commit ${missing.slice(0, 8)} is no longer in the repository`);
+  const missing = verified ? null : await git.objectsExist(repo, [baseSha, headSha]);
+  if (missing) throw snapshotGone(missing);
   const key = `${placeKey(repo)}\0${baseSha}\0${headSha}\0${kind}`;
   let entry = kind !== 'uncommitted' && cache.get(key);
   if (entry) entry = structuredClone(entry);
@@ -135,5 +139,5 @@ export async function buildSnapshot({ kind, repo, checkout, baseSha, headSha, li
     return content === null ? null : splitLines(content);
   }
 
-  return { files, fingerprint, lines };
+  return { files, fingerprint, baseSha, headSha, lines };
 }

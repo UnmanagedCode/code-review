@@ -185,18 +185,48 @@ export async function show(place, sha, path) {
   return r.code === 0 ? r.stdout : null;
 }
 
-/** {head, branch, dirty} from one `git status`: head null on an unborn branch, branch 'HEAD' when detached. */
-export async function statusOf(place) {
-  const r = await read(place, ['status', '--porcelain=v2', '-z', '--branch', '--no-ahead-behind', '--untracked-files=normal']);
+const STATUS_ARGS = ['status', '--porcelain=v2', '-z', '--branch', '--no-ahead-behind', '--untracked-files=normal'];
+
+/** {head, branch, dirty} from `git status --porcelain=v2 -z --branch` output: head null on an unborn branch, branch 'HEAD' when detached. */
+function parseStatus(text) {
   let head = null;
   let branch = 'HEAD';
   let dirty = false;
-  for (const rec of r.stdout.split('\0')) {
+  for (const rec of text.split('\0')) {
     if (rec.startsWith('# branch.oid ')) { const v = rec.slice(13); head = v === '(initial)' ? null : v; }
     else if (rec.startsWith('# branch.head ')) { const v = rec.slice(14); branch = v === '(detached)' ? 'HEAD' : v; }
     else if (rec && !rec.startsWith('# ')) dirty = true;
   }
   return { head, branch, dirty };
+}
+
+/** {head, branch, dirty} from one `git status`. */
+export const statusOf = async (place) => parseStatus((await read(place, STATUS_ARGS)).stdout);
+
+// Read-only. $1 the checkout, $2 the main checkout (either may be ''), $3 '1' for status, then shas. Enters the first
+// that exists (exit 2: neither), prints "<checkout|main>\0<first sha missing from the object store, or nothing>\0",
+// then, when asked and in the checkout, the status records.
+const PROBE = `if [ -n "$1" ] && [ -e "$1" ]; then w=checkout; cd -- "$1" || exit 3
+elif [ -n "$2" ] && [ -e "$2" ]; then w=main; cd -- "$2" || exit 3
+else exit 2; fi
+st=$3; shift 3
+m=
+for s; do ${GIT} cat-file -e "$s^{tree}" 2>/dev/null || { m=$s; break; }; done
+printf '%s\\0%s\\0' "$w" "$m"
+[ "$st" = 1 ] && [ "$w" = checkout ] || exit 0
+${GIT} ${STATUS_ARGS.join(' ')} || exit 8`;
+
+/**
+ * One call on `place`'s system: where a checkout is (`path`, else `mainPath`; '' = none), the first of `shas` missing
+ * from that repo's object store, and (`status`, in the checkout only) its {head, branch, dirty}.
+ * Resolves {where: 'checkout'|'main'|null, missing: sha|null, status: {head, branch, dirty}|null}.
+ */
+export async function probe(place, { path, mainPath = '', status = false, shas = [] }) {
+  const r = await call(place, ['sh', '-c', PROBE, 'sh', path ?? '', mainPath ?? '', status ? '1' : '0', ...new Set(shas)], 'sh script', { ok: [0, 2], readOnly: true });
+  if (r.code === 2) return { where: null, missing: null, status: null };
+  const [where, missing] = r.stdout.split('\0', 2);
+  const rest = r.stdout.slice(where.length + missing.length + 2);
+  return { where, missing: missing || null, status: status && where === 'checkout' ? parseStatus(rest) : null };
 }
 
 /** Raw unified diff between two trees/commits. */

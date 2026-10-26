@@ -47,16 +47,20 @@ export async function summaryOf(review, env) {
     snapshotError ??= e.code;
     return null;
   };
-  const co = await env.checkout().catch(unreadable(UNREACHABLE));
-  const files = co && (await env.snapshot().then((s) => s.files, unreadable(UNREADABLE)));
+  if (review.kind === 'uncommitted') {
+    const files = await env.snapshot().then((s) => s.files, unreadable(UNREADABLE));
+    return summarize(review, files, { headMoved: false, dirty: false, checkoutGone: snapshotError === 'CHECKOUT_GONE', snapshotError });
+  }
+  const p = await env.probe({ status: true }).catch(unreadable(UNREACHABLE));
+  const files = p && (await env.snapshot().then((s) => s.files, unreadable(UNREADABLE)));
   let headMoved = false;
   let dirty = false;
-  if (co?.exists && review.kind !== 'uncommitted') {
-    const st = await git.statusOf(co.place).catch(unreadable(UNREACHABLE));
+  if (p?.where === 'checkout') {
+    const st = p.status ?? (await git.statusOf((await env.checkout()).place).catch(unreadable(UNREACHABLE)));
     dirty = st?.dirty ?? false;
     if (st && review.kind === 'range') headMoved = st.head !== currentRound(review).headSha;
   }
-  return summarize(review, files ?? null, { headMoved, dirty, checkoutGone: co ? !co.exists : false, snapshotError });
+  return summarize(review, files ?? null, { headMoved, dirty, checkoutGone: p ? p.where !== 'checkout' : false, snapshotError });
 }
 
 /** Fresh summary of a stored review (re-read, so `rev` is current). */
@@ -194,14 +198,12 @@ export const refreshReview = (id, actor) => attempt(async () => inReview(id, asy
   assertOpen(review);
   if (review.kind === 'commit') throw new Refusal('IMMUTABLE_TARGET', 'a commit review cannot be refreshed; review the new commit instead');
   const co = await env.checkout();
-  if (!co.exists) throw new Refusal('CHECKOUT_GONE', `${co.path ?? 'the checkout'} no longer exists`);
   const cur = currentRound(review);
-  const shas = await resolveTarget(co.place, review.kind, review.target);
   const zero = { moved: 0, drifted: 0, outdated: 0, dropped: 0 };
   const push = (snap) => {
     const seq = bump(review);
     if (actor.kind === 'agent') review.agentSeq = seq;
-    review.rounds.push({ n: cur.n + 1, ...shas, fingerprint: snap.fingerprint, createdAt: now(), submittedAt: null });
+    review.rounds.push({ n: cur.n + 1, headSha: snap.headSha, baseSha: snap.baseSha, fingerprint: snap.fingerprint, createdAt: now(), submittedAt: null });
   };
 
   if (review.kind === 'uncommitted') {
@@ -211,6 +213,8 @@ export const refreshReview = (id, actor) => attempt(async () => inReview(id, asy
     return { ok: true, unchanged: false, round: cur.n + 1, hunks: { kept: 0, reset: 0, new: 0 }, threads: env.sweep ?? zero };
   }
 
+  if ((await env.probe()).where !== 'checkout') throw new Refusal('CHECKOUT_GONE', `${co.path ?? 'the checkout'} no longer exists`);
+  const shas = await resolveTarget(co.place, review.kind, review.target);
   if (shas.headSha === cur.headSha && shas.baseSha === cur.baseSha) return { ok: true, unchanged: true, round: cur.n };
   const next = await buildSnapshot({ kind: 'range', repo: co.place, checkout: co.place, ...shas });
   const nextIds = new Set(next.files.flatMap((f) => f.hunks.map((h) => h.id)));

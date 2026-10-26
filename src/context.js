@@ -1,9 +1,9 @@
 import * as store from './store.js';
 import * as git from './git.js';
 import { UNREACHABLE } from './exec.js';
-import { resolveCheckout, lookupCheckout, isConductorProject } from './checkouts.js';
+import { lookupCheckout, isConductorProject } from './checkouts.js';
 import { lookupScope } from './lookups.js';
-import { buildSnapshot, resolveTarget } from './snapshot.js';
+import { buildSnapshot, resolveTarget, snapshotGone } from './snapshot.js';
 import { followThreads } from './follow.js';
 import { Refusal, refuse } from './refusals.js';
 
@@ -33,44 +33,82 @@ export function assertOpen(review) {
   if (review.status === 'closed') throw new Refusal('REVIEW_CLOSED', `review ${review.id} is closed`);
 }
 
+// cc's view of the review's checkout (runs nothing). A checkout cc no longer knows has no place; its main one stays.
 async function locateCheckout(review, scope) {
-  let co;
   try {
-    co = await resolveCheckout({ project: review.project, worktree: review.worktree }, scope);
+    return await lookupCheckout({ project: review.project, worktree: review.worktree }, scope);
   } catch (e) {
     if (!(e instanceof Refusal) || !['CHECKOUT_UNKNOWN', 'PROJECT_UNKNOWN'].includes(e.code)) throw e;
     const main = e.code === 'CHECKOUT_UNKNOWN' ? await lookupCheckout({ project: review.project, worktree: null }, scope) : null;
-    return { path: null, place: null, mainPath: main?.path ?? null, mainPlace: main?.place ?? null, exists: false };
+    return { path: null, place: null, mainPath: main?.path ?? null, mainPlace: main?.place ?? null };
   }
-  if (!co.exists) scope.evict(review.project); // git contradicts cc's cached answer: the next request asks again
-  return co;
 }
 
 /** Lazy, memoised view of a review's checkout and snapshots for one request; `scope` shares cc lookups across the request. */
 export function makeEnv(review, scope = lookupScope()) {
   let co;
+  let probed;
   const snaps = new Map();
+  const gone = () => new Refusal('CHECKOUT_GONE', `the checkout of review ${review.id} no longer exists`);
   const env = {
     sweep: null,
+    /** {path, place, mainPath, mainPlace, …} from cc; `path`/`place` null when cc no longer knows the checkout. */
     checkout: () => (co ??= locateCheckout(review, scope)),
+    /**
+     * One exec: {where: 'checkout'|'main'|null, missing, status} for the checkout (else, on committed reviews, its main
+     * one), the current round's shas, and (`status`, asked by the first caller only) the checkout's git status.
+     * A checkout git does not find evicts the project's cached lookups.
+     */
+    probe({ status = false } = {}) {
+      if (probed) return probed;
+      probed = (async () => {
+        const c = await env.checkout();
+        const at = c.place ?? c.mainPlace;
+        if (!at) return { where: null, missing: null, status: null };
+        const cur = currentRound(review);
+        const mainPath = review.kind === 'uncommitted' ? '' : c.mainPath;
+        const r = await git.probe(at, { path: c.path, mainPath, status, shas: [cur.baseSha, cur.headSha] });
+        if (r.where !== 'checkout') scope.evict(review.project);
+        return r;
+      })();
+      probed.catch(() => { probed = null; });
+      return probed;
+    },
     /** Place git objects are read from; committed reviews fall back to the main checkout. */
     async repo() {
       const c = await env.checkout();
-      if (c.exists) return c.place;
-      if (review.kind !== 'uncommitted' && c.mainPlace && (await git.exists(c.mainPlace))) return c.mainPlace;
-      throw new Refusal('CHECKOUT_GONE', `the checkout of review ${review.id} no longer exists`);
+      if (review.kind === 'uncommitted') {
+        await env.snapshot();
+        return c.place;
+      }
+      const { where } = await env.probe();
+      if (where === 'checkout') return c.place;
+      if (where === 'main') return c.mainPlace;
+      throw gone();
     },
     /** Snapshot of round `n` (default: current); uncommitted reviews are always live. */
     snapshot(n = currentRound(review).n) {
       const key = review.kind === 'uncommitted' ? 'live' : n;
       if (!snaps.has(key)) {
         snaps.set(key, (async () => {
-          const repo = await env.repo();
+          const c = await env.checkout();
           if (review.kind === 'uncommitted') {
-            return buildSnapshot({ kind: 'uncommitted', repo, checkout: repo, ...(await resolveTarget(repo, 'uncommitted')) });
+            if (!c.place || !(await git.exists(c.place))) {
+              scope.evict(review.project);
+              throw gone();
+            }
+            return buildSnapshot({ kind: 'uncommitted', repo: c.place, checkout: c.place, ...(await resolveTarget(c.place, 'uncommitted')) });
           }
           const round = review.rounds.find((r) => r.n === n);
-          return buildSnapshot({ kind: review.kind, repo, checkout: repo, baseSha: round.baseSha, headSha: round.headSha });
+          if (n !== currentRound(review).n) {
+            const repo = await env.repo();
+            return buildSnapshot({ kind: review.kind, repo, checkout: repo, baseSha: round.baseSha, headSha: round.headSha });
+          }
+          const p = await env.probe();
+          if (!p.where) throw gone();
+          if (p.missing) throw snapshotGone(p.missing);
+          const repo = p.where === 'checkout' ? c.place : c.mainPlace;
+          return buildSnapshot({ kind: review.kind, repo, checkout: repo, baseSha: round.baseSha, headSha: round.headSha, verified: true });
         })());
         snaps.get(key).catch(() => snaps.delete(key));
       }

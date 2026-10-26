@@ -11,6 +11,7 @@ import { start } from '../server.js';
 import * as reviews from '../src/reviews.js';
 import * as store from '../src/store.js';
 import { checkoutInfo } from '../src/checkouts.js';
+import * as git from '../src/git.js';
 import { _clearLookups } from '../src/lookups.js';
 import { mapLimit, ROW_CONCURRENCY } from '../src/limit.js';
 
@@ -143,6 +144,49 @@ test('location answers: an unknown project is PROJECT_UNKNOWN; a 404 without tha
   w.cc.state.getHook = (p) => (p.endsWith('/location') ? { status: 404, body: { error: 'Not found' } } : null);
   assert.equal((await reviews.getReview(range.id)).code, 'CONDUCTOR_UNAVAILABLE');
   assert.equal((await reviews.openReview({ project: 'app', kind: 'uncommitted' }, HUMAN)).code, 'CONDUCTOR_UNAVAILABLE');
+});
+
+test('a committed review\'s detail costs one exec with its snapshot cached and two without', async () => {
+  // Invariant: one PROBE answers existence, the round's objects and git status; only a snapshot-cache miss adds the diff.
+  const { range, commit } = await reviewed();
+  for (const r of [range, commit]) {
+    const hit = await counted(() => reviews.getReview(r.id));
+    assert.equal(ok(hit.value).review.snapshotError, undefined);
+    assert.equal(hit.execs.length, 1, r.kind);
+    assert.equal((await counted(() => reviews.diff(r.id, {}))).execs.length, 1, r.kind);
+  }
+  // A round whose snapshot this process never built (another process recorded it).
+  const parent = w.repo.git('rev-parse', 'HEAD');
+  const head = w.repo.commit({ 'c.js': 'c\n' });
+  await store.mutate(commit.id, (rv) => { rv.rounds[0] = { ...rv.rounds[0], baseSha: parent, headSha: head }; });
+  const miss = await counted(() => reviews.getReview(commit.id));
+  assert.ok(ok(miss.value).files.some((f) => f.path === 'c.js'), 'the new round was diffed');
+  assert.equal(miss.execs.length, 2);
+});
+
+test('/checkout costs one exec, one location and one worktrees lookup', async () => {
+  // Invariant: checkoutInfo reads existence and status in one PROBE and shares its lookups across checkout, fork points and worktrees.
+  await reviewed();
+  const { value, gets, execs } = await counted(() => get('/checkout?project=app&worktree=feature'));
+  assert.deepEqual([value.checkout.exists, value.checkout.branch, value.forkPoints.length], [true, 'br-feature', 1]);
+  assert.equal(execs.length, 1);
+  assert.deepEqual(gets.sort(), ['GET /api/projects/app/location', 'GET /api/projects/app/worktrees']);
+});
+
+test('git.probe: where the checkout or its main one is, the first missing sha, and status only in the checkout', async () => {
+  // Invariant: PROBE prefers the checkout, falls back to mainPath, answers null for neither (no error), names the first missing sha, and reads status only when asked and in the checkout.
+  w = await world();
+  const wt = w.addWorktree();
+  wt.write('a.js', 'dirty\n');
+  const at = { system: 'local', remoteId: null, path: wt.dir };
+  const head = wt.git('rev-parse', 'HEAD');
+  const gone = 'f'.repeat(40);
+  assert.deepEqual(await git.probe(at, { path: wt.dir, mainPath: w.repo.dir, status: true, shas: [head, gone, 'e'.repeat(40)] }),
+    { where: 'checkout', missing: gone, status: { head, branch: 'br-feature', dirty: true } });
+  assert.deepEqual(await git.probe(at, { path: wt.dir, shas: [head] }), { where: 'checkout', missing: null, status: null });
+  assert.deepEqual(await git.probe(at, { path: `${wt.dir}-gone`, mainPath: w.repo.dir, status: true, shas: [head] }), { where: 'main', missing: null, status: null });
+  assert.deepEqual(await git.probe(at, { path: '', mainPath: '', status: true, shas: [head] }), { where: null, missing: null, status: null });
+  assert.deepEqual(await git.probe(at, { path: `${wt.dir}-gone`, mainPath: `${w.repo.dir}-gone` }), { where: null, missing: null, status: null });
 });
 
 test('list rows run concurrently under ROW_CONCURRENCY, and the list keeps newest-first order', async () => {

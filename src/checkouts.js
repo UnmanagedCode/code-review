@@ -110,15 +110,17 @@ export async function sessionPlaces(sessionId) {
     .map((p) => ({ project: p.project, main: p.main, worktrees: [...p.worktrees].sort((a, b) => a.localeCompare(b)) }));
 }
 
-/** Picker data for one checkout: its git state, base shortcuts and the project's worktrees. */
+/** Picker data for one checkout: its git state (one exec), base shortcuts and the project's worktrees. */
 export async function checkoutInfo({ project, worktree }) {
   const scope = lookupScope();
-  const co = await resolveCheckout({ project, worktree }, scope);
-  const st = co.exists ? await git.statusOf(co.place) : null;
+  const co = await lookupCheckout({ project, worktree }, scope);
+  const { where, status: st } = await git.probe(co.place, { path: co.path, status: true });
+  const exists = where === 'checkout';
+  if (!exists) scope.evict(project);
   return {
     checkout: {
       project, worktree: co.worktree, path: co.path, branch: co.branch ?? st?.branch ?? null,
-      headSha: st?.head ?? null, dirty: st?.dirty ?? false, exists: co.exists,
+      headSha: st?.head ?? null, dirty: st?.dirty ?? false, exists,
     },
     forkPoints: await forkPoints(co, scope),
     worktrees: (await scope.worktrees(project)).map((w) => ({ worktreeName: w.worktreeName, branch: w.branch })),

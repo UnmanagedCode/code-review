@@ -95,7 +95,7 @@ test('the source-text guards actually see the sources it is meant to cover', () 
   expect(seen.length).toBeGreaterThan(30);
   for (const must of ['src/App.tsx', 'index.html', 'public/theme-init.js', 'src/features/diff/FileDiff.tsx', 'src/state/submit.ts', 'src/lib/route.ts', 'src/components/ui/button.tsx',
     'src/lib/splitRows.ts', 'src/features/diff/SplitRow.tsx', 'src/features/diff/SettledThread.tsx', 'src/features/diff/HunkHeader.tsx', 'src/features/layout/ResizeHandle.tsx',
-    'src/lib/highlight/prism.ts', 'src/features/diff/CodeLine.tsx']) expect(seen).toContain(must);
+    'src/lib/highlight/prism.ts', 'src/features/diff/CodeLine.tsx', 'src/lib/sseWorker.ts']) expect(seen).toContain(must);
   expect(seen.some((f) => f.startsWith('dist') || f.includes('node_modules'))).toBe(false);
 });
 

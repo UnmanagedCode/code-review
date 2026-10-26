@@ -76,3 +76,17 @@ test('New review follows the empty state', async () => {
   await screen.findByText('No reviews yet');
   expect(screen.getByText('No reviews yet').compareDocumentPosition(screen.getByRole('button', { name: 'New review' })) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 });
+
+// Invariant: the echo of a revision the list already shows (rev <= the row's) costs no fetch; a newer rev does.
+test('an SSE event for a listed review at or below its shown rev is ignored; a newer one reloads', async () => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+  const net = stubFetch({ 'GET api/reviews': { reviews: [review({ id: 'r-1', rev: 3 })] } });
+  render(<ReviewList project="app" worktree="feature" />);
+  await vi.waitFor(() => expect(net.count('GET api/reviews')).toBe(1));
+  act(() => FakeEventSource.last!.emit({ id: 'r-1', rev: 3 }));
+  await act(() => vi.advanceTimersByTimeAsync(300));
+  expect(net.count('GET api/reviews')).toBe(1);
+  act(() => FakeEventSource.last!.emit({ id: 'r-1', rev: 4 }));
+  await act(() => vi.advanceTimersByTimeAsync(300));
+  expect(net.count('GET api/reviews')).toBe(2);
+});

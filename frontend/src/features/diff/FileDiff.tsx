@@ -66,7 +66,7 @@ function FileHeader({ file, files, onBack, extra, view, options }: { file: DiffF
 
 export function FileDiff({ onBack, extra }: { onBack?: () => void; extra?: ReactNode } = {}) {
   const ctx = useReviewCtx();
-  const { file, rows, side, loading, error, expand, reveal, reload } = ctx.fileDiff;
+  const { file, rows, side, loading, switching, error, expand, reveal, reload } = ctx.fileDiff;
   const prefs = useDiffPrefs();
   const route = useRoute();
   const dropped = useDropped(ctx.id);
@@ -155,7 +155,7 @@ export function FileDiff({ onBack, extra }: { onBack?: () => void; extra?: React
   }, [route.lines, visible.length]);
 
   if (!route.file) return <Empty title="Select a file to see its changes" />;
-  if (loading) return <Loading label="Loading diff" rows={8} />;
+  if (loading && !file) return <Loading label="Loading diff" rows={8} />;
   if ((error as { code?: string } | undefined)?.code === 'FILE_NOT_IN_DIFF') return <CitedExcerpt path={route.file} />;
   if (error) return <ErrorState error={error} onRetry={reload} />;
   if (!file) return ctx.compare && route.lines ? <CitedExcerpt path={route.file} /> : <Empty title="That file isn’t in this diff" />;
@@ -245,7 +245,7 @@ export function FileDiff({ onBack, extra }: { onBack?: () => void; extra?: React
   };
 
   return (
-    <div ref={diffView.paneRef} className="flex min-w-0 flex-col">
+    <div ref={diffView.paneRef} aria-busy={switching || undefined} inert={switching || undefined} className={cn('flex min-w-0 flex-col', switching && 'opacity-60')}>
       <FileHeader file={file} files={ctx.files} onBack={onBack} extra={extra} view={textFile && diffView.available ? diffView : undefined} options={textFile} />
       {!textFile && (
         <div className="flex flex-col gap-2 p-3">

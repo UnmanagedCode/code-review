@@ -1,33 +1,28 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback } from 'react';
 import * as ep from '@/lib/endpoints';
 import type { ReviewSummary } from '@/lib/types';
-import { usePolling, useSseReload } from './live';
-import { useFetch } from './useFetch';
+import { usePolling } from './live';
+import { resourceKey } from './checkout';
+import { useResource } from './resource';
 
 /**
- * The open review: summary, files, rounds, submissions. Stays current by refetching on an SSE event newer than `knownRev`
- * (never trusting the event's content), on reconnect, and (uncommitted) on focus and an interval.
+ * The open review: summary, files, rounds, submissions. Stays current by refetching on an SSE event newer than the cached
+ * `rev` (never trusting the event's content), on reconnect, and (uncommitted) on focus and an interval.
  */
 export function useReview(id: string | undefined) {
-  const f = useFetch(id ? () => ep.review(id) : null, [id]);
-  const [deleted, setDeleted] = useState(false);
-  const knownRev = useRef(0);
-  const rev = f.data?.review.rev;
-  useEffect(() => { if (rev != null) knownRev.current = Math.max(knownRev.current, rev); }, [rev]);
-  useEffect(() => { setDeleted(false); knownRev.current = 0; }, [id]);
+  const f = useResource(id ? resourceKey('review', id) : null, {
+    fetch: () => ep.review(id!),
+    matches: (e, data) => e.id === id && !e.deleted && (e.rev ?? 0) > (data?.review.rev ?? 0),
+    // A delete leaves the entry gone, so a revisit shows the deleted state instead of the cached detail.
+    gone: (e) => e.id === id && !!e.deleted,
+  });
+  const { reload } = f;
+  usePolling(useCallback(() => reload({ join: true }), [reload]), f.data?.review.kind === 'uncommitted', f.loadedAt);
 
-  useSseReload(f.reload, (e) => {
-    if (e.id !== id) return false;
-    if (e.deleted) { setDeleted(true); return false; }
-    return (e.rev ?? 0) > knownRev.current;
-  }, !!id);
-  usePolling(f.reload, f.data?.review.kind === 'uncommitted');
-
-  /** Fold a mutation response's summary in at once; the SSE echo then has `rev <= knownRev` and is ignored. */
+  /** Fold a mutation response's summary in at once; the SSE echo then has `rev <=` the cached rev and is ignored. */
   const applyReview = useCallback((review: ReviewSummary) => {
-    knownRev.current = Math.max(knownRev.current, review.rev);
-    f.mutate((d) => ({ ...d, review }));
+    f.mutate((d) => (review.rev >= d.review.rev ? { ...d, review } : d));
   }, [f.mutate]);
-  return { ...f, deleted, applyReview };
+  return { ...f, deleted: f.gone, applyReview };
 }
 export type ReviewState = ReturnType<typeof useReview>;

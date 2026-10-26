@@ -1,7 +1,8 @@
 import { screen, within } from '@testing-library/react';
 import { expect, test } from 'vitest';
 import { diffFile, hunk, message, thread } from '@/test/fixtures';
-import { renderDiff } from '@/test/renderCtx';
+import type { FileDiffState } from '@/state/fileDiff';
+import { renderDiff, renderInReview } from '@/test/renderCtx';
 import { FileDiff } from './FileDiff';
 
 const withRoute = (file: string) => history.replaceState(null, '', `?file=${encodeURIComponent(file)}`);
@@ -55,4 +56,17 @@ test('inline thread bodies in the diff render as markdown', () => {
   expect(card.querySelector('pre')?.textContent).toBe('code');
   expect(container.querySelector('script')).toBeNull();
   expect(within(card).getByText('<script>alert(1)</script>')).toBeTruthy();
+});
+
+// Invariant: while the next file loads, the previous file stays on screen (not the Loading skeleton), marked busy and inert.
+test('a file switch keeps the previous file visible, busy and inert; a cold load shows Loading', () => {
+  withRoute('src/b.ts');
+  const file = diffFile({ path: 'src/a.ts' });
+  const { container, unmount } = renderInReview(<FileDiff />, { fileDiff: { file, rows: [], total: null, loading: true, switching: true } as unknown as FileDiffState });
+  expect(screen.getByText('src/a.ts')).toBeTruthy();
+  const busy = container.querySelector('[aria-busy="true"]');
+  expect(busy?.hasAttribute('inert')).toBe(true);
+  unmount();
+  renderInReview(<FileDiff />, { fileDiff: { file: undefined, rows: [], total: null, loading: true, switching: false } as unknown as FileDiffState });
+  expect(screen.getByLabelText('Loading diff')).toBeTruthy();
 });

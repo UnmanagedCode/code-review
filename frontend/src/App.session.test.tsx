@@ -8,6 +8,7 @@ import { installFakeEventSource } from '@/test/fakeEventSource';
 import { diffFile, fileState, review } from '@/test/fixtures';
 import { renderInReview } from '@/test/renderCtx';
 import { stubFetch } from '@/test/stubFetch';
+import { PROJECTS_RECHECK_MS } from '@/features/layout/useFollowSession';
 import { App } from './App';
 
 const world = () => stubFetch([
@@ -152,4 +153,24 @@ test('?view=inbox with no project keeps the inbox when the checkout fills in', a
   history.replaceState(null, '', '?view=inbox');
   render(<App />);
   await waitFor(() => expect(location.search).toBe('?project=app&worktree=feature&view=inbox'));
+});
+
+// Invariant: a session change to a project the cached project list lacks refetches a list older than PROJECTS_RECHECK_MS
+// (so a project created since becomes followable) and leaves a fresh list alone.
+test('a session for an unlisted project rechecks a stale project list, not a fresh one', async () => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+  installFakeEventSource();
+  const net = world();
+  const bridge = installBridge({ sessionId: 's-0', project: 'app', worktree: null });
+  history.replaceState(null, '', '?project=app');
+  render(<App />);
+  await act(() => vi.advanceTimersByTimeAsync(0));
+  expect(net.count('GET api/projects')).toBe(1);
+  act(() => bridge.emit({ sessionId: 's-1', project: 'brand-new', worktree: null }));
+  await act(() => vi.advanceTimersByTimeAsync(0));
+  expect(net.count('GET api/projects')).toBe(1);
+  await act(() => vi.advanceTimersByTimeAsync(PROJECTS_RECHECK_MS + 1));
+  act(() => bridge.emit({ sessionId: 's-2', project: 'brand-newer', worktree: null }));
+  await act(() => vi.advanceTimersByTimeAsync(0));
+  expect(net.count('GET api/projects')).toBe(2);
 });

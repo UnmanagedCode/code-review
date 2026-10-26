@@ -2,6 +2,7 @@ import { act, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, expect, test, vi } from 'vitest';
 import { parseRoute } from '@/lib/route';
+import { resetResources } from '@/state/resource';
 import { FakeEventSource, installFakeEventSource } from '@/test/fakeEventSource';
 import { inboxItem, refusal } from '@/test/fixtures';
 import { stubFetch } from '@/test/stubFetch';
@@ -84,6 +85,7 @@ test('empty and error states', async () => {
   const { unmount } = render(<Inbox />);
   expect(await screen.findByText('No open reviews')).toBeTruthy();
   unmount();
+  resetResources(); // the cached empty inbox would otherwise render at once
   let fail = true;
   const net2 = stubFetch({ 'GET api/inbox': () => (fail ? refusal('CONDUCTOR_UNAVAILABLE', 502) : { reviews: [] }) });
   render(<Inbox />);

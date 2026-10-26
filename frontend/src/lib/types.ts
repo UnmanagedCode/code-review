@@ -34,6 +34,8 @@ export interface FileState {
   binary: boolean; tooLarge: boolean; additions: number; deletions: number; hunks: number;
   verdicts: { pending: number; accepted: number; rejected: number } | null;
   threads: ThreadCounts; unread: number;
+  /** Opaque: equal sig, identical diff response for the file. Optional while the backend lands it. */
+  sig?: string;
 }
 
 export interface DiffLine { t: 'ctx' | 'add' | 'del'; old: number | null; new: number | null; text: string; noEol?: boolean }
@@ -44,7 +46,13 @@ export interface TextHunk {
 export interface FileHunk { id: string; kind: 'file'; lines: []; verdict: Verdict | null }
 export type Hunk = TextHunk | FileHunk;
 /** A file in a diff response: FileState with its `hunks` and `threads` counts replaced by the lists. */
-export type DiffFile = Omit<FileState, 'hunks' | 'threads'> & { hunks: Hunk[]; threads: Thread[] };
+export type DiffFile = Omit<FileState, 'hunks' | 'threads'> & {
+  hunks: Hunk[]; threads: Thread[];
+  /** Line count per side in this response's round; null when the side does not exist or the file is binary/too large. */
+  lineCount?: { old: number | null; new: number | null };
+};
+/** A write response's new sig for the file it touched; null = unknown. */
+export interface FileSig { path: string; sig: string | null }
 
 export interface Round { n: number; headSha: string; baseSha: string; createdAt: string; submittedAt: string | null }
 export interface SubmissionRef { id: number | string; status: 'pending' | 'delivered' | 'failed' | 'superseded'; code: string | null; round: number }

@@ -4,8 +4,9 @@
  * tab), each asking to mark it read: only the first ask per version posts. The reload a mark triggers moves the version,
  * and by then the thread reads as read, so a later unread message can be marked again.
  *
- * The version is a per-mount load counter that restarts with every visit, so a review's marks are forgotten when its
- * `ReviewProvider` unmounts or switches review (`forgetMarks`); otherwise a revisit at an equal version would be suppressed.
+ * The version is the review resource's load counter, global per review (it survives a revisit, since the review stays
+ * cached). A review's marks are still forgotten when its `ReviewProvider` unmounts or switches review (`forgetMarks`);
+ * otherwise a revisit at an equal version would be suppressed.
  */
 const marks = new Map<string, number>();
 const key = (reviewId: string, threadId: string) => `${reviewId}\n${threadId}`;

@@ -1,7 +1,7 @@
 import { api } from './api';
 import type {
   CheckoutInfo, Commit, ComparedThread, DiffFile, FileState, ForkPoint, InboxItem, Kind, RefreshReport, ReviewSummary, Round, Session, SessionPlace,
-  Severity, Submission, Thread, ThreadAnchorInput, ThreadCounts, ThreadKind, UnplacedThread, Verdict,
+  FileSig, Severity, Submission, Thread, ThreadAnchorInput, ThreadCounts, ThreadKind, UnplacedThread, Verdict,
 } from './types';
 
 /** One typed function per REST call in docs/protocol.md; the only place `api/…` paths are built. */
@@ -62,15 +62,15 @@ export const compare = (id: string, from: number, to: number) => api<CompareView
 export const fileLines = (id: string, path: string, side: 'old' | 'new', start: number, end: number, round?: number) =>
   api<FileLines>(`${r(id)}/file${q({ path, side, start, end, round })}`);
 export const setVerdict = (id: string, hunkId: string, verdict: Verdict) =>
-  api<{ hunkId: string; verdict: Verdict; review: ReviewSummary }>(`${r(id)}/hunks/${encodeURIComponent(hunkId)}/verdict`, json('PUT', { verdict }));
+  api<{ hunkId: string; verdict: Verdict; review: ReviewSummary; fileSig?: FileSig }>(`${r(id)}/hunks/${encodeURIComponent(hunkId)}/verdict`, json('PUT', { verdict }));
 export const acceptFile = (id: string, file: string, hunkIds: string[]) =>
-  api<{ file: string; accepted: string[]; review: ReviewSummary }>(`${r(id)}/accept-file`, json('POST', { file, hunkIds }));
+  api<{ file: string; accepted: string[]; review: ReviewSummary; fileSig?: FileSig }>(`${r(id)}/accept-file`, json('POST', { file, hunkIds }));
 export const createThread = (id: string, input: { anchor: ThreadAnchorInput; kind: ThreadKind; severity?: Severity; body: string }) =>
-  api<{ thread: Thread }>(`${r(id)}/threads`, json('POST', input));
+  api<{ thread: Thread; fileSig?: FileSig }>(`${r(id)}/threads`, json('POST', input));
 export const replyThread = (id: string, tid: string, body: string) =>
-  api<{ thread: Thread }>(`${r(id)}/threads/${encodeURIComponent(tid)}/messages`, json('POST', { body }));
+  api<{ thread: Thread; fileSig?: FileSig }>(`${r(id)}/threads/${encodeURIComponent(tid)}/messages`, json('POST', { body }));
 export const setThreadStatus = (id: string, tid: string, status: 'open' | 'resolved', disposition?: 'fixed' | 'dismissed') =>
-  api<{ thread: Thread }>(`${r(id)}/threads/${encodeURIComponent(tid)}`, json('PATCH', { status, ...(disposition ? { disposition } : {}) }));
+  api<{ thread: Thread; fileSig?: FileSig }>(`${r(id)}/threads/${encodeURIComponent(tid)}`, json('PATCH', { status, ...(disposition ? { disposition } : {}) }));
 export const refresh = (id: string) => api<RefreshReport>(`${r(id)}/refresh`, json('POST'));
 export const compose = (id: string) => api<{ submission: Submission }>(`${r(id)}/submissions`, json('POST'));
 export const submissionResult = (id: string, sid: string | number, result: { ok: boolean; code?: string }) =>

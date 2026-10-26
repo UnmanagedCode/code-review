@@ -34,7 +34,7 @@ frontend/              index.html, vite.config.ts, public/theme-init.js, src/{li
 tests/                 node --test backend tests
 harness/mutation/      code-mutant config (see its README)
 harness/playwright/    seed.mjs, snap.mjs (screenshots), golden.mjs (interaction)
-harness/bench/         open-review.mjs (openReview timing), highlight.mjs (worst-case highlighting per language); see its README
+harness/bench/         open-review.mjs (openReview timing), requests.mjs (per-request round trips), highlight.mjs (worst-case highlighting per language); see its README
 .wiki/                 durable project knowledge
 ```
 
@@ -80,9 +80,9 @@ Then Settings → Plugins → Rescan, and enable.
 ## Known limitations
 
 - `caller` in the MCP envelope is unauthenticated loopback input: any local process can pose as any agent (see [protocol](docs/protocol.md#mcp)). The REST surface already acts as the human.
-- Every checkout, local or on a System, is read through cc's `POST /api/exec`: **code-review needs a code-conductor that serves it** (an older cc answers `CONDUCTOR_UNAVAILABLE`, naming the route).
+- Every checkout, local or on a System, is read through cc's `POST /api/exec` and located through `GET /api/projects/:name/location`: **code-review needs a code-conductor that serves both** (an older cc answers `CONDUCTOR_UNAVAILABLE`).
 - Round comparisons are read-only. They diff the two rounds' heads, limited to files either round reviews, so when the base moved between the rounds those files also show the upstream changes. Base-side threads are listed (Not in diff), not placed.
-- Each System that holds a reviewed project needs `git` ≥ 2.17 (`status --porcelain=v2 --no-ahead-behind`), a POSIX `sh`, `mktemp`, `mkdir`, `cp`, `touch -r`, `rm`, `ls`, `awk`, `realpath` and `cat`, and a `TMPDIR` (default `/tmp`) that is absolute and outside the project's tree.
+- Each System that holds a reviewed project needs `git` ≥ 2.17 (`status --porcelain=v2 --no-ahead-behind`), a POSIX `sh`, `mkdir`, `cp`, `touch -r`, `rm`, `ls`, `awk`, `wc`, `realpath` and `cat`, and a `TMPDIR` (default `/tmp`) that is absolute and outside the project's tree.
 - The commit-filter view of a range review is read-only.
 - Past-round views are read-only; open/resolved there is the thread's current status (unless it went outdated later), and they show no verdicts.
 - Uncommitted edits are not pushed: the UI re-fetches on focus or an interval.
@@ -95,4 +95,4 @@ Then Settings → Plugins → Rescan, and enable.
 - One file renders at a time; there is no all-files scroll.
 - Dropped uncommitted threads are shown only for the current page session (the backend keeps their ids, not their text).
 - After "Open in code-git", closing code-git's view (Escape or close) goes to the session, not back to the review; the browser's Back returns to it.
-- The inbox marks a checkout gone only when cc no longer lists its project or worktree, and never marks a down System (it runs no git); opening the review shows both.
+- The inbox marks a checkout gone only when cc no longer knows its project or lists its worktree, and never marks a down System (it runs no git); opening the review shows both. cc's answers are reused for `CODE_REVIEW_LOOKUP_TTL_MS` (default `DEFAULT_LOOKUP_TTL_MS` in `src/lookups.js`), so a checkout deleted within that time still shows.

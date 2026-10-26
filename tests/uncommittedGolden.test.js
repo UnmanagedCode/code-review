@@ -9,7 +9,7 @@ import path from 'node:path';
 import { makeRepo, lines, localPlace } from './_git.js';
 import { fakeCc } from './_fakeCc.js';
 import { world, HUMAN, editLines } from './_world.js';
-import { buildSnapshot, resolveTarget } from '../src/snapshot.js';
+import { buildSnapshot } from '../src/snapshot.js';
 import * as reviews from '../src/reviews.js';
 import * as threads from '../src/threads.js';
 import * as store from '../src/store.js';
@@ -89,7 +89,7 @@ function vanishAfterListing(cc, dir, paths) {
 /** An uncommitted snapshot of `dir` through the current snapshot API. */
 async function uncommitted(dir, limits) {
   const at = localPlace(dir);
-  return buildSnapshot({ kind: 'uncommitted', repo: at, checkout: at, ...(await resolveTarget(at, 'uncommitted')), limits });
+  return buildSnapshot({ kind: 'uncommitted', checkout: at, limits });
 }
 
 const SIDES = [['new', 'a.txt'], ['old', 'a.txt'], ['old', 'del.txt'], ['new', 'del.txt'], ['new', 'ren-dst.txt'], ['old', 'ren-dst.txt'],

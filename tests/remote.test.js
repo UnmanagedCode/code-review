@@ -131,25 +131,30 @@ for (const [ccStatus, ccCode, code] of [[502, 'SYSTEM_UNREACHABLE', 'SYSTEM_UNRE
 }
 
 for (const [ccStatus, ccCode, code] of [[502, 'SYSTEM_UNREACHABLE', 'SYSTEM_UNREACHABLE'], [504, 'EXEC_TIMEOUT', 'GIT_TIMEOUT']]) {
-  test(`with only the snapshot's commands refused (${ccCode}), the existence probe still answers and reviews degrade to snapshotError ${code}`, async () => {
+  test(`with only the snapshot's commands refused (${ccCode}), the probe still answers: a cached committed review reads, an uncommitted one degrades to snapshotError ${code}`, async (ctx) => {
+    ctx.mock.method(console, 'warn', () => {}); // the refused scan's best-effort cleanup is refused too
     await remoteWorld();
     w.addWorktree().commit({ 'a.js': editLines({ 2: 'top-edit' }) });
     const range = ok(await reviews.openReview({ project: 'app', worktree: 'feature' }, HUMAN)).review;
     w.repo.write('a.js', editLines({ 5: 'live' }));
     const unc = ok(await reviews.openReview({ project: 'app', worktree: null, kind: 'uncommitted' }, HUMAN)).review;
     const t = ok(await threads.annotate(unc.id, HUMAN, { anchor: { file: 'a.js', side: 'new', startLine: 5 }, kind: 'comment', body: 'x' })).thread;
-    const probe = (b) => b.argv[0] === 'sh' && b.argv[2] === '[ -e "$1" ]';
+    const probe = (b) => b.argv[0] === 'sh' && b.argv[2].includes('w=checkout'); // PROBE: existence, objects and status
     w.cc.state.execHook = (b) => (probe(b) ? null : { status: ccStatus, body: { error: 'down', code: ccCode } });
     w.cc.state.execCalls = [];
 
     const listed = ok(await reviews.listReviews({ project: 'app' })).reviews;
     assert.deepEqual(listed.map((r) => r.id).sort(), [range.id, unc.id].sort());
-    for (const r of listed) assert.deepEqual([r.snapshotError, r.checkoutGone], [code, false], r.id);
+    const row = (id) => listed.find((r) => r.id === id);
+    assert.deepEqual([row(unc.id).snapshotError, row(unc.id).checkoutGone], [code, false]);
+    // The range review's snapshot is cached and the probe vouched for its shas, so it needs no refused command.
+    assert.deepEqual([row(range.id).snapshotError, row(range.id).checkoutGone], [undefined, false]);
     assert.ok(w.cc.state.execCalls.some(probe) && w.cc.state.execCalls.some((b) => !probe(b)), 'the probe answered and a snapshot command was refused');
-    assert.equal(ok(await reviews.getReview(range.id)).review.snapshotError, code);
+    assert.equal(ok(await reviews.getReview(range.id)).review.snapshotError, undefined);
     assert.equal(ok(await reviews.getReview(unc.id)).review.snapshotError, code);
     assert.deepEqual(ok(await threads.listThreads(unc.id, {})).threads.map((x) => [x.id, x.status]), [[t.id, 'open']]);
-    assert.equal(codeOf(await reviews.diff(range.id, {})), code);
+    ok(await reviews.diff(range.id, {}));
+    assert.equal(codeOf(await reviews.diff(unc.id, {})), code);
   });
 }
 

@@ -6,10 +6,10 @@ import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { makeRepo, git, lines, gitDirSig, localPlace } from './_git.js';
 import { fakeCc } from './_fakeCc.js';
-import { resolveTarget, buildSnapshot } from '../src/snapshot.js';
+import { resolveTarget, buildSnapshot, ARGV_BUDGET } from '../src/snapshot.js';
 import { parseDiff } from '../src/diff.js';
 import { attempt } from '../src/refusals.js';
-import { statusOf, commitLog, withPrivateIndex, removeTemp, sizes, objectsExist, DIFF_FLAGS } from '../src/git.js';
+import { statusOf, commitLog, removeTemp, sizes, objectsExist, DIFF_FLAGS } from '../src/git.js';
 
 let cc;
 before(async () => { cc = await fakeCc(); });
@@ -22,11 +22,18 @@ afterEach(() => {
   cc.state.execEnv = {};
 });
 const repo = () => { const r = makeRepo(); repos.push(r); return r; };
-const snapOf = async (r, kind, target) => {
+const snapOf = async (r, kind, target, limits) => {
   const at = localPlace(r.dir);
+  if (kind === 'uncommitted') {
+    const snap = await buildSnapshot({ kind, checkout: at, limits });
+    return { shas: { baseSha: snap.baseSha, headSha: snap.headSha }, snap };
+  }
   const shas = await resolveTarget(at, kind, target);
-  return { shas, snap: await buildSnapshot({ kind, repo: at, checkout: at, ...shas }) };
+  return { shas, snap: await buildSnapshot({ kind, repo: at, checkout: at, ...shas, limits }) };
 };
+/** Exec bodies of the two uncommitted-snapshot scripts. */
+const isScan = (b) => b.argv[0] === 'sh' && b.argv[2].includes('mkdir -m 700');
+const isFinish = (b) => b.argv[0] === 'sh' && b.argv[2].includes('alt=$3');
 /** Exec bodies whose sh script contains `marker`. */
 const scriptCalls = (marker) => cc.state.execCalls.filter((b) => b.argv[0] === 'sh' && b.argv[2].includes(marker));
 /** A fresh dir the fake cc's commands use as TMPDIR, so private index dirs can be counted. */
@@ -124,8 +131,7 @@ async function assertIndexUntouched(r, checkout) {
   const before = fs.readFileSync(real);
   const mtime = fs.statSync(real).mtimeMs;
   const at = localPlace(checkout);
-  const shas = await resolveTarget(at, 'uncommitted', {});
-  const snap = await buildSnapshot({ kind: 'uncommitted', repo: at, checkout: at, ...shas });
+  const snap = await buildSnapshot({ kind: 'uncommitted', checkout: at });
   await Promise.all([statusOf(at), snap.lines('new', 'a.txt')]);
   assert.ok(before.equals(fs.readFileSync(real)));
   assert.equal(fs.statSync(real).mtimeMs, mtime);
@@ -146,36 +152,86 @@ test('an uncommitted snapshot leaves a linked worktree\'s index (under the commo
 
 test('the private index copy carries the original\'s exact mtime, so git\'s racy-timestamp decisions are the original\'s own', async () => {
   const r = repo();
-  r.commit({ 'a.txt': 'a\n' });
+  const file = path.join(r.dir, 'a.txt');
+  fs.writeFileSync(file, 'a\n');
+  const older = new Date(Date.now() - 120000);
+  fs.utimesSync(file, older, older);
+  r.commit({});
+  // Entries older than the index and unchanged on disk: the scan's diff has nothing to refresh, so it leaves the copy as made.
   const real = path.join(r.dir, '.git', 'index');
   const old = new Date(Date.now() - 60000);
   fs.utimesSync(real, old, old);
-  const copy = await withPrivateIndex(localPlace(r.dir), ({ env }) => fs.statSync(env.GIT_INDEX_FILE, { bigint: true }).mtimeNs);
+  let copy = null;
+  cc.state.execHook = (b) => {
+    if (isFinish(b)) copy = fs.statSync(path.join(b.argv[5], 'index'), { bigint: true }).mtimeNs;
+    return null;
+  };
+  await snapOf(r, 'uncommitted');
   assert.equal(copy, fs.statSync(real, { bigint: true }).mtimeNs);
 });
 
-test('the private index dir is removed from the target\'s TMPDIR after success and after the callback throws', async () => {
+test('the private dir is removed from the target\'s TMPDIR after a snapshot, and after its finishing call is refused', async (t) => {
   const r = repo();
   r.commit({ 'a.txt': 'a\n' });
+  r.write('a.txt', 'b\n');
   const tmp = pinTmp();
   const seen = [];
-  assert.equal(await withPrivateIndex(localPlace(r.dir), ({ env }) => { seen.push(env.GIT_INDEX_FILE); return 'done'; }), 'done');
-  await assert.rejects(withPrivateIndex(localPlace(r.dir), ({ env }) => { seen.push(env.GIT_INDEX_FILE); throw new Error('boom'); }), /boom/);
-  assert.ok(seen.every((p) => p.startsWith(tmp + '/cr-index-')), 'the dirs were made under the pinned TMPDIR');
+  cc.state.execHook = (b) => { if (isFinish(b)) seen.push(b.argv[5]); return null; };
+  assert.deepEqual(paths((await snapOf(r, 'uncommitted')).snap), ['a.txt']);
   assert.deepEqual(fs.readdirSync(tmp), []);
+  cc.state.execHook = (b) => {
+    if (!isFinish(b)) return null;
+    seen.push(b.argv[5]);
+    return { status: 502, body: { error: 'provider died', code: 'SYSTEM_UNREACHABLE' } };
+  };
+  assert.equal((await attempt(() => snapOf(r, 'uncommitted'))).code, 'SYSTEM_UNREACHABLE');
+  assert.ok(seen.length === 2 && seen.every((p) => p.startsWith(tmp + '/cr-index-')), 'the dirs were made under the pinned TMPDIR');
+  assert.deepEqual(fs.readdirSync(tmp), [], 'removed after the refused finish');
+  t.mock.method(console, 'warn', () => {});
 });
 
-test('a teardown the system refuses returns the callback\'s result and warns, naming the leaked dir', async (t) => {
+test('a finishing call the system refuses, whose cleanup is refused too, warns naming the leaked dir', async (t) => {
   const r = repo();
   r.commit({ 'a.txt': 'a\n' });
   const tmp = pinTmp();
-  cc.state.execHook = (b) => (b.argv[0] === 'rm' ? { status: 502, body: { error: 'provider died', code: 'SYSTEM_UNREACHABLE' } } : null);
+  cc.state.execHook = (b) => (isFinish(b) || b.argv[0] === 'rm' ? { status: 502, body: { error: 'provider died', code: 'SYSTEM_UNREACHABLE' } } : null);
   const warn = t.mock.method(console, 'warn', () => {});
-  assert.equal(await withPrivateIndex(localPlace(r.dir), () => 42), 42);
+  assert.equal((await attempt(() => snapOf(r, 'uncommitted'))).code, 'SYSTEM_UNREACHABLE');
   const [leaked] = fs.readdirSync(tmp);
-  assert.match(leaked, /^cr-index-/);
+  assert.match(leaked, /^cr-index-[0-9a-f]{24}$/);
   assert.equal(warn.mock.callCount(), 1);
   assert.ok(warn.mock.calls[0].arguments[0].includes(path.join(tmp, leaked)));
+});
+
+test('a scan whose exec fails (EXEC_TIMEOUT) is followed by a removal of its private dir by id', async (t) => {
+  const r = repo();
+  r.commit({ 'a.txt': 'a\n' });
+  pinTmp();
+  let id = null;
+  cc.state.execHook = (b) => {
+    if (!isScan(b)) return null;
+    id = b.argv[5];
+    return { status: 504, body: { error: 'slow', code: 'EXEC_TIMEOUT' } };
+  };
+  t.mock.method(console, 'warn', () => {});
+  assert.equal((await attempt(() => snapOf(r, 'uncommitted'))).code, 'GIT_TIMEOUT');
+  assert.match(id, /^[0-9a-f]{24}$/);
+  const removal = cc.state.execCalls.filter((b) => b.argv[0] === 'sh' && b.argv[2].includes('rm -rf -- "$t/cr-index-$2"'));
+  assert.deepEqual(removal.map((b) => b.argv[5]), [id]);
+  assert.equal(cc.state.execCalls.filter(isFinish).length, 0);
+});
+
+test('a scan exiting with sh\'s own exit 2 is a loud Error, never CHECKOUT_GONE; a missing checkout is CHECKOUT_GONE', async (t) => {
+  // Invariant: only the scripts' own path-missing code means the checkout is gone; dash's exit 2 (syntax or arithmetic error) is a plain Error.
+  const r = repo();
+  r.commit({ 'a.txt': 'a\n' });
+  t.mock.method(console, 'warn', () => {});
+  cc.state.execHook = (b) => (isScan(b) ? { status: 200, body: { exitCode: 2, stdout: '', stderr: Buffer.from('sh: 9: arithmetic expression: expecting primary').toString('base64') } } : null);
+  await assert.rejects(snapOf(r, 'uncommitted'), (e) => !e.code && /arithmetic expression/.test(e.message));
+  cc.state.execHook = null;
+  const gone = await attempt(() => buildSnapshot({ kind: 'uncommitted', checkout: localPlace(`${r.dir}-gone`) }));
+  assert.equal(gone.code, 'CHECKOUT_GONE');
+  assert.equal(cc.state.execCalls.filter(isFinish).length, 0);
 });
 
 test('teardown refuses to remove a path not named cr-index-*, without running anything', async () => {
@@ -255,8 +311,7 @@ test('untracked files over the size or count cap are listed tooLarge with a file
   r.write('big.txt', 'x'.repeat(50));
   r.write('s1.txt', '1\n');
   r.write('s2.txt', '2\n');
-  const shas = await resolveTarget(localPlace(r.dir), 'uncommitted', {});
-  const snap = await buildSnapshot({ kind: 'uncommitted', repo: localPlace(r.dir), checkout: localPlace(r.dir), ...shas, limits: { maxFileBytes: 10, maxUntracked: 2 } });
+  const { snap } = await snapOf(r, 'uncommitted', {}, { maxFileBytes: 10, maxUntracked: 2 });
   const by = Object.fromEntries(snap.files.map((f) => [f.path, f]));
   assert.equal(by['big.txt'].tooLarge, true);
   assert.equal(by['big.txt'].hunks[0].kind, 'file');
@@ -299,23 +354,23 @@ test('untracked files are chunked by summed size: a chunk closes before it passe
   r.commit({ 'a.txt': 'a\n' });
   const names = ['s1.txt', 's2.txt', 's3.txt', 's4.txt', 's5.txt'];
   for (const n of names) r.write(n, `${'x'.repeat(399)}\n`); // 400 bytes each
-  const at = localPlace(r.dir);
-  const shas = await resolveTarget(at, 'uncommitted', {});
-  // Budget 3000 / 3 = 1000 bytes: two 400-byte files fit (800), a third would not (1200).
-  const snap = await buildSnapshot({ kind: 'uncommitted', repo: at, checkout: at, ...shas, limits: { maxDiffBytes: 3000 } });
-  const chunks = scriptCalls('--no-index').map((b) => b.argv.slice(5));
-  assert.deepEqual(chunks, [['s1.txt', 's2.txt'], ['s3.txt', 's4.txt'], ['s5.txt']]);
+  // Budget 3000 / 3 = 1000 bytes: two 400-byte files fit (800) and are diffed in the finishing call; the third would
+  // not (1200), so it and every later one go to the batched untracked diff, chunked by the same budget.
+  const { snap } = await snapOf(r, 'uncommitted', {}, { maxDiffBytes: 3000 });
+  const [finish] = cc.state.execCalls.filter(isFinish);
+  assert.deepEqual(finish.argv.slice(14), names, 'every untracked path went to the finishing call');
+  const chunks = scriptCalls('--no-index').filter((b) => !isFinish(b)).map((b) => b.argv.slice(5));
+  assert.deepEqual(chunks, [['s3.txt', 's4.txt'], ['s5.txt']]);
   assert.deepEqual(snap.files.map((f) => [f.path, f.additions]), names.map((n) => [n, 1]));
 });
 
-test('250 untracked files cost three diff calls and two size calls, and parse the same as one diff per file', async () => {
+test('250 untracked files cost two exec calls in all, and parse the same as one diff per file', async () => {
   const r = repo();
   r.commit({ 'a.txt': 'a\n' });
   const names = Array.from({ length: 250 }, (_, i) => `u${String(i).padStart(3, '0')}.txt`);
   for (const n of names) r.write(n, `${n}\n`);
   const { snap } = await snapOf(r, 'uncommitted', {});
-  assert.equal(scriptCalls('--no-index').length, 3);
-  assert.equal(scriptCalls('ls -ldn').length, 2);
+  assert.deepEqual(cc.state.execCalls.map((b) => (isScan(b) ? 'scan' : isFinish(b) ? 'finish' : b.argv.slice(0, 3).join(' '))), ['scan', 'finish']);
   const perFile = names.map((n) => {
     try { return execFileSync('git', ['-C', r.dir, ...DIFF_FLAGS, '--no-index', '--', '/dev/null', n], { encoding: 'utf8' }); } catch (e) { return e.stdout; }
   }).join('');
@@ -407,8 +462,7 @@ test('uncommitted: a restaged path over the size cap is tooLarge with a file-lev
   r.commit({ 'a.txt': 'x'.repeat(50) + '\n' });
   r.git('rm', '--cached', '-q', 'a.txt');
   r.write('a.txt', 'y'.repeat(60) + '\n');
-  const shas = await resolveTarget(localPlace(r.dir), 'uncommitted', {});
-  const snap = await buildSnapshot({ kind: 'uncommitted', repo: localPlace(r.dir), checkout: localPlace(r.dir), ...shas, limits: { maxFileBytes: 10 } });
+  const { snap } = await snapOf(r, 'uncommitted', {}, { maxFileBytes: 10 });
   assert.equal(snap.files.length, 1);
   assert.equal(snap.files[0].tooLarge, true);
   assert.equal(snap.files[0].status, 'modified');
@@ -460,7 +514,7 @@ test('a failing batch restage falls back to per-path staging: good paths still d
   assert.ok(by['c-good.txt'].hunks[0].lines.some((l) => l.text === 'three'));
 });
 
-test('a restage batch of several paths is one exec call, not one per path', async () => {
+test('restaging several paths adds no exec call: the snapshot is still two', async () => {
   const r = repo();
   const names = ['a', 'b', 'c', 'd'].map((n) => `${n}.txt`);
   r.commit(Object.fromEntries(names.map((n) => [n, 'one\n'])));
@@ -468,7 +522,8 @@ test('a restage batch of several paths is one exec call, not one per path', asyn
   for (const n of names) r.write(n, 'two\n');
   const { snap } = await snapOf(r, 'uncommitted', {});
   assert.equal(snap.files.length, 4);
-  assert.equal(cc.state.execCalls.filter((b) => b.argv.includes('update-index')).length, 1);
+  assert.ok(snap.files.every((f) => f.status === 'modified'));
+  assert.equal(cc.state.execCalls.length, 2);
 });
 
 test('an uncommitted snapshot works in a checkout whose path contains a newline, a quote, a backslash, a leading # or non-ASCII', async () => {
@@ -486,9 +541,7 @@ test('an uncommitted snapshot works in a checkout whose path contains a newline,
 /** Points the fake cc's commands at `tmpdir` and returns the refusal code of an uncommitted snapshot of `dir`. */
 async function snapshotWithTmp(dir, tmpdir) {
   cc.state.execEnv = { TMPDIR: tmpdir };
-  const at = localPlace(dir);
-  const shas = await resolveTarget(at, 'uncommitted', {});
-  return (await attempt(() => buildSnapshot({ kind: 'uncommitted', repo: at, checkout: at, ...shas }))).code;
+  return (await attempt(() => buildSnapshot({ kind: 'uncommitted', checkout: localPlace(dir) }))).code;
 }
 
 test('a relative TMPDIR is refused TEMP_UNUSABLE even when it names an existing dir outside the checkout', async () => {
@@ -501,7 +554,8 @@ test('a relative TMPDIR is refused TEMP_UNUSABLE even when it names an existing 
   assert.equal(await snapshotWithTmp(r.dir, '../reltmp'), 'TEMP_UNUSABLE');
   assert.deepEqual(fs.readdirSync(outside), []);
   assert.equal(r.git('status', '--porcelain', '--untracked-files=all'), before);
-  assert.equal(scriptCalls('mktemp').length, 1, 'refused by the create script');
+  assert.equal(cc.state.execCalls.filter(isScan).length, 1, 'refused by the scan script');
+  assert.equal(cc.state.execCalls.filter(isFinish).length, 0);
 });
 
 test('a relative TMPDIR naming an existing dir inside the checkout is refused, and nothing is made there', async () => {
@@ -514,7 +568,7 @@ test('a relative TMPDIR naming an existing dir inside the checkout is refused, a
   assert.equal(fs.existsSync('/reltmp'), false, 'not resolved against cwd / either');
 });
 
-test('a TMPDIR containing a newline or a carriage return is refused TEMP_UNUSABLE before mktemp, and nothing is made there', async () => {
+test('a TMPDIR containing a newline or a carriage return is refused TEMP_UNUSABLE before the private dir is made, and nothing is made there', async () => {
   const r = repo();
   r.commit({ 'a.txt': 'a\n' });
   for (const name of ['t\nmp', 't\rmp', 'tmp\n']) {
@@ -525,7 +579,7 @@ test('a TMPDIR containing a newline or a carriage return is refused TEMP_UNUSABL
   }
 });
 
-test('a failure after mktemp (the index cannot be copied) removes the dir it made and refuses TEMP_UNUSABLE', async () => {
+test('a failure after the private dir is made (the index cannot be copied) removes it and refuses TEMP_UNUSABLE', async () => {
   const r = repo();
   r.commit({ 'a.txt': 'a\n' });
   // An index that exists but is a directory: `cp` refuses it, deterministically and whatever the user's privileges.
@@ -533,35 +587,63 @@ test('a failure after mktemp (the index cannot be copied) removes the dir it mad
   fs.rmSync(index);
   fs.mkdirSync(index);
   const tmp = pinTmp();
-  const at = localPlace(r.dir);
-  const shas = await resolveTarget(at, 'uncommitted', {});
-  const res = await attempt(() => buildSnapshot({ kind: 'uncommitted', repo: at, checkout: at, ...shas }));
+  const res = await attempt(() => buildSnapshot({ kind: 'uncommitted', checkout: localPlace(r.dir) }));
   assert.equal(res.code, 'TEMP_UNUSABLE');
   assert.match(res.reason, /copying the index failed/);
-  assert.equal(scriptCalls('mktemp').length, 1);
+  assert.equal(cc.state.execCalls.filter(isScan).length, 1);
   assert.deepEqual(fs.readdirSync(tmp), [], 'no cr-index-* left behind');
 });
 
-test('the post-create check is structural: a dir whose path holds a line terminator is used and removed; output naming no dir is a refusal', async () => {
+test('the scan\'s printed dir is checked structurally: one whose base holds a line terminator is used and removed; any other is a refusal', async (t) => {
   const r = repo();
   r.commit({ 'a.txt': 'a\n' });
   const base = path.join(path.dirname(r.dir), 'odd\nbase\r');
-  const made = path.join(base, 'cr-index-abc123');
   const objects = path.join(r.dir, '.git', 'objects');
-  // Stands in for a create script that printed such a dir: only the printed path differs from a real run.
+  const head = r.git('rev-parse', 'HEAD');
+  t.mock.method(console, 'warn', () => {});
+  // Stands in for a scan that printed such a dir: only the printed path differs from a real run.
   let printed = null;
+  let made = null;
   cc.state.execHook = (b) => {
-    if (!(b.argv[0] === 'sh' && b.argv[2].includes('mktemp'))) return null;
+    if (!isScan(b)) return null;
+    made = path.join(base, `cr-index-${b.argv[5]}`);
     fs.mkdirSync(path.join(made, 'objects', 'info'), { recursive: true });
-    return { status: 200, body: { exitCode: 0, stdout: Buffer.from(printed ?? `${made}\0${objects}\0`).toString('base64'), stderr: '' } };
+    const dir = printed ?? made;
+    const out = Buffer.from(`${dir}\0${objects}\0${head}\0${0}\0${0}\0`);
+    return { status: 200, body: { exitCode: 0, stdout: out.toString('base64'), stderr: '' } };
   };
-  assert.equal(await withPrivateIndex(localPlace(r.dir), ({ env }) => env.GIT_INDEX_FILE), `${made}/index`);
-  assert.equal(fs.existsSync(made), false, 'torn down');
-  for (const bad of ['', 'relative/cr-index-x', '/tmp/not-ours', '/tmp/cr-index-', '/tmp/cr-index-a/../cr-index-b']) {
-    printed = `${bad}\0${objects}\0`;
-    const res = await attempt(() => withPrivateIndex(localPlace(r.dir), () => assert.fail('must not run')));
+  const ok = await snapOf(r, 'uncommitted');
+  assert.deepEqual(ok.snap.files, []);
+  assert.equal(cc.state.execCalls.filter(isFinish)[0].argv[5], made, 'the finishing call used it');
+  assert.equal(fs.existsSync(made), false, 'and removed it');
+  for (const bad of ['', 'relative/cr-index-x', '/tmp/not-ours', '/tmp/cr-index-', '/tmp/cr-index-a/../cr-index-b', '/tmp/cr-index-0123456789abcdef01234567']) {
+    printed = bad;
+    cc.state.execCalls = [];
+    const res = await attempt(() => snapOf(r, 'uncommitted'));
     assert.equal(res.code, 'TEMP_UNUSABLE', JSON.stringify(bad));
+    assert.equal(cc.state.execCalls.filter(isFinish).length, 0, JSON.stringify(bad));
   }
+  fs.rmSync(base, { recursive: true, force: true });
+});
+
+test('untracked paths past the argument budget are measured and diffed by the batched helpers, in order, with the same result', async () => {
+  const r = repo();
+  r.commit({ 'a.txt': 'a\n' });
+  const names = Array.from({ length: 1100 }, (_, i) => `${String(i).padStart(4, '0')}-${'n'.repeat(240)}.txt`);
+  names.push(`${'z'.repeat(240)}-big.txt`);
+  for (const n of names.slice(0, -1)) r.write(n, `${n.slice(0, 4)}\n`);
+  r.write(names.at(-1), 'x'.repeat(50));
+  const { snap } = await snapOf(r, 'uncommitted', {}, { maxUntracked: 2000, maxFileBytes: 20 });
+  const [finish] = cc.state.execCalls.filter(isFinish);
+  const passed = finish.argv.length - 14;
+  assert.ok(passed > 0 && passed < names.length, `${passed} paths in the finishing call`);
+  assert.ok(finish.argv.slice(14).join('').length <= ARGV_BUDGET);
+  assert.equal(scriptCalls('ls -ldn').filter((b) => !isFinish(b)).length > 0, true, 'the rest were measured');
+  const perFile = names.slice(0, -1).map((n) => {
+    try { return execFileSync('git', ['-C', r.dir, ...DIFF_FLAGS, '--no-index', '--', '/dev/null', n], { encoding: 'utf8' }); } catch (e) { return e.stdout; }
+  }).join('');
+  assert.deepEqual(snap.files.slice(0, -1), parseDiff(perFile));
+  assert.deepEqual([snap.files.at(-1).path, snap.files.at(-1).tooLarge], [names.at(-1), true]);
 });
 
 test('a TMPDIR that resolves inside the checkout, its .git, or onto the checkout itself is refused, and nothing is made there', async () => {

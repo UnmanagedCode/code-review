@@ -11,6 +11,7 @@ import { exec } from '../src/exec.js';
 import { MAX_ATTEMPTS, ccFetch } from '../src/ccFetch.js';
 import { logEvent, logPath, LOG_MAX_BYTES } from '../src/opsLog.js';
 import * as git from '../src/git.js';
+import { buildSnapshot } from '../src/snapshot.js';
 
 let store;
 let cc;
@@ -163,17 +164,14 @@ test('git read-only calls retry on a reset and side-effecting ones never do', as
     ['renames', argvHas('--name-status'), () => git.renames(at, sha, sha), true],
     ['commitLog', argvHas('log'), () => git.commitLog(at), true],
     ['currentBranch', argvHas('symbolic-ref'), () => git.currentBranch(at), true],
-    ['untracked', argvHas('ls-files'), () => git.untracked(at), true],
     ['exists', script('[ -e'), () => git.exists(at), true],
     ['objectsExist', script('cat-file -e'), () => git.objectsExist(at, [sha]), true],
     ['sizes', script('ls -ldn'), () => git.sizes(at, ['a.txt']), true],
     ['diffUntrackedBatch', script('--no-index'), () => git.diffUntrackedBatch(at, [{ rel: 'a.txt', size: 2 }]), true],
     ['readWorktreeFile', script('realpath'), () => git.readWorktreeFile(at, 'a.txt'), true],
-    ['withPrivateIndex: create', script('mktemp -d'), () => git.withPrivateIndex(at, async () => {}), false],
-    ['withPrivateIndex: alternates', script('alternates'), () => git.withPrivateIndex(at, async () => {}), false],
-    ['addToIndex', argvHas('update-index'), () => git.addToIndex(at, ['a.txt']), false],
+    ['scanWorktree', script('mkdir -m 700'), () => buildSnapshot({ kind: 'uncommitted', checkout: at }), false],
+    ['finishWorktree', script('alt=$3'), () => buildSnapshot({ kind: 'uncommitted', checkout: at }), false],
     ['removeTemp', (b) => b.argv[0] === 'rm', () => git.removeTemp(at, '/tmp/cr-index-x'), false],
-    ['diffWorktree', argvHas('--full-index'), () => git.diffWorktree(at, sha), false],
   ];
   for (const [name, matches, run, retried] of cases) {
     cc.state.execCalls = [];

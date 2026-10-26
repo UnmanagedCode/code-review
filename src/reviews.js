@@ -3,7 +3,7 @@ import * as git from './git.js';
 import { withLock } from './mutex.js';
 import { attempt, refuse, Refusal } from './refusals.js';
 import { UNREACHABLE } from './exec.js';
-import { resolveCheckout, forkPoints, sessions, sessionCheckout, isConductorProject } from './checkouts.js';
+import { resolveCheckout, lookupCheckout, forkPoints, sessions, sessionCheckout, isConductorProject } from './checkouts.js';
 import { lookupScope } from './lookups.js';
 import { mapLimit, ROW_CONCURRENCY } from './limit.js';
 import { resolveTarget, buildSnapshot, isBinaryFile } from './snapshot.js';
@@ -87,22 +87,28 @@ export const openReview = (args, actor) => attempt(() => withLock('create', asyn
   }
   const worktree = args.worktree || null;
   const scope = lookupScope();
-  const co = await resolveCheckout({ project: args.project, worktree }, scope);
-  if (!co.exists) throw new Refusal('CHECKOUT_GONE', `${co.path} does not exist`);
+  // An uncommitted snapshot finds the checkout (or its absence) itself; the other kinds resolve refs in it first.
+  const co = kind === 'uncommitted' ? await lookupCheckout({ project: args.project, worktree }, scope) : await resolveCheckout({ project: args.project, worktree }, scope);
+  if (kind !== 'uncommitted' && !co.exists) throw new Refusal('CHECKOUT_GONE', `${co.path} does not exist`);
   const target = {};
   if (kind === 'range') {
     target.base = args.base ?? (await forkPoints(co, scope))[0]?.ref;
     if (!target.base) throw new Refusal('BASE_REQUIRED', 'a range review of a main checkout needs a base');
   }
-  const shas = await resolveTarget(co.place, kind, kind === 'commit' ? { sha: args.sha } : target);
-  if (kind === 'commit') target.sha = shas.headSha;
+  const resolved = kind === 'uncommitted' ? null : await resolveTarget(co.place, kind, kind === 'commit' ? { sha: args.sha } : target);
+  if (kind === 'commit') target.sha = resolved.headSha;
 
   const same = (r) => r.status === 'open' && r.project === args.project && r.worktree === worktree && r.kind === kind
     && r.target.base === target.base && r.target.sha === target.sha;
   const existing = store.list().find(same);
-  if (existing) return { ok: true, review: (await summaryById(existing.id, scope)).review, reused: true };
+  if (existing) {
+    const review = (await summaryById(existing.id, scope)).review;
+    if (review.snapshotError === 'CHECKOUT_GONE') throw new Refusal('CHECKOUT_GONE', `${co.path} does not exist`); // as the other kinds' check above
+    return { ok: true, review, reused: true };
+  }
 
-  const snap = await buildSnapshot({ kind, repo: co.place, checkout: co.place, ...shas });
+  const snap = await buildSnapshot({ kind, repo: co.place, checkout: co.place, ...resolved });
+  const shas = { headSha: snap.headSha, baseSha: snap.baseSha };
   const recipient = actor.kind === 'agent' ? actor.sessionId : await resolveRecipient(args.recipient, { project: args.project, worktree });
   const branch = co.branch ?? (await git.currentBranch(co.place));
   const createdAt = now();

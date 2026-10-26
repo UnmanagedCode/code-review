@@ -9,6 +9,7 @@ import { world, HUMAN, editLines } from './_world.js';
 import { tempStore } from './_store.js';
 import { start } from '../server.js';
 import * as reviews from '../src/reviews.js';
+import * as threads from '../src/threads.js';
 import * as store from '../src/store.js';
 import { checkoutInfo } from '../src/checkouts.js';
 import * as git from '../src/git.js';
@@ -162,6 +163,27 @@ test('a committed review\'s detail costs one exec with its snapshot cached and t
   const miss = await counted(() => reviews.getReview(commit.id));
   assert.ok(ok(miss.value).files.some((f) => f.path === 'c.js'), 'the new round was diffed');
   assert.equal(miss.execs.length, 2);
+});
+
+test('an uncommitted review\'s detail, summary and diff cost exactly two execs, with or without threads', async () => {
+  // Invariant: an uncommitted snapshot is SCAN + FINISH; the threads' lines the sweep needs come back in FINISH, so the sweep reads nothing more.
+  const { uncommitted } = await reviewed();
+  w.repo.write('n.txt', 'one\ntwo\n');
+  const budget = async () => {
+    for (const run of [() => reviews.getReview(uncommitted.id), () => reviews.diff(uncommitted.id, {}), () => reviews.summaryById(uncommitted.id)]) {
+      const { value, execs } = await counted(run);
+      ok(value);
+      assert.equal(execs.length, 2, execs.map((b) => b.argv[2]?.slice(0, 40) ?? b.argv[0]).join(' | '));
+    }
+  };
+  await budget();
+  for (const anchor of [{ file: 'a.js', side: 'new', startLine: 5 }, { file: 'a.js', side: 'old', startLine: 5 }, { file: 'n.txt', side: 'new', startLine: 2 }]) {
+    ok(await threads.annotate(uncommitted.id, HUMAN, { anchor, kind: 'comment', body: 'x' }));
+  }
+  w.repo.write('a.js', ['top', ...editLines({ 5: 'live' }).split('\n')].join('\n')); // the sweep moves the new-side thread
+  await budget();
+  const stored = store.read(uncommitted.id).threads.map((t) => [t.anchor.side, t.anchor.startLine]);
+  assert.deepEqual(stored, [['new', 6], ['old', 5], ['new', 2]]);
 });
 
 test('/checkout costs one exec, one location and one worktrees lookup', async () => {

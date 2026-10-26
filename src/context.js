@@ -3,7 +3,7 @@ import * as git from './git.js';
 import { UNREACHABLE } from './exec.js';
 import { lookupCheckout, isConductorProject } from './checkouts.js';
 import { lookupScope } from './lookups.js';
-import { buildSnapshot, resolveTarget, snapshotGone } from './snapshot.js';
+import { buildSnapshot, snapshotGone } from './snapshot.js';
 import { followThreads } from './follow.js';
 import { Refusal, refuse } from './refusals.js';
 
@@ -93,11 +93,13 @@ export function makeEnv(review, scope = lookupScope()) {
         snaps.set(key, (async () => {
           const c = await env.checkout();
           if (review.kind === 'uncommitted') {
-            if (!c.place || !(await git.exists(c.place))) {
-              scope.evict(review.project);
-              throw gone();
-            }
-            return buildSnapshot({ kind: 'uncommitted', repo: c.place, checkout: c.place, ...(await resolveTarget(c.place, 'uncommitted')) });
+            if (!c.place) throw gone();
+            // The threads' lines are read in the same call, so the sweep reads nothing more.
+            const prefetch = review.threads.filter((t) => t.status !== 'outdated').map((t) => ({ side: t.anchor.side, file: t.anchor.file }));
+            return buildSnapshot({ kind: 'uncommitted', checkout: c.place, prefetch }).catch((e) => {
+              if (e.code === 'CHECKOUT_GONE') scope.evict(review.project);
+              throw e;
+            });
           }
           const round = review.rounds.find((r) => r.n === n);
           if (n !== currentRound(review).n) {

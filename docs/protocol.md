@@ -98,9 +98,9 @@ REST under `/api` (JSON), an SSE stream, and the cc MCP endpoint. Behaviour behi
 
 | Tool | Required | Result |
 |---|---|---|
-| `open_review` | | `{result:{ok, review:ReviewSummary, reused}}`. Checkout: `project`+`worktree`; without `project`, `worktree` must be absent and the checkout is the caller's (`CHECKOUT_UNKNOWN` if cc does not know the caller); a conductor caller must name `project` (`INVALID_ARGUMENT`). Recipient: the caller. `author`: conductor callers only, range/commit only (else `INVALID_ARGUMENT`); `AUTHOR_UNKNOWN` if cc does not know the session. A reused review is returned unchanged. The creator is the caller; `seenByHuman:false`. |
-| `get_review` | `review` | `{text: per-file table, meta: ReviewSummary}` |
-| `list_threads` | `review` | `{text, meta:{review, count, counts}}`; `status` default `open`; `owner` (`user` = human-opened, `agents` = agent-opened; absent = both; else `INVALID_ARGUMENT`); `counts` is the whole review's; cited code inlined as `path#L… @<short sha | working tree>`, ≤ 80 lines then `… (truncated)`, unresolvable ones `(unresolved: …)` |
+| `open_review` | | `{result:{ok, review:ReviewSummary & {link}, reused}}`. Checkout: `project`+`worktree`; without `project`, `worktree` must be absent and the checkout is the caller's (`CHECKOUT_UNKNOWN` if cc does not know the caller); a conductor caller must name `project` (`INVALID_ARGUMENT`). Recipient: the caller. `author`: conductor callers only, range/commit only (else `INVALID_ARGUMENT`); `AUTHOR_UNKNOWN` if cc does not know the session. A reused review is returned unchanged. The creator is the caller; `seenByHuman:false`. |
+| `get_review` | `review` | `{text: per-file table, meta: ReviewSummary & {link}}` |
+| `list_threads` | `review` | `{text, meta:{review, count, counts, threads:[{id, link}]}}` (`threads` in the text's order); `status` default `open`; `owner` (`user` = human-opened, `agents` = agent-opened; absent = both; else `INVALID_ARGUMENT`); `counts` is the whole review's; cited code inlined as `path#L… @<short sha | working tree>`, ≤ 80 lines then `… (truncated)`, unresolvable ones `(unresolved: …)` |
 | `get_hunk` | `review` + `hunk` or `file` | `{text: hunk with old/new line gutters, meta:{file, hunks:[{id, verdict, threadIds}]}}`; `file`+`line` picks the hunk covering that new-side line |
 | `annotate` | `review kind body` | `{result:{ok, thread}}`; needs `file`+`startLine` or `hunk`; `severity` required for a finding |
 | `reply` | `review thread body` | `{result:{ok, thread}}`; with `resolve:true`: `thread.resolveProposed:true` = proposed, `false` = closed (a resolved, outdated or user-opened thread never closes from an agent); a reply without `resolve` leaves the status alone. `disposition` only with `resolve` on a finding the caller opened, or any finding for a conductor (`INVALID_ARGUMENT` otherwise, and when a reply that closes a finding has none); nothing is posted on a refusal |
@@ -158,5 +158,16 @@ The page keeps its state in the query string (`?…`, never the hash) and writes
 | `round` | Range reviews: past-round view (read-only), a positive integer; ignored with `commit`, dropped when it names the current round or a later one. Focusing a thread there marks nothing read |
 | `compare` | Range reviews: round comparison (read-only), `A..B` of positive integers. Ignored with `commit`; beats `round` (which is dropped); dropped when the review is not a range review, `A` ≥ `B`, or `B` is past the current round. There `side=old` means round A's lines and `new` round B's |
 | `view` | Outside a review: `new` (New review dialog). Inside one, the side pane's tab: `threads` or `history` (History only on range reviews; elsewhere it shows Files); absent = Files. Tab clicks write it with `replace`; every other in-review navigation keeps it; opening or leaving a review clears it |
+
+**Links.** MCP results carry origin-relative links (never absolute: cc supplies the host) that open the review or a thread in the plugin view; built by `src/links.js`.
+- Format: `#plugin/<manifest id>/?<route>`; values are encoded as `URLSearchParams` does, keys follow the route serialiser's order.
+- Review: `project`, `worktree` (when set), `review`. `project` is always present so a fresh load does not follow the session's checkout instead.
+- Thread: the review keys plus the route `ThreadCard`'s Focus uses.
+
+| Thread status | Extra keys |
+|---|---|
+| open, resolved | `file`, `side`, `thread` (no `lines`) |
+| outdated, anchor on the new side | `compare=R..R+1`, `file`, `side=old`, `lines`, `thread` (R = `anchor.round`) |
+| outdated, anchor on the old side | `round=R`, `file`, `side=old`, `lines`, `thread` |
 
 **Citation links.** A message citation (`path#L10-L20`) renders as `?<route>&file=<path>&side=new&lines=10-20`, built from the route serialiser, never from the message text. Inside a comparison it also sets `round=<the message's round>` and clears `compare`. Paths that start with `/` or contain a `..` segment are left as text, like the backend's citation resolver. A markdown link whose destination is a listed citation (`[label](path#L10-L20)`) renders the same route link, labelled by its label.

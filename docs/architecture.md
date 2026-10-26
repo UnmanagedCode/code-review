@@ -29,6 +29,7 @@ Services return a plain object or a refusal `{ok:false, code, reason}`. Low-leve
 | `context.js` | per-request view of a review: `makeEnv`, `inReview` (locked write path), `viewReview` (read path), `roleOf`, `authorFor`, `recipientRole` |
 | `reviews.js` | open, list, get, patch, delete, verdict, accept-file, refresh, diff, commits, file lines, hunks |
 | `threads.js` | annotate, reply, thread status, mark read, list |
+| `links.js` | plugin-view hash links for MCP results; mirrors `frontend/src/lib/route.ts` |
 | `rollup.js` | counts, `mergeBlockers`, unread, `ReviewSummary`, thread/hunk views (pure) |
 | `citations.js` | parse and resolve `path#L…` |
 | `submissions.js`, `prompt.js` | compose and record submissions; render the prompt text (pure) |
@@ -131,6 +132,7 @@ Counted by the fake cc (`execCalls`); locally each costs roughly an HTTP round t
 - `harness/bench/open-review.mjs` (not in the test glob): `openReview` wall time and exec call counts on a large range diff and an uncommitted review with many untracked files; `--tree` points it at another checkout's `src/` for a before/after ([README](../harness/bench/README.md)).
 - `tests/history.test.js` (pure `threadsAt`), `tests/rounds.test.js` (past-round views over real git; a round recorded by "another process" is pushed into the store so its snapshot is not cached and reading it runs git).
 - `tests/compare.test.js`: pure `placeThreads` on stored-shape fixtures (copies, coordinates, `outdatedIn`, reasons, `added`/`deleted`/renames, counts, order), then `compareRounds` over real git (head-vs-head hunks; the reviewed-path filter: a file merged in from upstream kept out, a file only round B reviews, a file back at base content in B (its round-A thread placed) and a rename reverted in B kept in; renames; refusals, `SNAPSHOT_GONE`, the main-checkout fallback, `.git` byte-identity on cold rounds, positional anchors).
+- `tests/links.test.js`: link grammar against the real `parseRoute`/`toSearch`, imported from `frontend/src/lib/route.ts` through Node's type stripping.
 - `tests/manifest.test.js` and `tests/surfaces.test.js` pin the manifest against the handlers, the flat-schema subset and the skill/convention tool names.
 
 ## Frontend

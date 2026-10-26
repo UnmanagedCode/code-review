@@ -2,6 +2,7 @@ import * as reviews from './reviews.js';
 import * as threads from './threads.js';
 import { sessionCheckout, isConductorProject } from './checkouts.js';
 import { Refusal, attempt } from './refusals.js';
+import { reviewLink, threadLink } from './links.js';
 import { renderRollup, renderThreads, renderHunk } from './render.js';
 
 // Every handler returns a service result: a refusal, `{ok:true, ...}`, or `{text, meta}` for prose tools.
@@ -21,19 +22,21 @@ const handlers = {
       if (!co) throw new Refusal('CHECKOUT_UNKNOWN', `code-conductor does not know session ${actor.sessionId}`);
       ({ project, worktree } = co);
     }
-    return reviews.openReview({ project, worktree: worktree || null, kind: a.kind, base: a.base, sha: a.sha, author: a.author, title: a.title }, actor);
+    const res = await reviews.openReview({ project, worktree: worktree || null, kind: a.kind, base: a.base, sha: a.sha, author: a.author, title: a.title }, actor);
+    return res.ok ? { ...res, review: { ...res.review, link: reviewLink(res.review) } } : res;
   }),
 
   get_review: async (a) => {
     const res = await reviews.getReview(a.review);
-    return res.ok ? { text: renderRollup(res.review, res.files), meta: res.review } : res;
+    return res.ok ? { text: renderRollup(res.review, res.files), meta: { ...res.review, link: reviewLink(res.review) } } : res;
   },
 
   list_threads: async (a) => {
     const res = await threads.listThreads(a.review, { status: a.status, file: a.file, owner: a.owner });
     if (!res.ok) return res;
     const text = res.threads.length ? renderThreads(res.threads) : `no ${a.status ?? 'open'} threads${a.owner ? ` opened by ${a.owner === 'user' ? 'the user' : 'agents'}` : ''}`;
-    return { text, meta: { review: res.review, count: res.threads.length, counts: res.counts } };
+    const rv = { id: res.review, project: res.project, worktree: res.worktree };
+    return { text, meta: { review: res.review, count: res.threads.length, counts: res.counts, threads: res.threads.map((t) => ({ id: t.id, link: threadLink(rv, t) })) } };
   },
 
   get_hunk: async (a) => {

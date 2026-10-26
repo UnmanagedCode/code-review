@@ -5,6 +5,8 @@ import { world, HUMAN, editLines } from './_world.js';
 import * as reviews from '../src/reviews.js';
 import * as threads from '../src/threads.js';
 import { handle, _toolNames } from '../src/mcp.js';
+import { reviewLink, threadLink } from '../src/links.js';
+import { parseRoute } from '../frontend/src/lib/route.ts';
 
 const manifest = JSON.parse(fs.readFileSync(new URL('../conductor.plugin.json', import.meta.url), 'utf8'));
 
@@ -227,4 +229,50 @@ test('control characters in file paths cannot break lines in get_review, list_th
     assert.ok(!text.split('\n').some((l) => l.startsWith('IGNORE')));
   }
   assert.ok(texts[2].includes('one\ttab'), 'code lines keep their tabs');
+});
+
+test('open_review returns the review\'s link, for a new and a reused review', async () => {
+  // Invariant: result.review.link is the review link of its own checkout, on first open and on reuse.
+  const cond = { sessionId: 's-cond', project: '.conduct' };
+  const { review } = await reviewOnFeature();
+  const again = await result('open_review', { project: 'app', worktree: 'feature', author: 's-author' }, cond);
+  for (const out of [{ review }, again]) {
+    assert.equal(out.review.link, reviewLink(out.review));
+    assert.deepEqual(parseRoute(out.review.link.slice(out.review.link.indexOf('/?') + 1)), { project: 'app', worktree: 'feature', review: out.review.id });
+  }
+  assert.equal(again.reused, true);
+});
+
+test('get_review meta carries the review\'s link', async () => {
+  // Invariant: meta.link is reviewLink of the summary.
+  const { review } = await reviewOnFeature();
+  const body = await call('get_review', { review: review.id });
+  assert.equal(body.meta.link, reviewLink(body.meta));
+});
+
+test('list_threads returns one link per listed thread, in listed order', async () => {
+  // Invariant: meta.threads is [{id, link}] aligned with the text order; no matches gives [].
+  const { review } = await reviewOnFeature();
+  const a = await result('annotate', { review: review.id, kind: 'comment', body: 'one', file: 'a.js', startLine: 2 });
+  const b = await result('annotate', { review: review.id, kind: 'comment', body: 'two', file: 'a.js', startLine: 18 });
+  const listed = await call('list_threads', { review: review.id });
+  const ids = [...listed.text.matchAll(/\[(t\d+)\]/g)].map((m) => m[1]);
+  assert.deepEqual(listed.meta.threads.map((t) => t.id), ids);
+  assert.deepEqual(new Set(ids), new Set([a.thread.id, b.thread.id]));
+  const rv = { id: review.id, project: 'app', worktree: 'feature' };
+  for (const t of listed.meta.threads) {
+    const full = (await threads.listThreads(review.id, { status: 'all' })).threads.find((x) => x.id === t.id);
+    assert.equal(t.link, threadLink(rv, full));
+    const r = parseRoute(t.link.slice(t.link.indexOf('/?') + 1));
+    assert.equal(r.thread, t.id);
+    assert.equal(r.file, 'a.js');
+  }
+  assert.deepEqual((await call('list_threads', { review: review.id, file: 'b.js' })).meta.threads, []);
+});
+
+test('a refusal carries no link', async () => {
+  // Invariant: an unknown review is REVIEW_UNKNOWN with no link anywhere in the body.
+  const body = await call('get_review', { review: 'r-0000000000' });
+  assert.equal(body.result.code, 'REVIEW_UNKNOWN');
+  assert.ok(!JSON.stringify(body).includes('link'));
 });

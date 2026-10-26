@@ -176,5 +176,5 @@ export const listThreads = (id, { status = 'open', file, owner } = {}) => attemp
       })),
     });
   }
-  return { ok: true, review: id, threads: out, counts: tally(review.threads) };
+  return { ok: true, review: id, project: review.project, worktree: review.worktree, threads: out, counts: tally(review.threads) };
 }));

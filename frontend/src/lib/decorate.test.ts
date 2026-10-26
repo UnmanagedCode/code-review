@@ -6,6 +6,7 @@ import { TOKEN_CLASS } from './highlight';
 import { tokenize } from './highlight/prism';
 import { splitRows } from './splitRows';
 import type { DiffLine, Hunk } from './types';
+import { WORD_DIFF_MAX_TOTAL_CELLS, wordDiffCells } from './wordDiff';
 
 const L = (t: DiffLine['t'], old: number | null, nu: number | null, text: string): DiffLine => ({ t, old, new: nu, text });
 const lineRows = (rows: Row[]) => rows.flatMap((r) => (r.kind === 'line' ? [r.line] : []));
@@ -70,4 +71,29 @@ test('a split pair resolves both halves to the same entries as the inline rows',
     for (const l of [p.left, p.right]) if (l) expect(decos.get(l)).toBeDefined();
   }
   expect(splitRows(rows).flatMap((p) => (p.kind === 'pair' ? [p.left, p.right] : [])).filter(Boolean).every((l) => lineRows(rows).includes(l!))).toBe(true);
+});
+
+test('word emphasis stops once WORD_DIFF_MAX_TOTAL_CELLS is spent: later pairs get none, in row order', () => {
+  // Invariant: one decoration's word-diff work is bounded, however many pairs the file has.
+  const del = 'const value = compute(alpha, beta, 1);';
+  const add = 'const value = compute(alpha, gamma, 2);';
+  const per = wordDiffCells(del, add);
+  const fit = Math.floor(WORD_DIFF_MAX_TOTAL_CELLS / per);
+  const pairs = fit + 50;
+  // Each pair its own run (context between), as in a file rewritten line by line.
+  const many = hunk({ lines: Array.from({ length: pairs }, (_, i) => [L('del', 2 * i + 1, null, del), L('add', null, 2 * i + 1, add), L('ctx', 2 * i + 2, 2 * i + 2, 'x')]).flat() });
+  const built = buildRows({ hunks: [many], expansions: {}, texts: {}, total: null });
+  const decos = decorateRows(built, null, null, ws);
+  const emphasised = lineRows(built).filter((l) => l.t === 'add').map((l) => decos.get(l)!.some((s) => s.em));
+  expect(emphasised.slice(0, fit).every(Boolean)).toBe(true);
+  expect(emphasised.slice(fit).some(Boolean)).toBe(false);
+  // Every line still renders its text.
+  for (const l of lineRows(built)) expect(text(decos.get(l))).toBe(l.text);
+});
+
+test('wordDiffCells counts the LCS table and a fixed setup, and 0 for a pair past the per-line caps', () => {
+  // Invariant: the budget charges what wordDiff actually does, and nothing for pairs it skips at once.
+  expect(wordDiffCells('a b', 'a')).toBeGreaterThan(wordDiffCells('a', 'a'));
+  expect(wordDiffCells('x'.repeat(2000), 'y')).toBe(0);
+  expect(wordDiffCells('', '')).toBeGreaterThan(0);
 });

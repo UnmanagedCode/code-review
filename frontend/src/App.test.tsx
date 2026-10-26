@@ -46,9 +46,22 @@ test('the source-text guards actually see the sources it is meant to cover', () 
 
 // Prism's token tree is data; its markup builders (and auto-highlighting, off via prismManual.ts) write HTML. The only
 // sanitisation boundary is highlightLines → CodeLine's React text, so prismjs stays behind lib/highlight/prism.ts.
+const PRISM_IMPORT = /(?:\bfrom|\bimport\s*\(?|\brequire\s*\()\s*(['"`])prismjs(?:\/[^'"`]*)?\1/;
+const MARKUP_BUILDER = /\.highlight(?:Element|All|AllUnder)?\s*\(|\.stringify\s*\(/;
+const withoutComments = (code: string) => code.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');
+const codeOffenders = (re: RegExp, files = all) => files.filter((f) => re.test(withoutComments(readFileSync(f, 'utf8')))).map((f) => path.relative(frontend, f));
 test('prismjs is imported only by lib/highlight/prism.ts, and Prism\'s markup builders are never referenced', () => {
-  expect(offenders(/from 'prismjs|import\s*\(?\s*'prismjs/)).toEqual([path.join('src', 'lib', 'highlight', 'prism.ts')]);
-  expect(offenders(/\.highlight(Element|All|AllUnder)?\(|\.stringify\(/, all.filter((f) => f.includes(path.join('src', 'lib', 'highlight'))))).toEqual([]);
+  // The patterns catch every import form and quote style, and ignore commented-out code.
+  for (const form of ["import Prism from 'prismjs';", 'import Prism from "prismjs";', "import 'prismjs/components/prism-go';", 'import "prismjs";',
+    "await import('prismjs')", 'import("prismjs")', 'import(`prismjs`)', "require('prismjs')", 'require("prismjs/components/x")', "export { x } from 'prismjs';"]) {
+    expect(PRISM_IMPORT.test(withoutComments(form)), form).toBe(true);
+  }
+  for (const not of ["// import 'prismjs';", "/* require('prismjs') */", "import x from 'prismjs-extra';", "const url = 'https://x/'; // import 'prismjs'"]) {
+    expect(PRISM_IMPORT.test(withoutComments(not)), not).toBe(false);
+  }
+  expect(['Prism.highlight(a)', 'Prism.highlightAll()', 'el.highlightElement (x)', 'Token.stringify(t)'].every((c) => MARKUP_BUILDER.test(c))).toBe(true);
+  expect(codeOffenders(PRISM_IMPORT)).toEqual([path.join('src', 'lib', 'highlight', 'prism.ts')]);
+  expect(codeOffenders(MARKUP_BUILDER, all.filter((f) => f.includes(path.join('src', 'lib', 'highlight'))))).toEqual([]);
 });
 
 test('UI source never assigns location.hash', () => {

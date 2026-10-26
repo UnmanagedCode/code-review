@@ -21,12 +21,16 @@ test('real Prism: a keyword gets the keyword class; a multi-line comment splits 
   expect(lines.map((l) => l.map((s) => s.text).join(''))).toEqual(['const a = 1; /* one', 'two */ let b;']);
 });
 
-test('an unknown token type gets no class, and no language or tokenizer means plain text', () => {
+test('an unknown token type, including an Object.prototype key, gets no class; no language or tokenizer means plain text', () => {
   // Invariant: a token type outside TOKEN_CLASS never becomes a class; no language or tokenizer means plain text.
   const spy = vi.fn(() => ['a', { type: 'nonsense-type', content: 'b', alias: undefined, length: 1 } as never]);
   expect(highlightLines('ab', 'x', spy)).toEqual([[{ text: 'a', cls: null }, { text: 'b', cls: null }]]);
   expect(highlightLines('a\nb', null, spy)).toEqual([[{ text: 'a', cls: null }], [{ text: 'b', cls: null }]]);
   expect(highlightLines('a', 'x', null)).toEqual([[{ text: 'a', cls: null }]]);
+  // A plain `in` or `TOKEN_CLASS[type]` lookup would hand these a function or an object as the class.
+  const proto = ['constructor', 'toString', '__proto__', 'hasOwnProperty'];
+  const tokens = vi.fn(() => proto.map((type) => ({ type, content: type, alias: undefined, length: type.length }) as never));
+  expect(highlightLines(proto.join(''), 'x', tokens)).toEqual([proto.map((text) => ({ text, cls: null }))]);
 });
 
 test('bounds: past the line length, line count or side size cap the side is plain and the tokenizer is never called', () => {

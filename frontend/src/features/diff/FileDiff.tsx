@@ -81,11 +81,13 @@ export function FileDiff({ onBack, extra }: { onBack?: () => void; extra?: React
 
   // Accepted hunks, whitespace-only hunks while Ignore whitespace is on, and resolved threads collapse; the hunks holding
   // the routed thread's range or the cited range never do. The routed thread is shown on arrival but collapses if it gets resolved while routed.
+  // A whitespace-only hunk holding an open thread stays expanded: that collapse is automatic, so it never hides a conversation.
   const textHunks = useMemo(() => (file?.hunks ?? []).filter((h): h is TextHunk => h.kind === 'text'), [file]);
   const settled = useMemo(() => {
-    const shownOnly = new Set(rows.flatMap((r) => (r.kind === 'hunk' && isWhitespaceOnly(r.hunk) ? [r.hunk.id] : [])));
+    const open = (file?.threads ?? []).filter((t) => t.status === 'open').map((t) => ({ side: t.anchor.side, start: t.anchor.startLine, end: t.anchor.endLine }));
+    const wsOnly = new Set(rows.flatMap((r) => (r.kind === 'hunk' && isWhitespaceOnly(r.hunk) && !open.some((s) => selectionTouches(s, r.hunk.lines)) ? [r.hunk.id] : [])));
     return [
-      ...textHunks.filter((h) => h.verdict === 'accepted' || shownOnly.has(h.id)).map((h) => `h:${h.id}`),
+      ...textHunks.filter((h) => h.verdict === 'accepted' || wsOnly.has(h.id)).map((h) => `h:${h.id}`),
       ...(file?.threads ?? []).filter((t) => t.status === 'resolved').map((t) => `t:${t.id}`),
     ];
   }, [file, textHunks, rows]);

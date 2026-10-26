@@ -88,7 +88,7 @@ Then Settings → Plugins → Rescan, and enable.
 - Uncommitted edits are not pushed: the UI re-fetches on focus or an interval.
 - A branch `base` follows its branch at each refresh; a sha base is fixed.
 - Renaming a file resets the verdicts of its hunks.
-- Highlighting sees only the lines shown, so a construct opened in collapsed context (a block comment, a template string) may be mis-coloured.
+- Highlighting sees only the lines shown, so a construct opened in collapsed context (a block comment, a template string) may be mis-coloured. In a very large rewrite, word emphasis stops partway down the file (a per-file work budget).
 - Ignore whitespace and Context lines are display-only over git's 3-line hunks: fewer context lines never split a hunk, more never merge two, and files whose only change is whitespace stay listed.
 - Split view needs a diff pane at least 36rem wide (phones always get the unified view).
 - One file renders at a time; there is no all-files scroll.

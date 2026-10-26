@@ -2,7 +2,7 @@ import type { Row } from './diffRows';
 import { highlightLines, type Seg, type Tokenize } from './highlight';
 import { mergeSegments, type MarkedSeg } from './segments';
 import type { DiffLine, Side } from './types';
-import { wordDiff, type Range } from './wordDiff';
+import { WORD_DIFF_MAX_TOTAL_CELLS, wordDiff, wordDiffCells, type Range } from './wordDiff';
 
 /** A line's text as highlighted and shown: a trailing CR is dropped. */
 export const displayText = (line: DiffLine) => line.text.replace(/\r$/, '');
@@ -11,7 +11,8 @@ export const displayText = (line: DiffLine) => line.text.replace(/\r$/, '');
  * Each line's display segments: syntax from highlighting each file side once (the rows' lines that carry an old,
  * resp. new, number, in row order), merged with word emphasis. Deleted lines take old-side segments, added lines
  * new-side ones and context lines `side`'s (the side the file exists on). Within a run of deletions and additions
- * (between context, hunk and gap rows) the n-th deletion is paired with the n-th addition, as `splitRows` pairs them.
+ * (between context, hunk and gap rows) the n-th deletion is paired with the n-th addition, as `splitRows` pairs them;
+ * pairs are diffed in row order until WORD_DIFF_MAX_TOTAL_CELLS is spent, and the rest get no emphasis.
  * Keyed by line object: `collapseRows` and `splitRows` reuse the rows' lines.
  */
 export function decorateRows(rows: Row[], lang: string | null, tokenize: Tokenize | null, opts: { side: Side; ignoreWhitespace: boolean }): Map<DiffLine, MarkedSeg[]> {
@@ -28,11 +29,16 @@ export function decorateRows(rows: Row[], lang: string | null, tokenize: Tokeniz
   };
 
   const emphasis = new Map<DiffLine, Range[]>();
+  let budget = WORD_DIFF_MAX_TOTAL_CELLS;
   let dels: DiffLine[] = [];
   let adds: DiffLine[] = [];
   const flush = () => {
-    for (let i = 0; i < Math.min(dels.length, adds.length); i++) {
-      const w = wordDiff(displayText(dels[i]), displayText(adds[i]), { ignoreWhitespace: opts.ignoreWhitespace });
+    for (let i = 0; i < Math.min(dels.length, adds.length) && budget > 0; i++) {
+      const [a, b] = [displayText(dels[i]), displayText(adds[i])];
+      const cost = wordDiffCells(a, b);
+      if (cost > budget) { budget = 0; break; }
+      budget -= cost;
+      const w = wordDiff(a, b, { ignoreWhitespace: opts.ignoreWhitespace });
       if (w) { emphasis.set(dels[i], w.a); emphasis.set(adds[i], w.b); }
     }
     dels = [];

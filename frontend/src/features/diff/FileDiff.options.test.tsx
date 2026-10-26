@@ -128,6 +128,15 @@ test('a whitespace-only hunk holding the routed thread stays expanded', async ()
   expect(cell('new', 5)).not.toBeNull();
 });
 
+// Invariant: the automatic whitespace collapse never hides an open conversation; a resolved one does not hold it open.
+test.each([['open', false], ['resolved', true]] as const)('a whitespace-only hunk holding an %s thread collapses=%s', async (status, collapses) => {
+  const t = thread({ id: 't-5', status, anchor: { ...thread().anchor, side: 'new', startLine: 5, endLine: 5, hunkId: 'hw' } });
+  await show(diffFile({ hunks: [hw, hm], threads: [t] }));
+  await pick('Ignore whitespace');
+  expect(!!summary()).toBe(collapses);
+  expect(!!cell('new', 5)).toBe(!collapses);
+});
+
 // Invariant: fewer context lines move hunk-edge context into gaps, but a thread's lines are reopened.
 test('context 0 puts edge context in gaps, and a thread on a trimmed line re-opens its gap', async () => {
   const t = thread({ anchor: { ...thread().anchor, side: 'new', startLine: 21, endLine: 21, hunkId: 'hm' } });

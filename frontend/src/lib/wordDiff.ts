@@ -4,9 +4,26 @@ export interface Range { start: number; end: number }
 /** Lines longer than this, or with more tokens per side than WORD_DIFF_MAX_TOKENS, get no word-level emphasis. */
 export const WORD_DIFF_MAX_CHARS = 1000;
 export const WORD_DIFF_MAX_TOKENS = 300;
+/**
+ * The word-diff work one decoration (`decorateRows`, the whole file's rows) may spend, in `wordDiffCells`. Past it the
+ * remaining lines get no emphasis, as past the per-line caps. About 20 ms of main thread, at the ~9 ns per cell
+ * measured for 40-token code lines (Node 24 under vitest).
+ */
+export const WORD_DIFF_MAX_TOTAL_CELLS = 2_000_000;
+// A pair's fixed setup, in cell-equivalents, so many tiny pairs also count.
+const PAIR_SETUP_CELLS = 64;
 
 const TOKEN_RE = /\w+|\s+|[^\w\s]/g;
 const SPACE_RE = /^\s+$/;
+
+/** What `wordDiff(a, b)` costs: its LCS table's cells plus a fixed setup; 0 past the caps, where it returns at once. */
+export function wordDiffCells(a: string, b: string): number {
+  if (a.length > WORD_DIFF_MAX_CHARS || b.length > WORD_DIFF_MAX_CHARS) return 0;
+  const n = a.match(TOKEN_RE)?.length ?? 0;
+  const m = b.match(TOKEN_RE)?.length ?? 0;
+  if (n > WORD_DIFF_MAX_TOKENS || m > WORD_DIFF_MAX_TOKENS) return 0;
+  return (n + 1) * (m + 1) + PAIR_SETUP_CELLS;
+}
 
 /**
  * The changed characters of a deleted line `a` and its paired added line `b`: the tokens outside their longest

@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { render, screen } from '@testing-library/react';
 import { expect, test } from 'vitest';
 import { App } from './App';
+import { TOKEN_CLASS } from './lib/highlight';
 import { stubFetch } from './test/stubFetch';
 
 const src = path.dirname(fileURLToPath(import.meta.url));
@@ -38,8 +39,29 @@ test('the source-text guards actually see the sources it is meant to cover', () 
   const seen = all.map((f) => path.relative(frontend, f));
   expect(seen.length).toBeGreaterThan(30);
   for (const must of ['src/App.tsx', 'index.html', 'public/theme-init.js', 'src/features/diff/FileDiff.tsx', 'src/state/submit.ts', 'src/lib/route.ts', 'src/components/ui/button.tsx',
-    'src/lib/splitRows.ts', 'src/features/diff/SplitRow.tsx', 'src/features/diff/SettledThread.tsx', 'src/features/diff/HunkHeader.tsx', 'src/features/layout/ResizeHandle.tsx']) expect(seen).toContain(must);
+    'src/lib/splitRows.ts', 'src/features/diff/SplitRow.tsx', 'src/features/diff/SettledThread.tsx', 'src/features/diff/HunkHeader.tsx', 'src/features/layout/ResizeHandle.tsx',
+    'src/lib/highlight/prism.ts', 'src/features/diff/CodeLine.tsx']) expect(seen).toContain(must);
   expect(seen.some((f) => f.startsWith('dist') || f.includes('node_modules'))).toBe(false);
+});
+
+// Prism's token tree is data; its markup builders (and auto-highlighting, off via prismManual.ts) write HTML. The only
+// sanitisation boundary is highlightLines → CodeLine's React text, so prismjs stays behind lib/highlight/prism.ts.
+const PRISM_IMPORT = /(?:\bfrom|\bimport\s*\(?|\brequire\s*\()\s*(['"`])prismjs(?:\/[^'"`]*)?\1/;
+const MARKUP_BUILDER = /\.highlight(?:Element|All|AllUnder)?\s*\(|\.stringify\s*\(/;
+const withoutComments = (code: string) => code.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');
+const codeOffenders = (re: RegExp, files = all) => files.filter((f) => re.test(withoutComments(readFileSync(f, 'utf8')))).map((f) => path.relative(frontend, f));
+test('prismjs is imported only by lib/highlight/prism.ts, and Prism\'s markup builders are never referenced', () => {
+  // The patterns catch every import form and quote style, and ignore commented-out code.
+  for (const form of ["import Prism from 'prismjs';", 'import Prism from "prismjs";', "import 'prismjs/components/prism-go';", 'import "prismjs";',
+    "await import('prismjs')", 'import("prismjs")', 'import(`prismjs`)', "require('prismjs')", 'require("prismjs/components/x")', "export { x } from 'prismjs';"]) {
+    expect(PRISM_IMPORT.test(withoutComments(form)), form).toBe(true);
+  }
+  for (const not of ["// import 'prismjs';", "/* require('prismjs') */", "import x from 'prismjs-extra';", "const url = 'https://x/'; // import 'prismjs'"]) {
+    expect(PRISM_IMPORT.test(withoutComments(not)), not).toBe(false);
+  }
+  expect(['Prism.highlight(a)', 'Prism.highlightAll()', 'el.highlightElement (x)', 'Token.stringify(t)'].every((c) => MARKUP_BUILDER.test(c))).toBe(true);
+  expect(codeOffenders(PRISM_IMPORT)).toEqual([path.join('src', 'lib', 'highlight', 'prism.ts')]);
+  expect(codeOffenders(MARKUP_BUILDER, all.filter((f) => f.includes(path.join('src', 'lib', 'highlight'))))).toEqual([]);
 });
 
 test('UI source never assigns location.hash', () => {
@@ -59,6 +81,27 @@ test('colours come from tokens: no literal colours and no Tailwind palette colou
   expect(offenders(/#[0-9a-fA-F]{3,8}\b|\brgba?\(|\bhsla?\(|\boklch\(/, tsx)).toEqual([]);
   const palette = '(?:slate|gray|zinc|neutral|stone|red|orange|amber|yellow|lime|green|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose)';
   expect(offenders(new RegExp(`\\b(?:bg|text|border|ring|fill|stroke|from|to|via|outline|divide)-${palette}-\\d`), tsx)).toEqual([]);
+});
+
+// Syntax token colours are plugin-specific: defined in index.css's own :root and .dark, never in the copied host palette,
+// and derived only from palette tokens (mixed toward --foreground), so they follow the host's theme. Their contrast on
+// the diff tints is measured in harness/playwright/golden.mjs step 16.
+test('syntax token colours are index.css properties derived from the palette, in both themes, and back every token class', () => {
+  const css = readFileSync(path.join(src, 'index.css'), 'utf8');
+  const block = (sel: string) => css.match(new RegExp(`^${sel.replace('.', '\\.')} \\{([^}]*)\\}`, 'm'))?.[1] ?? '';
+  const props = (body: string) => Object.fromEntries([...body.matchAll(/(--[\w-]+):\s*([^;]+);/g)].map((m) => [m[1], m[2]]));
+  const light = props(block(':root'));
+  const dark = props(block('.dark'));
+  const used = [...new Set(Object.values(TOKEN_CLASS).flatMap((c) => c.split(' ')).filter((c) => c.startsWith('text-')))].map((c) => c.slice('text-'.length));
+  expect(used.every((u) => u.startsWith('token-'))).toBe(true);
+  const names = used.map((u) => `--cr-${u}`).sort();
+  // Exactly the token properties, in both themes: index.css's own blocks add no palette token.
+  expect(Object.keys(light).sort()).toEqual(names);
+  expect(Object.keys(dark).sort()).toEqual(names);
+  const derived = /^color-mix\(in oklab, var\(--(plan|success|warning|info|primary|muted-foreground)\) \d{1,2}%, var\(--foreground\)\)$/;
+  for (const v of [...Object.values(light), ...Object.values(dark)]) expect(v).toMatch(derived);
+  for (const u of used) expect(css).toContain(`--color-${u}: var(--cr-${u});`);
+  expect(readFileSync(path.join(src, 'cc-theme-fallback.css'), 'utf8')).not.toMatch(/--cr-|token-/);
 });
 
 test('the UI has no theme toggle of its own', () => {

@@ -1,0 +1,71 @@
+import type { Row } from './diffRows';
+import { highlightLines, type Seg, type Tokenize } from './highlight';
+import { mergeSegments, type MarkedSeg } from './segments';
+import type { DiffLine, Side } from './types';
+import { WORD_DIFF_MAX_TOTAL_CELLS, wordDiff, wordDiffCells, type Range } from './wordDiff';
+
+// The last sides tokenized: a refetch (uncommitted polling) or a toggle that leaves a side's text as it was reuses its
+// segments instead of tokenizing it again (highlightLines depends on nothing else). A side left plain is never kept:
+// rebuilding it is cheap, and past the caps it can be megabytes.
+const SIDE_CACHE_SIZE = 4;
+const sideCache: { text: string; lang: string | null; tokenize: Tokenize | null; segs: Seg[][] }[] = [];
+function highlightSide(text: string, lang: string | null, tokenize: Tokenize | null): Seg[][] {
+  const hit = sideCache.find((e) => e.lang === lang && e.tokenize === tokenize && e.text === text);
+  if (hit) return hit.segs;
+  const { lines: segs, tokenized } = highlightLines(text, lang, tokenize);
+  if (tokenized) {
+    sideCache.unshift({ text, lang, tokenize, segs });
+    sideCache.length = Math.min(sideCache.length, SIDE_CACHE_SIZE);
+  }
+  return segs;
+}
+
+/** A line's text as highlighted and shown: a trailing CR is dropped. */
+export const displayText = (line: DiffLine) => line.text.replace(/\r$/, '');
+
+/**
+ * Each line's display segments: syntax from highlighting each file side once (the rows' lines that carry an old,
+ * resp. new, number, in row order), merged with word emphasis. Deleted lines take old-side segments, added lines
+ * new-side ones and context lines `side`'s (the side the file exists on). Within a run of deletions and additions
+ * (between context, hunk and gap rows) the n-th deletion is paired with the n-th addition, as `splitRows` pairs them;
+ * pairs are diffed in row order until WORD_DIFF_MAX_TOTAL_CELLS is spent, and the rest get no emphasis.
+ * Keyed by line object: `collapseRows` and `splitRows` reuse the rows' lines.
+ */
+export function decorateRows(rows: Row[], lang: string | null, tokenize: Tokenize | null, opts: { side: Side; ignoreWhitespace: boolean }): Map<DiffLine, MarkedSeg[]> {
+  const lines = rows.flatMap((r) => (r.kind === 'line' ? [r.line] : []));
+  const highlight = (s: Side) => {
+    const own = lines.filter((l) => l[s] != null);
+    const segs = highlightSide(own.map(displayText).join('\n'), lang, tokenize);
+    return new Map(own.map((l, i) => [l, segs[i]]));
+  };
+  const sides = { old: highlight('old'), new: highlight('new') };
+  const syntax = (l: DiffLine): Seg[] => {
+    const s: Side = l.t === 'del' ? 'old' : l.t === 'add' ? 'new' : l[opts.side] != null ? opts.side : opts.side === 'new' ? 'old' : 'new';
+    return sides[s].get(l) ?? [{ text: displayText(l), cls: null }];
+  };
+
+  const emphasis = new Map<DiffLine, Range[]>();
+  let budget = WORD_DIFF_MAX_TOTAL_CELLS;
+  let dels: DiffLine[] = [];
+  let adds: DiffLine[] = [];
+  const flush = () => {
+    for (let i = 0; i < Math.min(dels.length, adds.length) && budget > 0; i++) {
+      const [a, b] = [displayText(dels[i]), displayText(adds[i])];
+      const cost = wordDiffCells(a, b);
+      if (cost > budget) { budget = 0; break; }
+      budget -= cost;
+      const w = wordDiff(a, b, { ignoreWhitespace: opts.ignoreWhitespace });
+      if (w) { emphasis.set(dels[i], w.a); emphasis.set(adds[i], w.b); }
+    }
+    dels = [];
+    adds = [];
+  };
+  for (const r of rows) {
+    if (r.kind === 'line' && r.line.t === 'del') dels.push(r.line);
+    else if (r.kind === 'line' && r.line.t === 'add') adds.push(r.line);
+    else flush();
+  }
+  flush();
+
+  return new Map(lines.map((l) => [l, mergeSegments(syntax(l), emphasis.get(l) ?? [])]));
+}

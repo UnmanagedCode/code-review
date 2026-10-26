@@ -19,7 +19,7 @@ Docs: [features](docs/features.md) · [protocol](docs/protocol.md) · [architect
 
 ## Technical overview
 
-- **Stack:** Node ≥ 24, Express 4 backend; React 19 + Vite + Tailwind v4 UI; shadcn/Radix components copied from cc on first use; lucide + sonner. Follows cc's `docs/plugin-ui.md` (host contract, security, reference setup).
+- **Stack:** Node ≥ 24, Express 4 backend; React 19 + Vite + Tailwind v4 UI; shadcn/Radix components copied from cc on first use; lucide + sonner; prismjs (syntax highlighting, a lazily loaded chunk). Follows cc's `docs/plugin-ui.md` (host contract, security, reference setup).
 - **Backend:** `server.js` binds `127.0.0.1` only, honours `$PORT` (default `7400`). Order: `/health`, `/api` (reserved), CSP header, static `frontend/dist`. No SPA fallback, so `/pluginBridge.js` and `/pluginTheme.css` 404 standalone.
 - **Manifest:** `conductor.plugin.json` (id `code-review`, `pluginApi: 1`); `claudePlugin: "."` with `.claude-plugin/plugin.json` and `skills/`; an `mcp` block and one conductor-scope convention.
 
@@ -34,7 +34,7 @@ frontend/              index.html, vite.config.ts, public/theme-init.js, src/{li
 tests/                 node --test backend tests
 harness/mutation/      code-mutant config (see its README)
 harness/playwright/    seed.mjs, snap.mjs (screenshots), golden.mjs (interaction)
-harness/bench/         open-review.mjs (openReview timing, see its README)
+harness/bench/         open-review.mjs (openReview timing), highlight.mjs (worst-case highlighting per language); see its README
 .wiki/                 durable project knowledge
 ```
 
@@ -88,7 +88,10 @@ Then Settings → Plugins → Rescan, and enable.
 - Uncommitted edits are not pushed: the UI re-fetches on focus or an interval.
 - A branch `base` follows its branch at each refresh; a sha base is fixed.
 - Renaming a file resets the verdicts of its hunks.
-- No syntax highlighting; split view needs a diff pane at least 36rem wide (phones always get the unified view).
+- Highlighting sees only the lines shown, so a construct opened in collapsed context (a block comment, a template string) may be mis-coloured.
+- A diff side larger than its language's cap (`HIGHLIGHT_MAX_SIDE_CHARS_BY_LANG` in `frontend/src/lib/highlight/index.ts`) renders without syntax colours, so a large new or rewritten file can show plain; word emphasis still applies. The caps bound Prism's worst case (quadratic on some inputs); `harness/bench/highlight.mjs` re-measures them. In a very large rewrite, word emphasis stops partway down the file (a per-file work budget).
+- Ignore whitespace and Context lines are display-only over git's 3-line hunks: fewer context lines never split a hunk, more never merge two, and files whose only change is whitespace stay listed.
+- Split view needs a diff pane at least 36rem wide (phones always get the unified view).
 - One file renders at a time; there is no all-files scroll.
 - Dropped uncommitted threads are shown only for the current page session (the backend keeps their ids, not their text).
 - The inbox marks a checkout gone only when cc no longer lists its project or worktree, and never marks a down System (it runs no git); opening the review shows both.

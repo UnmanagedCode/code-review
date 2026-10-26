@@ -3,19 +3,24 @@ import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from '
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { dedupeCopies } from '@/lib/compare';
+import { decorateRows } from '@/lib/decorate';
 import { collapseRows, type Row } from '@/lib/diffRows';
+import { languageFor } from '@/lib/highlight';
 import { rangeLabel, rangeMarks } from '@/lib/ranges';
 import { navigate, parseLines, useRoute } from '@/lib/route';
 import { lineOn, selectionTouches, type Selection } from '@/lib/selection';
 import { pairLine, splitRows, type SplitRow as SplitRowT } from '@/lib/splitRows';
 import type { DiffFile, DiffLine, Side, TextHunk, Thread } from '@/lib/types';
 import { cn } from '@/lib/utils';
+import { isWhitespaceOnly } from '@/lib/whitespace';
+import { useDiffPrefs } from '@/state/diffPrefs';
 import { useDropped } from '@/state/dropped';
 import { useReviewCtx } from '@/state/reviewContext';
 import { Empty, ErrorState, Loading } from '@/features/common/States';
 import { Composer } from '@/features/threads/Composer';
 import { CitedExcerpt } from './CitedExcerpt';
 import { CompareNote } from './CompareNote';
+import { DiffOptions } from './DiffOptions';
 import { FileVerdict } from './FileVerdict';
 import { GapRow } from './GapRow';
 import { HunkBar } from './HunkBar';
@@ -26,12 +31,13 @@ import { SplitRow } from './SplitRow';
 import { useCollapse } from './useCollapse';
 import { useDiffView, type DiffView } from './useDiffView';
 import { useLineSelection } from './useLineSelection';
+import { useTokenizer } from './useTokenizer';
 import { ViewToggle } from './ViewToggle';
 
 export const CHUNK_ROWS = 1500;
 const byId = (a: Thread, b: Thread) => a.id.localeCompare(b.id, undefined, { numeric: true });
 
-function FileHeader({ file, files, onBack, extra, view }: { file: DiffFile; files: { path: string }[]; onBack?: () => void; extra?: ReactNode; view?: { chosen: DiffView; choose: (v: DiffView) => void } }) {
+function FileHeader({ file, files, onBack, extra, view, options }: { file: DiffFile; files: { path: string }[]; onBack?: () => void; extra?: ReactNode; view?: { chosen: DiffView; choose: (v: DiffView) => void }; options: boolean }) {
   const { round, compare } = useReviewCtx();
   const i = files.findIndex((f) => f.path === file.path);
   const go = (path: string) => navigate({ file: path, lines: undefined, side: undefined, thread: undefined });
@@ -48,6 +54,7 @@ function FileHeader({ file, files, onBack, extra, view }: { file: DiffFile; file
       <span className="text-xs"><span className="text-success">+{file.additions}</span> <span className="text-destructive">−{file.deletions}</span></span>
       <FileVerdict file={file} />
       {view && <ViewToggle view={view.chosen} onChange={view.choose} />}
+      {options && <DiffOptions />}
       <Button variant="ghost" size="icon-sm" aria-label="Previous file" disabled={i <= 0} onClick={() => go(files[i - 1].path)}><ChevronLeftIcon /></Button>
       <Button variant="ghost" size="icon-sm" aria-label="Next file" disabled={i < 0 || i >= files.length - 1} onClick={() => go(files[i + 1].path)}><ChevronRightIcon /></Button>
       {extra}
@@ -57,7 +64,8 @@ function FileHeader({ file, files, onBack, extra, view }: { file: DiffFile; file
 
 export function FileDiff({ onBack, extra }: { onBack?: () => void; extra?: ReactNode } = {}) {
   const ctx = useReviewCtx();
-  const { file, rows, loading, error, expand, reveal, reload } = ctx.fileDiff;
+  const { file, rows, side, loading, error, expand, reveal, reload } = ctx.fileDiff;
+  const prefs = useDiffPrefs();
   const route = useRoute();
   const dropped = useDropped(ctx.id);
   const textFile = !!file && !file.binary && !file.tooLarge;
@@ -71,12 +79,18 @@ export function FileDiff({ onBack, extra }: { onBack?: () => void; extra?: React
   }, [route.lines, targetSide]);
   const diffView = useDiffView();
 
-  // Accepted hunks and resolved threads collapse; the hunks holding the routed thread's range or the cited range never do. The routed thread is shown on arrival but collapses if it gets resolved while routed.
+  // Accepted hunks, whitespace-only hunks while Ignore whitespace is on, and resolved threads collapse; the hunks holding
+  // the routed thread's range or the cited range never do. The routed thread is shown on arrival but collapses if it gets resolved while routed.
+  // A whitespace-only hunk holding an open thread stays expanded: that collapse is automatic, so it never hides a conversation.
   const textHunks = useMemo(() => (file?.hunks ?? []).filter((h): h is TextHunk => h.kind === 'text'), [file]);
-  const settled = useMemo(() => [
-    ...textHunks.filter((h) => h.verdict === 'accepted').map((h) => `h:${h.id}`),
-    ...(file?.threads ?? []).filter((t) => t.status === 'resolved').map((t) => `t:${t.id}`),
-  ], [file, textHunks]);
+  const settled = useMemo(() => {
+    const open = (file?.threads ?? []).filter((t) => t.status === 'open').map((t) => ({ side: t.anchor.side, start: t.anchor.startLine, end: t.anchor.endLine }));
+    const wsOnly = new Set(rows.flatMap((r) => (r.kind === 'hunk' && isWhitespaceOnly(r.hunk) && !open.some((s) => selectionTouches(s, r.hunk.lines)) ? [r.hunk.id] : [])));
+    return [
+      ...textHunks.filter((h) => h.verdict === 'accepted' || wsOnly.has(h.id)).map((h) => `h:${h.id}`),
+      ...(file?.threads ?? []).filter((t) => t.status === 'resolved').map((t) => `t:${t.id}`),
+    ];
+  }, [file, textHunks, rows]);
   const routed = useMemo(() => {
     const a = route.thread ? file?.threads.find((t) => t.id === route.thread)?.anchor : undefined;
     return a ? { side: a.side, start: a.startLine, end: a.endLine } : null;
@@ -94,6 +108,9 @@ export function FileDiff({ onBack, extra }: { onBack?: () => void; extra?: React
   const sel = useLineSelection(visible, textFile && !ctx.readOnly, resetKey);
   selRef.current = sel.selection;
   const marks = useMemo(() => rangeMarks(file?.threads ?? [], route.thread), [file, route.thread]);
+  const tokenize = useTokenizer(true);
+  const lang = file ? languageFor(file.path) : null;
+  const decos = useMemo(() => decorateRows(rows, lang, tokenize, { side, ignoreWhitespace: prefs.ignoreWhitespace }), [rows, lang, tokenize, side, prefs.ignoreWhitespace]);
 
   const threadsByRow = useMemo(() => {
     const m = new Map<string, Thread[]>();
@@ -112,12 +129,13 @@ export function FileDiff({ onBack, extra }: { onBack?: () => void; extra?: React
     return m;
   }, [dropped, file?.path]);
 
-  // Open context that hides any line of a thread's range, or of the cited lines.
-  const revealKey = `${file?.path}|${file?.threads.map((t) => t.id).join()}|${route.lines}|${targetSide}|${ctx.fileDiff.total}`;
+  // Open context that hides any line of a thread's range, of the cited lines, or (after a Diff options change) of the selection.
+  const revealKey = `${file?.path}|${file?.threads.map((t) => t.id).join()}|${route.lines}|${targetSide}|${ctx.fileDiff.total}|${prefs.context}|${prefs.ignoreWhitespace}`;
   useEffect(() => {
     if (!file) return;
     const wanted = file.threads.map((t) => ({ side: t.anchor.side, start: t.anchor.startLine, end: t.anchor.endLine }));
     if (target) wanted.push({ side: targetSide, start: target.start, end: target.end });
+    if (sel.selection) wanted.push(sel.selection);
     reveal(wanted);
   }, [revealKey]);
 
@@ -211,14 +229,14 @@ export function FileDiff({ onBack, extra }: { onBack?: () => void; extra?: React
     if (r.kind === 'pair') {
       return (
         <Fragment key={r.key}>
-          <SplitRow pair={r} sel={sel} enabled={enabled} target={targetSel} marks={marks} />
+          <SplitRow pair={r} sel={sel} enabled={enabled} target={targetSel} marks={marks} decos={decos} />
           {belowRow([`old:${r.left?.old}`, `new:${r.right?.new}`], !!s && pairLine(r, s.side) === s.end)}
         </Fragment>
       );
     }
     return (
       <Fragment key={r.key}>
-        <InlineRow line={r.line} sel={sel} enabled={enabled} target={targetSel} marks={marks} />
+        <InlineRow line={r.line} sel={sel} enabled={enabled} target={targetSel} marks={marks} segs={decos.get(r.line)} />
         {belowRow(keysOf([r.line]), !!s && lineOn(r, s.side) === s.end)}
       </Fragment>
     );
@@ -226,7 +244,7 @@ export function FileDiff({ onBack, extra }: { onBack?: () => void; extra?: React
 
   return (
     <div ref={diffView.paneRef} className="flex min-w-0 flex-col">
-      <FileHeader file={file} files={ctx.files} onBack={onBack} extra={extra} view={textFile && diffView.available ? diffView : undefined} />
+      <FileHeader file={file} files={ctx.files} onBack={onBack} extra={extra} view={textFile && diffView.available ? diffView : undefined} options={textFile} />
       {!textFile && (
         <div className="flex flex-col gap-2 p-3">
           <p className="text-sm text-muted-foreground">{file.binary ? 'Binary file changed' : 'Too large to diff'}</p>

@@ -3,6 +3,7 @@ import { beforeEach, expect, test, vi } from 'vitest';
 import { installFakeEventSource } from '@/test/fakeEventSource';
 import { diffFile, fileState, hunk, lines, review, thread } from '@/test/fixtures';
 import { stubFetch } from '@/test/stubFetch';
+import { setDiffPrefs } from './diffPrefs';
 import { useDropped } from './dropped';
 import { useFileDiff } from './fileDiff';
 import { useReview } from './review';
@@ -176,4 +177,61 @@ test('reveal opens enough context to show a whole range', async () => {
   act(() => result.current.reveal([{ side: 'new', start: 8, end: 12 }, { side: 'new', start: 33, end: 37 }]));
   const shown = () => new Set(result.current.rows.flatMap((r) => (r.kind === 'line' && r.line.new != null ? [r.line.new] : [])));
   await vi.waitFor(() => expect([8, 9, 10, 11, 12, 33, 34, 35, 36, 37].filter((n) => !shown().has(n))).toEqual([]));
+});
+
+// Diff options. Hunk new 11–14 of a 40-line file: pre 1–10, after:h1 15–40.
+const mid = () => diffFile({ hunks: [hunk({ oldStart: 11, oldLines: 4, newStart: 11, newLines: 4, lines: lines('c1 c2 d3 a3 c4').map((l) => ({ ...l, old: l.old && l.old + 10, new: l.new && l.new + 10 })) })] });
+const windows = (net: ReturnType<typeof stubFetch>) => net.calls.filter((c) => c.url.pathname.endsWith('/file') && c.url.searchParams.get('end') !== '1')
+  .map((c) => [Number(c.url.searchParams.get('start')), Number(c.url.searchParams.get('end'))]);
+const shownNew = (rows: ReturnType<typeof useFileDiff>['rows']) => rows.flatMap((r) => (r.kind === 'line' && r.line.new != null ? [r.line.new] : []));
+
+// Invariant: more context than git's reads only the baseline windows beside the hunk, and shows them with their text.
+test('context 10 fetches only the baseline windows and renders them; back to 3 hides them with no fetch', async () => {
+  const net = stubFetch({ 'GET api/reviews/r-1/diff': { review: review(), files: [mid()] }, 'GET api/reviews/r-1/file': fileLines });
+  const { result } = renderHook(() => useFileDiff({ reviewId: 'r-1', path: 'src/a.ts', version: 1, uncommitted: false }));
+  await vi.waitFor(() => expect(result.current.total).toBe(40));
+  act(() => setDiffPrefs({ context: 10 }));
+  await vi.waitFor(() => expect(shownNew(result.current.rows)).toEqual(Array.from({ length: 18 }, (_, i) => 4 + i)));
+  expect(windows(net).sort((a, b) => a[0] - b[0])).toEqual([[4, 10], [15, 21]]);
+  expect(result.current.rows.find((r) => r.kind === 'line' && r.line.new === 4)).toMatchObject({ line: { text: 'L4' } });
+  const before = net.calls.length;
+  act(() => setDiffPrefs({ context: 3 }));
+  expect(shownNew(result.current.rows)).toEqual([11, 12, 13, 14]);
+  expect(net.calls.length).toBe(before);
+});
+
+// Invariant: "Show 20 above" grows what is visible, counting the baseline lines already shown.
+test('expanding a gap grows from the effective expansion', async () => {
+  stubFetch({ 'GET api/reviews/r-1/diff': { review: review(), files: [mid()] }, 'GET api/reviews/r-1/file': fileLines });
+  const { result } = renderHook(() => useFileDiff({ reviewId: 'r-1', path: 'src/a.ts', version: 1, uncommitted: false }));
+  await vi.waitFor(() => expect(result.current.total).toBe(40));
+  act(() => setDiffPrefs({ context: 5 }));
+  await vi.waitFor(() => expect(shownNew(result.current.rows)).toContain(16));
+  await act(async () => { await result.current.expand('after:h1', 'top'); });
+  expect(shownNew(result.current.rows).filter((n) => n > 14)).toEqual(Array.from({ length: 22 }, (_, i) => 15 + i));
+});
+
+// Invariant: trimmed lines carry their text with them, so reopening one costs no fetch.
+test('context 0 moves edge context into the gaps, and re-expanding a trimmed line makes no fetch', async () => {
+  const net = stubFetch({ 'GET api/reviews/r-1/diff': { review: review(), files: [mid()] }, 'GET api/reviews/r-1/file': fileLines });
+  const { result } = renderHook(() => useFileDiff({ reviewId: 'r-1', path: 'src/a.ts', version: 1, uncommitted: false }));
+  await vi.waitFor(() => expect(result.current.total).toBe(40));
+  act(() => setDiffPrefs({ context: 0 }));
+  expect(shownNew(result.current.rows)).toEqual([13]);
+  expect(result.current.rows.find((r) => r.kind === 'gap' && r.gapKey === 'pre')).toMatchObject({ from: 1, to: 12 });
+  const before = net.calls.length;
+  act(() => result.current.reveal([{ side: 'new', start: 11, end: 12 }]));
+  await vi.waitFor(() => expect(shownNew(result.current.rows)).toEqual([11, 12, 13]));
+  expect(result.current.rows.find((r) => r.kind === 'line' && r.line.new === 11)).toMatchObject({ line: { text: 'c1' } });
+  expect(net.calls.length).toBe(before);
+});
+
+// Invariant: a comparison's baseline lines are read from round B's head, like any gap line there.
+test('in a comparison the context baseline reads round B\'s head', async () => {
+  const net = stubFetch({ 'GET api/reviews/r-1/file': fileLines });
+  const { result } = renderHook(() => useFileDiff({ reviewId: 'r-1', path: 'src/a.ts', version: 1, uncommitted: false, compare: { from: 1, to: 3, files: [mid()], reload: () => {} } }));
+  await vi.waitFor(() => expect(result.current.total).toBe(40));
+  act(() => setDiffPrefs({ context: 10 }));
+  await vi.waitFor(() => expect(shownNew(result.current.rows)).toContain(4));
+  expect(fileCalls(net).every(([side, round]) => side === 'new' && round === '3')).toBe(true);
 });

@@ -189,6 +189,16 @@ test('git.probe: where the checkout or its main one is, the first missing sha, a
   assert.deepEqual(await git.probe(at, { path: `${wt.dir}-gone`, mainPath: `${w.repo.dir}-gone` }), { where: null, missing: null, status: null });
 });
 
+test('a probe that fails with sh\'s own exit 2 is a loud error, never "checkout gone"', async () => {
+  // Invariant: only PROBE's own path-missing code means where:null; dash's exit 2 (syntax or arithmetic error, stderr written) is a plain Error, and a summary then fails rather than report checkoutGone.
+  const { range } = await reviewed();
+  const dash = { status: 200, body: { exitCode: 2, stdout: '', stderr: Buffer.from('sh: 1: arithmetic expression: expecting primary').toString('base64') } };
+  w.cc.state.execHook = (b) => (b.argv[0] === 'sh' && b.argv[2].includes('w=checkout') ? dash : null);
+  const at = { system: 'local', remoteId: null, path: w.repo.dir };
+  await assert.rejects(git.probe(at, { path: w.repo.dir }), (e) => !e.code && /arithmetic expression/.test(e.message));
+  await assert.rejects(reviews.getReview(range.id), /arithmetic expression/);
+});
+
 test('list rows run concurrently under ROW_CONCURRENCY, and the list keeps newest-first order', async () => {
   // Invariant: a list request never has more than ROW_CONCURRENCY rows (so execs) in flight, does run rows in parallel, and returns rows in store order.
   w = await world();

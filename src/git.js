@@ -203,12 +203,16 @@ function parseStatus(text) {
 /** {head, branch, dirty} from one `git status`. */
 export const statusOf = async (place) => parseStatus((await read(place, STATUS_ARGS)).stdout);
 
+// Exit code of a script that finds no checkout path: one sh never uses for its own errors (dash exits 2 on a syntax or
+// arithmetic error, 126/127 on a command it cannot run, 128+ on a signal), so such a failure is never read as "gone".
+const PATH_MISSING = 10;
+
 // Read-only. $1 the checkout, $2 the main checkout (either may be ''), $3 '1' for status, then shas. Enters the first
-// that exists (exit 2: neither), prints "<checkout|main>\0<first sha missing from the object store, or nothing>\0",
+// that exists (exit PATH_MISSING: neither), prints "<checkout|main>\0<first sha missing from the object store, or nothing>\0",
 // then, when asked and in the checkout, the status records.
 const PROBE = `if [ -n "$1" ] && [ -e "$1" ]; then w=checkout; cd -- "$1" || exit 3
 elif [ -n "$2" ] && [ -e "$2" ]; then w=main; cd -- "$2" || exit 3
-else exit 2; fi
+else exit ${PATH_MISSING}; fi
 st=$3; shift 3
 m=
 for s; do ${GIT} cat-file -e "$s^{tree}" 2>/dev/null || { m=$s; break; }; done
@@ -222,8 +226,8 @@ ${GIT} ${STATUS_ARGS.join(' ')} || exit 8`;
  * Resolves {where: 'checkout'|'main'|null, missing: sha|null, status: {head, branch, dirty}|null}.
  */
 export async function probe(place, { path, mainPath = '', status = false, shas = [] }) {
-  const r = await call(place, ['sh', '-c', PROBE, 'sh', path ?? '', mainPath ?? '', status ? '1' : '0', ...new Set(shas)], 'sh script', { ok: [0, 2], readOnly: true });
-  if (r.code === 2) return { where: null, missing: null, status: null };
+  const r = await call(place, ['sh', '-c', PROBE, 'sh', path ?? '', mainPath ?? '', status ? '1' : '0', ...new Set(shas)], 'sh script', { ok: [0, PATH_MISSING], readOnly: true });
+  if (r.code === PATH_MISSING) return { where: null, missing: null, status: null };
   const [where, missing] = r.stdout.split('\0', 2);
   const rest = r.stdout.slice(where.length + missing.length + 2);
   return { where, missing: missing || null, status: status && where === 'checkout' ? parseStatus(rest) : null };

@@ -727,3 +727,65 @@ test('the finishing call keeps the per-diff limit: a restaged re-diff or an untr
   assert.equal(cc.state.execCalls.filter(isFinish).length, 2, 'both were refused by the finishing call');
   assert.deepEqual(fs.readdirSync(tmp), []);
 });
+
+test('restaging records what git\'s own staging would: exec bit, symlink target, core.filemode=false, a clean filter; a safecrlf refusal is tooLarge', async () => {
+  // Invariant: FINISH's hash-object + --cacheinfo staging gives the same mode and blob as `update-index --add` (compared with `git add` on the real index after the snapshot), and refuses where git refuses.
+  for (const filemode of [true, false]) {
+    const r = repo();
+    r.git('config', 'core.filemode', String(filemode));
+    r.git('config', 'filter.up.clean', 'tr a-z A-Z');
+    r.commit({ '.gitattributes': 'filt.txt filter=up\n', 'exe.sh': 'echo hi\n', 'plain.txt': 'one\n', 'filt.txt': 'quiet\n', 'keep.txt': 'same\n' });
+    fs.symlinkSync('plain.txt', path.join(r.dir, 'lnk'));
+    fs.symlinkSync('exe.sh', path.join(r.dir, 'lnk2'));
+    r.commit({});
+    const restaged = ['exe.sh', 'plain.txt', 'filt.txt', 'keep.txt', 'lnk', 'lnk2'];
+    r.git('rm', '--cached', '-q', ...restaged);
+    fs.chmodSync(path.join(r.dir, 'exe.sh'), 0o755);
+    r.write('plain.txt', 'two\n');
+    r.write('filt.txt', 'louder\n');
+    fs.rmSync(path.join(r.dir, 'lnk2'));
+    fs.symlinkSync('filt.txt', path.join(r.dir, 'lnk2'));
+    const { snap } = await snapOf(r, 'uncommitted');
+    r.git('add', '--', ...restaged);
+    const own = parseDiff(execFileSync('git', ['-C', r.dir, ...DIFF_FLAGS, 'HEAD'], { encoding: 'utf8' }));
+    assert.deepEqual(snap.files, own, `core.filemode=${filemode}`);
+    assert.equal(snap.files.some((f) => f.path === 'exe.sh'), filemode, 'the exec bit is a change only when core.filemode holds');
+  }
+  const r = repo();
+  r.commit({ 'mixed.txt': 'a\nb\n' });
+  r.git('config', 'core.autocrlf', 'true');
+  r.git('config', 'core.safecrlf', 'true');
+  r.git('rm', '--cached', '-q', 'mixed.txt');
+  r.write('mixed.txt', 'a\r\nb\n');
+  const { snap } = await snapOf(r, 'uncommitted');
+  assert.deepEqual(snap.files.map((f) => [f.path, f.status, f.tooLarge]), [['mixed.txt', 'modified', true]]);
+  assert.throws(() => r.git('add', 'mixed.txt'), /CRLF/, 'git itself refuses to stage it');
+});
+
+test('a scan that succeeded but whose output cannot be read leaves no private dir behind', async () => {
+  // Invariant: once SCAN exits 0 its trap is disarmed and the dir is code-review's; a malformed header or a parts mismatch removes it (by id) before the error surfaces, and FINISH never runs.
+  const r = repo();
+  r.commit({ 'a.txt': 'a\n' });
+  const tmp = pinTmp();
+  const head = r.git('rev-parse', 'HEAD');
+  const objects = path.join(r.dir, '.git', 'objects');
+  let id = null;
+  for (const output of [
+    (dir) => `${dir}\0${objects}\0${head}\0${10}\0${0}\0`, // announces 10 tracked bytes, sends none
+    () => 'no header at all',
+  ]) {
+    cc.state.execCalls = [];
+    cc.state.execHook = (b) => {
+      if (!isScan(b)) return null;
+      id = b.argv[5];
+      const dir = path.join(tmp, `cr-index-${id}`); // what a successful SCAN leaves for FINISH
+      fs.mkdirSync(path.join(dir, 'objects', 'info'), { recursive: true });
+      return { status: 200, body: { exitCode: 0, stdout: Buffer.from(output(dir)).toString('base64'), stderr: '' } };
+    };
+    await assert.rejects(snapOf(r, 'uncommitted'), /announced|malformed header/);
+    assert.deepEqual(fs.readdirSync(tmp), [], 'the dir the scan made is gone');
+    const removal = cc.state.execCalls.filter((b) => b.argv[0] === 'sh' && b.argv[2].includes('rm -rf -- "$t/cr-index-$2"'));
+    assert.deepEqual(removal.map((b) => b.argv[5]), [id]);
+    assert.equal(cc.state.execCalls.filter(isFinish).length, 0);
+  }
+});

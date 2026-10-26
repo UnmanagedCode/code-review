@@ -135,3 +135,29 @@ for (const where of ['main', 'worktree']) {
     assert.deepEqual(fs.readdirSync(tmp), [], 'no private dir left in TMPDIR');
   });
 }
+
+for (const packed of [false, true]) {
+  test(`reading an uncommitted review with an unchanged restaged path (rm --cached, file byte-identical) leaves .git untouched, its blob ${packed ? 'packed' : 'loose'}`, async () => {
+    // Invariant: restaging a path whose blob is already in the real object store neither writes nor freshens it (no loose object or pack mtime moves): blobs are written only to the private dir.
+    w = await world();
+    w.repo.commit({ 'r.txt': 'unchanged\n', 's.txt': 's1\n' });
+    if (packed) w.repo.git('gc', '-q');
+    w.repo.git('rm', '--cached', '-q', 'r.txt', 's.txt');
+    w.repo.write('s.txt', 's2\n'); // a changed restage beside it
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'cr-ro-tmp-'));
+    cleanups.push(() => fs.rmSync(tmp, { recursive: true, force: true }));
+    w.cc.state.execEnv = { TMPDIR: tmp };
+    // Age everything in the object store, so a freshen (utime to now) cannot land on the same timestamp.
+    const old = new Date('2020-01-01T00:00:00Z');
+    const age = (p) => { for (const e of fs.readdirSync(p, { withFileTypes: true })) { const q = path.join(p, e.name); if (e.isDirectory()) age(q); else fs.utimesSync(q, old, old); } };
+    age(path.join(w.repo.dir, '.git', 'objects'));
+    const before = treeSig(w.repo.dir);
+    const { review } = await call('POST', '/reviews', { project: 'app', kind: 'uncommitted' });
+    const got = await call('GET', `/reviews/${review.id}`);
+    assert.deepEqual(got.files.map((f) => f.path), ['s.txt'], 'the unchanged path has no entry; the changed one is modified');
+    await call('GET', `/reviews/${review.id}/diff`);
+    await call('GET', '/reviews?project=app');
+    assert.deepEqual(treeSig(w.repo.dir), before);
+    assert.deepEqual(fs.readdirSync(tmp), []);
+  });
+}

@@ -52,14 +52,10 @@ const tooLargeFile = (rel, status = 'added') => {
   return f;
 };
 
-/**
- * The working tree against HEAD in two exec calls (scan, then finish), one entry per path: {files, head, prefetched}.
- * `prefetch` ([{side, file}], thread anchors) names lines read in the finishing call; `prefetched` maps
- * `${side}\0${read path}` to null (absent), 'lazy' or {content}.
- */
-async function uncommittedDiff(checkout, limits, prefetch) {
-  const scan = await git.scanWorktree(checkout, { maxDiffBytes: limits.maxDiffBytes });
-  let files = parseDiff(scan.tracked);
+// What the finishing call is given, from the scan: which paths to restage, which untracked ones to pass (up to the
+// count cap and ARGV_BUDGET), which lines to prefetch. Pure.
+function planFinish(scan, limits, prefetch) {
+  const files = parseDiff(scan.tracked);
   const others = new Set(scan.others);
   // A path HEAD has but the index lacks (`git rm --cached`) shows up deleted and untracked.
   // Staging it into the private index makes `diff HEAD` report the working tree against HEAD, once.
@@ -80,10 +76,31 @@ async function uncommittedDiff(checkout, limits, prefetch) {
     const at = side === 'old' ? (inDiff.get(file).oldPath ?? file) : file;
     reads.set(`${side}\0${at}`, { side, path: at });
   }
-  const done = await git.finishWorktree(checkout, {
-    dir: scan.dir, objects: scan.objects, head: scan.head, maxFileBytes: limits.maxFileBytes, maxDiffBytes: limits.maxDiffBytes,
-    restage, untracked: counted.slice(0, passed), prefetch: [...reads.values()],
-  });
+  return { files, restage, rels, counted, passed, reads };
+}
+
+/**
+ * The working tree against HEAD in two exec calls (scan, then finish), one entry per path: {files, head, prefetched}.
+ * `prefetch` ([{side, file}], thread anchors) names lines read in the finishing call; `prefetched` maps
+ * `${side}\0${read path}` to null (absent), 'lazy' or {content}.
+ */
+async function uncommittedDiff(checkout, limits, prefetch) {
+  const scan = await git.scanWorktree(checkout, { maxDiffBytes: limits.maxDiffBytes });
+  // The private dir is ours until FINISH's trap removes it: a failure on the way there (or of FINISH) removes it.
+  let plan;
+  let done;
+  try {
+    plan = planFinish(scan, limits, prefetch);
+    done = await git.finishWorktree(checkout, {
+      dir: scan.dir, objects: scan.objects, head: scan.head, maxFileBytes: limits.maxFileBytes, maxDiffBytes: limits.maxDiffBytes,
+      restage: plan.restage, untracked: plan.counted.slice(0, plan.passed), prefetch: [...plan.reads.values()],
+    });
+  } catch (e) {
+    await git.discardTemp(checkout, scan.dir);
+    throw e;
+  }
+  const { restage, rels, counted, passed, reads } = plan;
+  let { files } = plan;
   // Over the cap (O) or unreadable to git (F): listed, not diffed. Vanished (-): it stays deleted.
   const oversize = restage.filter((_, i) => done.restage[i] === 'O' || done.restage[i] === 'F');
   if (done.restage.includes('S')) files = parseDiff(done.tracked);

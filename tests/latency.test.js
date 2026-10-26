@@ -257,6 +257,11 @@ test('mapLimit keeps input order, never exceeds its limit, and stops starting it
   assert.equal(peak, 3);
   started.length = 0;
   await assert.rejects(mapLimit(['boom', 1, 2, 3, 4, 5], 2, fn), /boom/);
-  assert.ok(!started.includes(4) && !started.includes(5), `started after the rejection: ${started}`);
+  // The rejection surfaces while the other worker's item is still in flight; let it settle, and give any worker that
+  // would go on several more turns to start its next item, before reading what ever started.
+  const tick = () => new Promise((r) => setImmediate(r));
+  while (running) await tick();
+  for (let i = 0; i < 5; i++) await tick();
+  assert.deepEqual(started, ['boom', 1], 'only the items in flight at the rejection ever started');
   assert.deepEqual(await mapLimit([], 4, fn), []);
 });

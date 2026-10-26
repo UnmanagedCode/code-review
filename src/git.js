@@ -133,18 +133,43 @@ u=$1; shift
 r=$(pwd -P) || exit 3
 GIT_INDEX_FILE=$d/index; export GIT_INDEX_FILE
 : > "$d/meta" && : > "$d/tracked" && : > "$d/untracked" && : > "$d/pre" || exit 6
-size() { s=$(ls -ldn -- "./$1" 2>/dev/null) || return 1; s=$(printf '%s\\n' "$s" | awk 'NR==1{print $5}'); case $s in ''|*[!0-9]*) s=0 ;; esac; }
+size() { l=$(ls -ldn -- "./$1" 2>/dev/null) || return 1; s=$(printf '%s\\n' "$l" | awk 'NR==1{print $5}'); case $s in ''|*[!0-9]*) s=0 ;; esac; }
+# The blob and mode \`update-index --add\` would record for $1 (whose \`ls -ldn\` line size() left in $l): a symlink's target
+# (unfiltered), else the file through its filters; 100755 when the owner may execute it and core.filemode holds. Written
+# with -w while the private object dir has no alternates, so it lands there and the real store is never asked (or freshened).
+blob() {
+  case $l in
+  l*) mode=120000; lt=$(readlink -- "./$1" && echo .) || return 1; lt=\${lt%.}; lt=\${lt%?}
+      sha=$(printf '%s' "$lt" | ${GIT} hash-object -w --stdin 2>/dev/null) ;;
+  -*) mode=100644; [ "$fm" = true ] && case $l in ???[xs]*) mode=100755 ;; esac
+      sha=$(${GIT} hash-object -w -- "$1" 2>/dev/null) ;;
+  *) return 1 ;;
+  esac
+}
+fm=true
 if [ "$n" -gt 0 ]; then
-  printf '%s\\n' "$alt" > "$d/objects/info/alternates" || exit 6
   GIT_OBJECT_DIRECTORY=$d/objects; export GIT_OBJECT_DIRECTORY
+  fm=$(${GIT} config --bool --get core.filemode) || fm=true
 fi
-staged=
-while [ "$n" -gt 0 ]; do f=$1; shift; n=$((n - 1))
+: > "$d/stage" || exit 6
+k=0
+for f; do [ "$k" -lt "$n" ] || break; k=$((k + 1))
   if ! size "$f"; then echo -
   elif [ "$s" -gt "$max" ]; then echo O
-  elif ${GIT} update-index --add -- "$f" 2>/dev/null; then echo S; staged=1
-  else echo F; fi >> "$d/meta"
+  elif blob "$f"; then echo "$mode $sha"
+  else echo F; fi >> "$d/stage"
 done
+# Now HEAD's objects must resolve (staging, the redone diff): the real store joins as the alternate.
+[ "$n" -eq 0 ] || printf '%s\\n' "$alt" > "$d/objects/info/alternates" || exit 6
+staged=
+exec 3< "$d/stage"
+while [ "$n" -gt 0 ]; do f=$1; shift; n=$((n - 1)); read -r m sha <&3
+  case $m in
+  -|O|F) echo "$m" ;;
+  *) if ${GIT} update-index --add --cacheinfo "$m" "$sha" "$f" 2>/dev/null; then echo S; staged=1; else echo F; fi ;;
+  esac >> "$d/meta"
+done
+exec 3<&-
 [ -z "$staged" ] || ${GIT} ${DIFF} "$h" > "$d/tracked" || exit 8
 sum=0 defer=
 while [ "$u" -gt 0 ]; do f=$1; shift; u=$((u - 1))
@@ -225,9 +250,10 @@ async function removeById(place, id) {
   });
 }
 
-const warnLeak = (place, dir) => (e) => {
+/** Best-effort removal of a private index dir a scan left: a failure is a warning naming it (it sits in the target's tmp, never in the tree). */
+export const discardTemp = (place, dir) => removeTemp(place, dir).catch((e) => {
   console.warn(`code-review: could not remove the private index dir ${dir} on ${place.system}: ${e.message}`);
-};
+});
 
 /**
  * First of the two calls of an uncommitted snapshot: the tracked diff on a private index copy and the untracked list.
@@ -251,22 +277,27 @@ export async function scanWorktree(place, { maxDiffBytes }) {
   if (r.code === PATH_MISSING) throw new Refusal('CHECKOUT_GONE', `${place.path} no longer exists`);
   if (TEMP_TEXT[r.code]) throw new Refusal('TEMP_UNUSABLE', TEMP_TEXT[r.code](place));
   if (r.code === 9) throw new Refusal('DIFF_TOO_LARGE', 'output exceeds the size limit');
-  const [[dir, objects, head, a, b], rest] = header(r.stdout, 5);
-  // The script prints `<base>/cr-index-<id>`; anything else names no dir it made.
-  if (!isTempDir(dir) || dir.slice(dir.lastIndexOf('/') + 1) !== `cr-index-${id}`) {
+  // The script's trap is disarmed once it succeeds: from here the dir is ours, so any failure to read its output removes it.
+  try {
+    const [[dir, objects, head, a, b], rest] = header(r.stdout, 5);
+    // The script prints `<base>/cr-index-<id>`; anything else names no dir it made.
+    if (!isTempDir(dir) || dir.slice(dir.lastIndexOf('/') + 1) !== `cr-index-${id}`) {
+      throw new Refusal('TEMP_UNUSABLE', `private index: the scan script printed no private index dir (${JSON.stringify(dir)})`);
+    }
+    const [tracked, others] = parts(rest, [a, b]);
+    return {
+      dir, objects, head, tracked: tracked.toString('utf8'),
+      others: others.toString('utf8').split('\0').filter((p) => p && !p.endsWith('/')),
+    };
+  } catch (e) {
     await removeById(place, id);
-    throw new Refusal('TEMP_UNUSABLE', `private index: the scan script printed no private index dir (${JSON.stringify(dir)})`);
+    throw e;
   }
-  const [tracked, others] = parts(rest, [a, b]);
-  return {
-    dir, objects, head, tracked: tracked.toString('utf8'),
-    others: others.toString('utf8').split('\0').filter((p) => p && !p.endsWith('/')),
-  };
 }
 
 /**
  * Second call: restages `restage`, diffs `untracked` (in order, within the budget) and reads `prefetch` ([{side, path}]),
- * then removes the private dir. Resolves {restage: [meta], untracked: [meta], prefetch: [null | 'lazy' | content],
+ * then removes the private dir; when it fails, the caller removes it (`discardTemp`). Resolves {restage: [meta], untracked: [meta], prefetch: [null | 'lazy' | content],
  * tracked (the redone diff, '' when nothing was staged), untrackedDiff}.
  */
 export async function finishWorktree(place, { dir, objects, head, maxFileBytes, maxDiffBytes, restage, untracked, prefetch }) {
@@ -274,15 +305,8 @@ export async function finishWorktree(place, { dir, objects, head, maxFileBytes, 
   const items = prefetch.map(({ side, path }) => `${side === 'old' ? 'o' : 'n'}${path}`);
   const args = [dir, cQuote(objects), head, String(maxFileBytes), String(Math.floor(maxDiffBytes / 3)), String(maxDiffBytes), String(cap),
     String(restage.length), String(untracked.length), ...restage, ...untracked, ...items];
-  let r;
-  try {
-    r = await call(place, ['sh', '-c', FINISH, 'sh', place.path, ...args], 'sh script', { ok: [0, 6, 9], maxBuffer: cap, bytes: true });
-  } catch (e) {
-    await removeTemp(place, dir).catch(warnLeak(place, dir));
-    throw e;
-  }
+  const r = await call(place, ['sh', '-c', FINISH, 'sh', place.path, ...args], 'sh script', { ok: [0, 6, 9], maxBuffer: cap, bytes: true });
   if (r.code !== 0) {
-    await removeTemp(place, dir).catch(warnLeak(place, dir));
     if (r.code === 6) throw new Refusal('TEMP_UNUSABLE', TEMP_TEXT[6](place));
     throw new Refusal('DIFF_TOO_LARGE', 'output exceeds the size limit');
   }

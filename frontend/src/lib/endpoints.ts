@@ -28,10 +28,16 @@ export const checkout = (project: string, worktree: string | null) =>
     `api/checkout${q({ project, worktree })}`);
 export const checkoutCommits = (project: string, worktree: string | null, limit?: number) =>
   api<{ commits: Commit[] }>(`api/checkout/commits${q({ project, worktree, limit })}`);
+/** One commit of a checkout named by any ref or sha; refused as `POST api/reviews` refuses it (`BAD_REF`, `REF_UNKNOWN`). */
+export const checkoutCommit = (project: string, worktree: string | null, ref: string) =>
+  api<{ commit: Commit }>(`api/checkout/commit${q({ project, worktree, ref })}`);
 export const sessions = (project: string, worktree: string | null) =>
   api<{ sessions: Session[] }>(`api/sessions${q({ project, worktree })}`);
 export const sessionPlaces = (sessionId: string) =>
   api<{ places: SessionPlace[] }>(`api/sessions/${encodeURIComponent(sessionId)}/places`);
+
+/** The plugins code-review links to; `codeGit` is null when cc has no enabled code-git view. */
+export const integrations = () => api<{ codeGit: { id: string } | null }>('api/integrations');
 
 /** Every open review of every project and checkout, latest activity first. */
 export const inbox = () => api<{ reviews: InboxItem[] }>('api/inbox');

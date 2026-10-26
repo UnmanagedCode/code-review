@@ -108,7 +108,7 @@ function run(state, spec, req, res) {
 }
 
 /**
- * A fake cc REST host. `fixture` is mutable: {projects, worktrees:{project:[rows]}, instances (null = the route answers 500), conductorProjects:{rootSessionId:[{project, lastSpawnAt, worktrees}]} (null = a cc without the route: 404), systems, execEnv, execHook, mode, displayLabel}.
+ * A fake cc REST host. `fixture` is mutable: {projects, worktrees:{project:[rows]}, instances (null = the route answers 500), conductorProjects:{rootSessionId:[{project, lastSpawnAt, worktrees}]} (null = a cc without the route: 404), plugins (`GET /api/plugins` rows, served as `{rows, notices: []}`), systems, execEnv, execHook, mode, displayLabel}.
  * `mode` is 'ok' | 'error' | 'hang'. Sets CONDUCTOR_URL; `close()` restores it.
  * `GET /api/instances` fills each row's `displayLabel` that is absent or null with a stand-in, `title || firstPrompt || <id prefix>…`.
  * That is not cc's rule (cc gives `(new session)`, never the id prefix, for a session with no title or prompt):
@@ -124,7 +124,7 @@ function run(state, spec, req, res) {
  * points it at a temp dir so the operator log never lands in a real store; `close()` restores both and removes only a dir it made.
  */
 export async function fakeCc(fixture = {}) {
-  const state = { projects: [], worktrees: {}, instances: [], conductorProjects: {}, systems: {}, execEnv: {}, execHook: null, execCalls: [], hits: [], resetNext: 0, delayMs: 0, mode: 'ok', displayLabel: true, ...fixture };
+  const state = { projects: [], worktrees: {}, instances: [], conductorProjects: {}, plugins: [], systems: {}, execEnv: {}, execHook: null, execCalls: [], hits: [], resetNext: 0, delayMs: 0, mode: 'ok', displayLabel: true, ...fixture };
   const sockets = new Set();
   const server = http.createServer((req, res) => {
     state.hits.push(`${req.method} ${new URL(req.url, 'http://x').pathname}`);
@@ -162,6 +162,7 @@ export async function fakeCc(fixture = {}) {
         ? { ...i, displayLabel: displayLabel ?? (i.title || i.firstPrompt || `${i.sessionId.slice(0, 8)}…`) }
         : i)));
     }
+    if (url.pathname === '/api/plugins') return send({ rows: state.plugins, notices: [] });
     if (url.pathname === '/api/conductors/projects') return state.conductorProjects === null ? send({}, 404) : send(state.conductorProjects);
     const m = url.pathname.match(/^\/api\/projects\/([^/]+)\/worktrees$/);
     if (m) return send(state.worktrees[decodeURIComponent(m[1])] ?? []);

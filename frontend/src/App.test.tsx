@@ -1,10 +1,14 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { render, screen } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { expect, test } from 'vitest';
 import { App } from './App';
+import { parseRoute } from './lib/route';
 import { TOKEN_CLASS } from './lib/highlight';
+import { installFakeEventSource } from './test/fakeEventSource';
+import { refusal } from './test/fixtures';
 import { stubFetch } from './test/stubFetch';
 
 const src = path.dirname(fileURLToPath(import.meta.url));
@@ -26,6 +30,57 @@ test('with no checkout chosen, App offers the project picker', async () => {
   render(<App />);
   expect(await screen.findByText('Choose a project to review')).toBeTruthy();
   expect(await screen.findByRole('option', { name: 'app' })).toBeTruthy();
+});
+
+const HEAD = 'e'.repeat(40);
+/** `app` at HEAD with fork point `main`; `api/checkout/commit` knows HEAD, main and `old`. */
+function linkWorld() {
+  installFakeEventSource();
+  const commit = (sha: string, subject: string) => ({ sha, short: sha.slice(0, 7), author: 'a', date: 'd', subject, merge: false });
+  const refs: Record<string, ReturnType<typeof commit>> = { HEAD: commit(HEAD, 'tip'), main: commit('f'.repeat(40), 'fork'), old: commit('0'.repeat(40), 'ancient') };
+  return stubFetch([
+    [/^GET api\/projects$/, { projects: [{ name: 'app' }] }],
+    [/^GET api\/checkout\?/, { checkout: { project: 'app', worktree: null, path: '/x', branch: 'main', headSha: HEAD, dirty: false, exists: true }, forkPoints: [{ ref: 'main', label: 'main (parent)', forkSha: 'f'.repeat(40) }], worktrees: [] }],
+    [/^GET api\/checkout\/commits\?/, { commits: [] }],
+    [/^GET api\/checkout\/commit\?/, (u: URL) => refs[u.searchParams.get('ref')!] ? { commit: refs[u.searchParams.get('ref')!] } : refusal('REF_UNKNOWN', 404)],
+    [/^GET api\/sessions/, { sessions: [] }],
+    [/^GET api\/reviews\?/, { reviews: [] }],
+  ]);
+}
+const radio = (name: RegExp | string) => screen.getByRole('radio', { name }).getAttribute('aria-checked');
+
+// Invariant: a contract link (`view=new&range=…`) opens the New review dialog with that prefill applied.
+test('a view=new link with a range opens the prefilled New review dialog', async () => {
+  linkWorld();
+  history.replaceState(null, '', '?project=app&view=new&range=old...HEAD');
+  render(<App />);
+  await screen.findByRole('dialog', { name: 'New review' });
+  await waitFor(() => expect(radio('Another commit')).toBe('true'));
+});
+
+// Invariant: closing the dialog drops its prefill, so reopening New review starts from the defaults.
+test('Cancel closes the dialog and clears view, range and sha', async () => {
+  linkWorld();
+  history.replaceState(null, '', '?project=app&view=new&range=old...HEAD');
+  render(<App />);
+  await screen.findByRole('dialog', { name: 'New review' });
+  await userEvent.setup().click(screen.getByRole('button', { name: 'Cancel' }));
+  expect(parseRoute(location.search)).toEqual({ project: 'app' });
+  expect(screen.queryByRole('dialog')).toBeNull();
+});
+
+// Invariant: cc steering an open frame to another link applies that link's prefill, not the first one's.
+test('a popstate steer to another range remounts the dialog with the new prefill', async () => {
+  linkWorld();
+  history.replaceState(null, '', '?project=app&view=new&range=old...HEAD');
+  render(<App />);
+  await waitFor(() => expect(radio('Another commit')).toBe('true'));
+  act(() => {
+    history.replaceState(null, '', '?project=app&view=new&range=main...HEAD');
+    window.dispatchEvent(new PopStateEvent('popstate'));
+  });
+  await waitFor(() => expect(radio(/main \(parent\)/)).toBe('true'));
+  expect(radio('Another commit')).toBe('false');
 });
 
 // Content must reach the DOM as text, never markup: a model reply rendered raw is script with cc's API.

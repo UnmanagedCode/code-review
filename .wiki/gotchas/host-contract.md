@@ -5,7 +5,7 @@
 - **`frontend/index.html` head order is load-bearing:** bridge (blocking, no `defer`), theme sheet, `theme-init.js`. `vite-ignore` keeps Vite from warning on them.
 - **No theme toggle of our own.** The bridge owns `<html class="dark">` when embedded; `frontend/src/lib/theme.ts` only observes it.
 - **`cc-theme-fallback.css` is a one-time snapshot** inside `@layer base`; never refresh it to track cc. cc's served sheet is unlayered and wins.
-- **Never navigate by assigning `location.hash`:** it adds a joint history entry the bridge cannot demote.
+- **Never navigate by assigning `location.hash`:** it adds a joint history entry the bridge cannot demote. The one top-frame exception, the `target="_top"` code-git link, is in [cross-plugin-links.md](cross-plugin-links.md).
 - **Mutating API calls need `Content-Type: application/json`, even body-less ones** (`refresh`, `submissions`, `DELETE`): otherwise 415. The check reads the header because `req.is` is null without a body. `api()` in `frontend/src/lib/api.ts` defaults it on every non-GET call unless the caller sets one.
 - **Storage keys** are prefixed `code-review:`; never touch `code-conductor:*`.
 - **Content is text, never markup.** A guard test in `frontend/src/App.test.tsx` bans raw-HTML APIs in UI sources; links go through `safeHref`.

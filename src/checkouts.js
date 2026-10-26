@@ -126,3 +126,10 @@ export async function checkoutCommits({ project, worktree, limit = 50 }) {
   if (!co.exists) throw new Refusal('CHECKOUT_GONE', `${co.path} does not exist`);
   return git.commitLog(co.place, { limit: Math.min(Math.max(Number(limit) || 50, 1), 500) });
 }
+
+/** One commit of a checkout, named by any ref or sha: the same validation as opening a review (`BAD_REF`, `REF_UNKNOWN`). */
+export async function checkoutCommit({ project, worktree, ref }) {
+  const co = await resolveCheckout({ project, worktree });
+  if (!co.exists) throw new Refusal('CHECKOUT_GONE', `${co.path} does not exist`);
+  return git.commitOf(co.place, await git.resolveCommit(co.place, ref));
+}

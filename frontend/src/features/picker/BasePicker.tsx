@@ -6,8 +6,8 @@ import { CommitPicker } from './CommitPicker';
 export const OTHER = '__commit__';
 
 /** The base of a range review: one of the checkout's fork points, or any ancestor commit. `value` is a fork-point ref, OTHER, or ''. */
-export function BasePicker({ forkPoints, commits, choice, onChoice, sha, onSha }: {
-  forkPoints: ForkPoint[]; commits: Commit[]; choice: string; onChoice: (c: string) => void; sha: string; onSha: (s: string) => void;
+export function BasePicker({ forkPoints, commits, choice, onChoice, sha, onSha, extra }: {
+  forkPoints: ForkPoint[]; commits: Commit[]; choice: string; onChoice: (c: string) => void; sha: string; onSha: (s: string) => void; extra?: Commit;
 }) {
   return (
     <fieldset className="flex flex-col gap-2">
@@ -25,8 +25,8 @@ export function BasePicker({ forkPoints, commits, choice, onChoice, sha, onSha }
         </div>
       </RadioGroup>
       {choice === OTHER && (
-        commits.length
-          ? <><Label className="sr-only" htmlFor="base-commit">Base commit</Label><CommitPicker id="base-commit" commits={commits} value={sha} onChange={onSha} placeholder="Pick a commit…" /></>
+        commits.length || extra
+          ? <><Label className="sr-only" htmlFor="base-commit">Base commit</Label><CommitPicker id="base-commit" commits={commits} value={sha} onChange={onSha} placeholder="Pick a commit…" extra={extra} /></>
           : <p className="text-sm text-muted-foreground">No commits</p>
       )}
     </fieldset>

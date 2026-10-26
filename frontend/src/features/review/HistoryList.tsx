@@ -10,6 +10,7 @@ import type { Round } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import { useReviewCtx } from '@/state/reviewContext';
 import { useFetch } from '@/state/useFetch';
+import { CodeGitLink } from '@/features/common/CodeGitLink';
 import { ErrorState, Loading } from '@/features/common/States';
 
 const head7 = (r: Round) => r.headSha.slice(0, 7);
@@ -62,11 +63,12 @@ export function HistoryList() {
     commitList = (
       <ul>
         {commits.data.commits.map((c) => (
-          <li key={c.sha}>
+          <li key={c.sha} className="grid grid-cols-[minmax(0,1fr)_auto] items-center">
             <Entry to={{ commit: c.sha, round: undefined, compare: undefined, ...LEAVE_FILE }} current={commit === c.sha} depth={1}>
               <span className="shrink-0 font-mono text-xs text-muted-foreground">{c.short}</span>{' '}
               <span className="min-w-0 flex-1 truncate">{c.subject}</span>
             </Entry>
+            <CodeGitLink target={{ project: review.project, worktree: review.worktree, commit: c.sha }} label={`Open ${c.short} in code-git`} />
           </li>
         ))}
       </ul>

@@ -775,6 +775,95 @@ try {
     await page.keyboard.press('Escape');
     assert.deepEqual(errors, []);
   }, { headless: true, viewport: { width: 1100, height: 800 } });
+  // 18: a New review link (`view=new&range=…` / `&sha=…`) prefills the dialog; a bad link or a head other than HEAD says why
+  // and leaves the defaults. Nothing is opened until the click.
+  await withPage(async (page) => {
+    const errors = watchErrors(page);
+    const shot = shotter(page);
+    const { commits } = await world.call('GET', 'checkout/commits?project=app&worktree=feature');
+    const [head, , , first] = commits; // fourth, third, second, first
+    const checked = (name) => page.getByRole('radio', { name }).getAttribute('aria-checked');
+    const ready = () => page.waitForFunction(() => [...document.querySelectorAll('button')].some((b) => b.textContent === 'Open review' && !b.disabled));
+    const reviewsBefore = (await world.call('GET', 'reviews?project=app')).reviews.length;
+
+    await page.goto(q({ view: 'new', range: 'main...HEAD' }));
+    await ready();
+    assert.equal(await checked(/main/), 'true', 'a fork-point base selects its radio');
+    await shot('18-link-range-fork-point');
+
+    await page.goto(q({ view: 'new', range: `${first.short}..${head.sha}` }));
+    await ready();
+    assert.equal(await checked('Another commit'), 'true');
+    assert.equal(await page.getByLabel('Base commit').inputValue(), first.sha);
+    await shot('18-link-range-sha-base');
+
+    await page.goto(q({ view: 'new', sha: first.short }));
+    await ready();
+    assert.equal(await checked(/One commit/), 'true');
+    assert.equal(await page.getByLabel('Commit', { exact: true }).inputValue(), first.sha);
+    await shot('18-link-commit');
+
+    await page.goto(q({ view: 'new', range: `main...${first.short}` }));
+    await ready();
+    assert.match(await page.getByRole('alert').textContent(), /could not be used.*HEAD/);
+    assert.equal(await checked(/Range/), 'true');
+    await shot('18-link-head-not-HEAD');
+
+    // The fake cc answers 404 for an unknown ref: that one response is the link's expected refusal.
+    await page.goto(q({ view: 'new', range: 'no-such-branch...HEAD' }));
+    await ready();
+    assert.match(await page.getByRole('alert').textContent(), /does not exist.*no-such-branch/);
+    await shot('18-link-unknown-ref');
+    assert.deepEqual(errors.filter((e) => !/^404 .*api\/checkout\/commit\?.*no-such-branch/.test(e)), []);
+    assert.equal((await world.call('GET', 'reviews?project=app')).reviews.length, reviewsBefore, 'no link opened a review');
+
+    await page.getByRole('button', { name: 'Cancel' }).click();
+    assert.deepEqual(params(page), { project: 'app', worktree: 'feature' });
+  }, { headless: true, viewport: { width: 1280, height: 900 } });
+
+  // 18b: "Open in code-git", framed the way cc frames a plugin: a host page on the plugin's own origin holds the review in an
+  // iframe whose /pluginBridge.js is a stub. A History commit row's link moves the host's hash to code-git's deep link,
+  // without reloading the host.
+  await withPage(async (page) => {
+    const errors = watchErrors(page);
+    const shot = shotter(page);
+    const host = `${world.url}/cc-host.html?s=1`;
+    const frameSrc = `/?${new URLSearchParams({ project: 'app', worktree: 'feature', review: range, view: 'history' })}`;
+    await page.route(`${world.url}/cc-host.html*`, (r) => r.fulfill({
+      contentType: 'text/html',
+      body: `<!doctype html><title>cc</title><style>body{margin:0}iframe{border:0;width:100vw;height:100vh}</style><iframe src="${frameSrc}"></iframe>`,
+    }));
+    await page.route(`${world.url}/pluginBridge.js`, (r) => r.fulfill({ contentType: 'text/javascript', body: `(${STUB_BRIDGE})();` }));
+    await page.goto(host);
+    await page.evaluate(() => { window.__notReloaded = true; });
+    const frame = page.frameLocator('iframe');
+    const { commits } = await world.call('GET', `reviews/${range}/commits`);
+    const link = frame.getByRole('link', { name: `Open ${commits[0].short} in code-git` });
+    await link.waitFor();
+    assert.equal(await link.getAttribute('target'), '_top');
+    await shot('18b-history-code-git-links');
+    await link.click();
+    await page.waitForFunction(() => location.hash.startsWith('#plugin/code-git/'));
+    const hash = await page.evaluate(() => location.hash);
+    assert.ok(hash.startsWith('#plugin/code-git/?project=app'), hash);
+    assert.equal(new URLSearchParams(hash.split('#plugin/code-git/')[1]).get('commit'), commits[0].sha);
+    assert.equal(await page.evaluate(() => `${location.pathname}${location.search}`), '/cc-host.html?s=1', 'only the hash moved');
+    assert.equal(await page.evaluate(() => window.__notReloaded), true, 'the host did not reload');
+
+    // The file header links to that file's history at the shown commit.
+    await frame.getByRole('tab', { name: 'Files' }).click();
+    await frame.getByRole('navigation', { name: 'Files' }).getByRole('link', { name: /a\.js/ }).click();
+    const fileLink = frame.getByRole('link', { name: 'Open the history of a.js in code-git' });
+    await fileLink.waitFor();
+    const fileHash = new URLSearchParams((await fileLink.getAttribute('href')).split('#plugin/code-git/')[1]);
+    assert.deepEqual(Object.fromEntries(fileHash), { project: 'app', worktree: 'feature', commit: (await world.call('GET', `reviews/${range}`)).review.headSha, path: 'a.js' });
+    await shot('18b-file-header-code-git-link');
+    await frame.getByRole('button', { name: 'Review actions' }).click();
+    await frame.getByRole('menuitem', { name: 'Open head in code-git' }).waitFor();
+    await shot('18b-actions-open-head');
+    assert.deepEqual(errors, []);
+  }, { headless: true, viewport: { width: 1400, height: 900 } });
+
   // 17: the inbox, with a stub cc bridge. From an open review, Inbox → the main checkout's row opens that review in its own
   // checkout; a session switch while it is open leaves it open; Back returns to the inbox. A destroyed worktree's row says
   // "checkout gone", and its Close closes the review. Runs last: it removes a worktree.

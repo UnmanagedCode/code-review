@@ -237,19 +237,25 @@ test('turn is the agent\'s when the delivered submission was composed at the age
   assert.equal((await item(review.id)).turn, 'agent');
 });
 
-test('an open review without the migrated fields is logged and left out; the other rows still show', async (t) => {
-  // Invariant: listInbox drops (via store.logSkipped) any open review lacking lastActivityAt or agentSeq instead of failing; no fallback value is invented.
+test('open reviews missing either migrated field are each logged and left out; the migrated rows still show', async (t) => {
+  // Invariant: listInbox drops (via store.logSkipped) an open review lacking lastActivityAt, and one lacking only agentSeq, each on its own, instead of failing; no fallback value is invented.
   const errors = t.mock.method(console, 'error', () => {});
   const { review: current } = await onFeature();
   w.repo.write('a.js', editLines({ 5: 'dirty' }));
   const other = ok(await reviews.openReview({ project: 'app', kind: 'uncommitted' }, HUMAN)).review;
-  const old = ok(await reviews.openReview({ project: 'app', kind: 'commit' }, HUMAN)).review;
-  const raw = store.read(old.id);
-  delete raw.lastActivityAt;
-  delete raw.agentSeq;
-  store.write(raw);
+  const noStamp = ok(await reviews.openReview({ project: 'app', kind: 'commit' }, HUMAN)).review;
+  const noAgentSeq = ok(await reviews.openReview({ project: 'app', worktree: 'feature', kind: 'commit' }, HUMAN)).review;
+  const strip = (id, field) => {
+    const raw = store.read(id);
+    delete raw[field];
+    store.write(raw);
+  };
+  strip(noStamp.id, 'lastActivityAt');
+  strip(noAgentSeq.id, 'agentSeq');
   assert.deepEqual((await list()).map((r) => r.id).sort(), [current.id, other.id].sort());
-  assert.ok(errors.mock.calls.some((c) => String(c.arguments[0]).includes(`review ${old.id} left out of the inbox`)), 'logged through logSkipped');
+  const logged = (id) => errors.mock.calls.some((c) => String(c.arguments[0]).includes(`review ${id} left out of the inbox`));
+  assert.ok(logged(noStamp.id), 'the review missing lastActivityAt is logged');
+  assert.ok(logged(noAgentSeq.id), 'the review missing agentSeq is logged');
 });
 
 test('listing the inbox runs no git: zero exec calls', async () => {

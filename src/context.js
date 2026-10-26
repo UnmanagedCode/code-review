@@ -1,7 +1,8 @@
 import * as store from './store.js';
 import * as git from './git.js';
 import { UNREACHABLE } from './exec.js';
-import { resolveCheckout, isConductorProject } from './checkouts.js';
+import { resolveCheckout, lookupCheckout, isConductorProject } from './checkouts.js';
+import { lookupScope } from './lookups.js';
 import { buildSnapshot, resolveTarget } from './snapshot.js';
 import { followThreads } from './follow.js';
 import { Refusal, refuse } from './refusals.js';
@@ -32,23 +33,26 @@ export function assertOpen(review) {
   if (review.status === 'closed') throw new Refusal('REVIEW_CLOSED', `review ${review.id} is closed`);
 }
 
-async function locateCheckout(review) {
+async function locateCheckout(review, scope) {
+  let co;
   try {
-    return await resolveCheckout({ project: review.project, worktree: review.worktree });
+    co = await resolveCheckout({ project: review.project, worktree: review.worktree }, scope);
   } catch (e) {
     if (!(e instanceof Refusal) || !['CHECKOUT_UNKNOWN', 'PROJECT_UNKNOWN'].includes(e.code)) throw e;
-    const main = e.code === 'CHECKOUT_UNKNOWN' ? await resolveCheckout({ project: review.project, worktree: null }) : null;
+    const main = e.code === 'CHECKOUT_UNKNOWN' ? await lookupCheckout({ project: review.project, worktree: null }, scope) : null;
     return { path: null, place: null, mainPath: main?.path ?? null, mainPlace: main?.place ?? null, exists: false };
   }
+  if (!co.exists) scope.evict(review.project); // git contradicts cc's cached answer: the next request asks again
+  return co;
 }
 
-/** Lazy, memoised view of a review's checkout and snapshots for one request. */
-export function makeEnv(review) {
+/** Lazy, memoised view of a review's checkout and snapshots for one request; `scope` shares cc lookups across the request. */
+export function makeEnv(review, scope = lookupScope()) {
   let co;
   const snaps = new Map();
   const env = {
     sweep: null,
-    checkout: () => (co ??= locateCheckout(review)),
+    checkout: () => (co ??= locateCheckout(review, scope)),
     /** Place git objects are read from; committed reviews fall back to the main checkout. */
     async repo() {
       const c = await env.checkout();
@@ -89,18 +93,18 @@ async function sweep(review, env) {
 }
 
 /** Write path: `fn(review, env)` under the review lock, after the uncommitted sweep. */
-export function inReview(id, fn) {
+export function inReview(id, fn, scope = lookupScope()) {
   return store.mutate(id, async (review) => {
-    const env = makeEnv(review);
+    const env = makeEnv(review, scope);
     if (review.kind === 'uncommitted') env.sweep = await sweep(review, env);
     return fn(review, env);
   });
 }
 
 /** Read path: committed reviews are read lock-free; uncommitted ones sweep (and persist) first. */
-export function viewReview(id, fn) {
+export function viewReview(id, fn, scope = lookupScope()) {
   const review = store.read(id);
   if (!review) return refuse('REVIEW_UNKNOWN', `unknown review: ${id}`);
-  if (review.kind === 'uncommitted') return inReview(id, fn);
-  return fn(review, makeEnv(review));
+  if (review.kind === 'uncommitted') return inReview(id, fn, scope);
+  return fn(review, makeEnv(review, scope));
 }

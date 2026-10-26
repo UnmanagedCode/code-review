@@ -119,12 +119,18 @@ function run(state, spec, req, res) {
  * Every exec body lands in `execCalls`; `execHook(body)` may answer instead: `{status, body}`, `{status, raw}` (a non-JSON body), `'hang'` or `'reset'` (the connection is destroyed unanswered).
  * `state.hits` lists every request as `"<METHOD> <pathname>"`, hang and error modes included.
  * `state.resetNext` (a count, `Infinity` = always) makes GET routes destroy the connection unanswered while it is above 0, counting down;
- * `state.delayMs` makes GET routes answer after that many milliseconds.
- * Sets `CODE_REVIEW_CC_RETRY_MS` to 1 unless already set, so retries are instant, and, when `CODE_REVIEW_STORE` is unset,
- * points it at a temp dir so the operator log never lands in a real store; `close()` restores both and removes only a dir it made.
+ * `state.delayMs` makes GET routes answer after that many milliseconds (a function of the pathname: per route).
+ * `state.getHook(pathname)` may answer a GET instead: `{status, body}`.
+ * `GET /api/projects/:name/location` answers `{name, path, system, remoteId}` from `projects` (`system` absent = `local`,
+ * `remoteId` absent = null), or 404 `PROJECT_UNKNOWN`.
+ * `state.execDelayMs` delays every exec answer; `state.execInFlight` counts exec requests not yet answered and
+ * `state.execMaxInFlight` the most there ever were at once.
+ * Sets `CODE_REVIEW_CC_RETRY_MS` to 1 unless already set, so retries are instant, `CODE_REVIEW_LOOKUP_TTL_MS` to 0 unless
+ * already set, so every request asks this fake afresh, and, when `CODE_REVIEW_STORE` is unset, points it at a temp dir
+ * so the operator log never lands in a real store; `close()` restores them and removes only a dir it made.
  */
 export async function fakeCc(fixture = {}) {
-  const state = { projects: [], worktrees: {}, instances: [], conductorProjects: {}, plugins: [], systems: {}, execEnv: {}, execHook: null, execCalls: [], hits: [], resetNext: 0, delayMs: 0, mode: 'ok', displayLabel: true, ...fixture };
+  const state = { projects: [], worktrees: {}, instances: [], conductorProjects: {}, plugins: [], systems: {}, execEnv: {}, execHook: null, execCalls: [], hits: [], resetNext: 0, delayMs: 0, getHook: null, execDelayMs: 0, execInFlight: 0, execMaxInFlight: 0, mode: 'ok', displayLabel: true, ...fixture };
   const sockets = new Set();
   const server = http.createServer((req, res) => {
     state.hits.push(`${req.method} ${new URL(req.url, 'http://x').pathname}`);
@@ -132,12 +138,17 @@ export async function fakeCc(fixture = {}) {
     if (state.mode === 'error') { res.statusCode = 500; return res.end('{}'); }
     const url = new URL(req.url, 'http://x');
     const reply = (body, status = 200) => { res.statusCode = status; res.setHeader('content-type', 'application/json'); res.end(JSON.stringify(body)); };
-    const send = (body, status = 200) => (req.method === 'GET' && state.delayMs ? setTimeout(reply, state.delayMs, body, status) : reply(body, status));
+    const delay = req.method === 'GET' ? (typeof state.delayMs === 'function' ? state.delayMs(url.pathname) : state.delayMs) : 0;
+    const send = (body, status = 200) => (delay ? setTimeout(reply, delay, body, status) : reply(body, status));
     if (req.method === 'GET' && state.resetNext > 0) { state.resetNext -= 1; return req.socket.destroy(); }
     if (req.method === 'POST' && url.pathname === '/api/exec') {
       const chunks = [];
       req.on('data', (c) => chunks.push(c));
-      req.on('end', () => {
+      state.execInFlight += 1;
+      state.execMaxInFlight = Math.max(state.execMaxInFlight, state.execInFlight);
+      res.on('close', () => { state.execInFlight -= 1; });
+      req.on('end', () => (state.execDelayMs ? setTimeout(answer, state.execDelayMs) : answer()));
+      const answer = () => {
         let body;
         try { body = JSON.parse(Buffer.concat(chunks).toString('utf8')); } catch { return send({ error: 'bad json', code: 'INVALID_ARGUMENT' }, 400); }
         state.execCalls.push(body);
@@ -152,9 +163,11 @@ export async function fakeCc(fixture = {}) {
           if (!(e instanceof Answer)) throw e;
           send(e.body, e.status);
         }
-      });
+      };
       return;
     }
+    const hooked = req.method === 'GET' && state.getHook?.(url.pathname);
+    if (hooked) return send(hooked.body, hooked.status);
     if (url.pathname === '/api/projects') return send(state.projects);
     if (url.pathname === '/api/instances') {
       if (state.instances === null) return send({}, 500);
@@ -164,6 +177,12 @@ export async function fakeCc(fixture = {}) {
     }
     if (url.pathname === '/api/plugins') return send({ rows: state.plugins, notices: [] });
     if (url.pathname === '/api/conductors/projects') return state.conductorProjects === null ? send({}, 404) : send(state.conductorProjects);
+    const loc = url.pathname.match(/^\/api\/projects\/([^/]+)\/location$/);
+    if (loc) {
+      const p = state.projects.find((x) => x.name === decodeURIComponent(loc[1]));
+      if (!p) return send({ error: `unknown project: ${decodeURIComponent(loc[1])}`, code: 'PROJECT_UNKNOWN' }, 404);
+      return send({ name: p.name, path: p.path, system: p.system ?? 'local', remoteId: p.remoteId ?? null });
+    }
     const m = url.pathname.match(/^\/api\/projects\/([^/]+)\/worktrees$/);
     if (m) return send(state.worktrees[decodeURIComponent(m[1])] ?? []);
     res.statusCode = 404; res.end('{}');
@@ -173,7 +192,9 @@ export async function fakeCc(fixture = {}) {
   const prev = process.env.CONDUCTOR_URL;
   const prevRetry = process.env.CODE_REVIEW_CC_RETRY_MS;
   const prevStore = process.env.CODE_REVIEW_STORE;
+  const prevTtl = process.env.CODE_REVIEW_LOOKUP_TTL_MS;
   if (prevRetry === undefined) process.env.CODE_REVIEW_CC_RETRY_MS = '1';
+  if (prevTtl === undefined) process.env.CODE_REVIEW_LOOKUP_TTL_MS = '0';
   const ownStore = prevStore === undefined ? fs.mkdtempSync(path.join(os.tmpdir(), 'cr-fakecc-')) : null;
   if (ownStore) process.env.CODE_REVIEW_STORE = ownStore;
   process.env.CONDUCTOR_URL = `http://127.0.0.1:${server.address().port}`;
@@ -182,6 +203,7 @@ export async function fakeCc(fixture = {}) {
     close() {
       if (prev === undefined) delete process.env.CONDUCTOR_URL; else process.env.CONDUCTOR_URL = prev;
       if (prevRetry === undefined) delete process.env.CODE_REVIEW_CC_RETRY_MS;
+      if (prevTtl === undefined) delete process.env.CODE_REVIEW_LOOKUP_TTL_MS;
       if (ownStore) {
         if (process.env.CODE_REVIEW_STORE === ownStore) delete process.env.CODE_REVIEW_STORE;
         fs.rmSync(ownStore, { recursive: true, force: true });

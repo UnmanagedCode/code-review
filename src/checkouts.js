@@ -1,6 +1,7 @@
 import * as cc from './cc.js';
 import * as git from './git.js';
 import { Refusal } from './refusals.js';
+import { lookupScope } from './lookups.js';
 
 const CONDUCTOR_PROJECT = '.conduct';
 const DEAD = new Set(['exited', 'crashed']);
@@ -8,30 +9,33 @@ const DEAD = new Set(['exited', 'crashed']);
 export const isConductorProject = (project) => project === CONDUCTOR_PROJECT;
 
 /**
- * Finds a project's checkout: the main one (`worktree` null) or a named worktree. `place` addresses it on its
- * system (a worktree is on its project's); `exists` is asked of that system, and a system that cannot answer refuses.
+ * Finds a project's checkout from cc's data alone, running nothing: the main one (`worktree` null) or a named worktree.
+ * `place` addresses it on its system (a worktree is on its project's); `mainPlace` is the project's main checkout.
  */
-export async function resolveCheckout({ project, worktree }) {
-  const row = (await cc.projects()).find((p) => p.name === project);
+export async function lookupCheckout({ project, worktree }, scope = lookupScope()) {
+  const row = await scope.project(project);
   if (!row) throw new Refusal('PROJECT_UNKNOWN', `unknown project: ${project}`);
-  const placeAt = (path) => ({ system: row.system ?? 'local', remoteId: row.remoteId ?? null, path });
+  const placeAt = (path) => ({ system: row.system, remoteId: row.remoteId ?? null, path });
   const mainPlace = placeAt(row.path);
-  if (worktree == null) {
-    return { project, worktree: null, path: row.path, place: mainPlace, branch: null, exists: await git.exists(mainPlace), mainPath: row.path, mainPlace };
-  }
-  const wt = (await cc.worktrees(project)).find((w) => w.worktreeName === worktree);
+  if (worktree == null) return { project, worktree: null, path: row.path, place: mainPlace, branch: null, mainPath: row.path, mainPlace };
+  const wt = await scope.worktree(project, worktree);
   if (!wt) throw new Refusal('CHECKOUT_UNKNOWN', `unknown worktree ${worktree} of ${project}`);
-  const place = placeAt(wt.worktreePath);
   return {
-    project, worktree, path: wt.worktreePath, place, branch: wt.branch, baseBranch: wt.baseBranch, baseSha: wt.baseSha,
-    baseWorktree: wt.baseWorktree, exists: await git.exists(place), mainPath: row.path, mainPlace,
+    project, worktree, path: wt.worktreePath, place: placeAt(wt.worktreePath), branch: wt.branch, baseBranch: wt.baseBranch,
+    baseSha: wt.baseSha, baseWorktree: wt.baseWorktree, mainPath: row.path, mainPlace,
   };
 }
 
+/** `lookupCheckout` plus `exists`, asked of the checkout's system; a system that cannot answer refuses. */
+export async function resolveCheckout(args, scope = lookupScope()) {
+  const co = await lookupCheckout(args, scope);
+  return { ...co, exists: await git.exists(co.place) };
+}
+
 /** Base shortcuts for a checkout, nearest first: [{ref, label, forkSha}]. */
-export async function forkPoints(checkout) {
+export async function forkPoints(checkout, scope = lookupScope()) {
   if (!checkout.worktree) return [];
-  const rows = await cc.worktrees(checkout.project);
+  const rows = await scope.worktrees(checkout.project);
   const out = [];
   const seen = new Set();
   let row = rows.find((w) => w.worktreeName === checkout.worktree);
@@ -108,15 +112,16 @@ export async function sessionPlaces(sessionId) {
 
 /** Picker data for one checkout: its git state, base shortcuts and the project's worktrees. */
 export async function checkoutInfo({ project, worktree }) {
-  const co = await resolveCheckout({ project, worktree });
+  const scope = lookupScope();
+  const co = await resolveCheckout({ project, worktree }, scope);
   const st = co.exists ? await git.statusOf(co.place) : null;
   return {
     checkout: {
       project, worktree: co.worktree, path: co.path, branch: co.branch ?? st?.branch ?? null,
       headSha: st?.head ?? null, dirty: st?.dirty ?? false, exists: co.exists,
     },
-    forkPoints: await forkPoints(co),
-    worktrees: (await cc.worktrees(project)).map((w) => ({ worktreeName: w.worktreeName, branch: w.branch })),
+    forkPoints: await forkPoints(co, scope),
+    worktrees: (await scope.worktrees(project)).map((w) => ({ worktreeName: w.worktreeName, branch: w.branch })),
   };
 }
 

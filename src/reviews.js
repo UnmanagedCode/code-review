@@ -4,6 +4,8 @@ import { withLock } from './mutex.js';
 import { attempt, refuse, Refusal } from './refusals.js';
 import { UNREACHABLE } from './exec.js';
 import { resolveCheckout, forkPoints, sessions, sessionCheckout, isConductorProject } from './checkouts.js';
+import { lookupScope } from './lookups.js';
+import { mapLimit, ROW_CONCURRENCY } from './limit.js';
 import { resolveTarget, buildSnapshot, isBinaryFile } from './snapshot.js';
 import { followThreads } from './follow.js';
 import { currentRound, authorFor, assertOpen, inReview, viewReview } from './context.js';
@@ -58,7 +60,7 @@ export async function summaryOf(review, env) {
 }
 
 /** Fresh summary of a stored review (re-read, so `rev` is current). */
-export const summaryById = (id) => viewReview(id, async (review, env) => ({ ok: true, review: await summaryOf(review, env) }));
+export const summaryById = (id, scope) => viewReview(id, async (review, env) => ({ ok: true, review: await summaryOf(review, env) }), scope);
 
 /** Recipient of a human-created review: the explicit session, else the single live attached one, else none. */
 async function resolveRecipient(explicit, checkout) {
@@ -80,11 +82,12 @@ export const openReview = (args, actor) => attempt(() => withLock('create', asyn
     if (!(await sessionCheckout(args.author))) throw new Refusal('AUTHOR_UNKNOWN', `unknown session: ${args.author}`);
   }
   const worktree = args.worktree || null;
-  const co = await resolveCheckout({ project: args.project, worktree });
+  const scope = lookupScope();
+  const co = await resolveCheckout({ project: args.project, worktree }, scope);
   if (!co.exists) throw new Refusal('CHECKOUT_GONE', `${co.path} does not exist`);
   const target = {};
   if (kind === 'range') {
-    target.base = args.base ?? (await forkPoints(co))[0]?.ref;
+    target.base = args.base ?? (await forkPoints(co, scope))[0]?.ref;
     if (!target.base) throw new Refusal('BASE_REQUIRED', 'a range review of a main checkout needs a base');
   }
   const shas = await resolveTarget(co.place, kind, kind === 'commit' ? { sha: args.sha } : target);
@@ -93,7 +96,7 @@ export const openReview = (args, actor) => attempt(() => withLock('create', asyn
   const same = (r) => r.status === 'open' && r.project === args.project && r.worktree === worktree && r.kind === kind
     && r.target.base === target.base && r.target.sha === target.sha;
   const existing = store.list().find(same);
-  if (existing) return { ok: true, review: (await summaryById(existing.id)).review, reused: true };
+  if (existing) return { ok: true, review: (await summaryById(existing.id, scope)).review, reused: true };
 
   const snap = await buildSnapshot({ kind, repo: co.place, checkout: co.place, ...shas });
   const recipient = actor.kind === 'agent' ? actor.sessionId : await resolveRecipient(args.recipient, { project: args.project, worktree });
@@ -109,7 +112,7 @@ export const openReview = (args, actor) => attempt(() => withLock('create', asyn
   review.createdBy = authorFor(review, actor);
   review.title = args.title || targetLabel(review);
   store.write(review);
-  return { ok: true, review: (await summaryById(review.id)).review, reused: false };
+  return { ok: true, review: (await summaryById(review.id, scope)).review, reused: false };
 }));
 
 /** Summaries, newest first. `worktree` undefined = every checkout of the project; null = the main one. */
@@ -117,8 +120,8 @@ export const listReviews = ({ project, worktree, status } = {}) => attempt(async
   const stored = store.list()
     .filter((r) => (!project || r.project === project) && (worktree === undefined || r.worktree === worktree) && (!status || status === 'all' || r.status === status))
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id));
-  const out = [];
-  for (const r of stored) out.push((await summaryById(r.id)).review);
+  const scope = lookupScope();
+  const out = await mapLimit(stored, ROW_CONCURRENCY, async (r) => (await summaryById(r.id, scope)).review);
   return { ok: true, reviews: out };
 });
 
@@ -150,6 +153,7 @@ export const deleteReview = (id) => attempt(() => withLock(id, async () => {
 }));
 
 export const setVerdict = (id, hunkId, verdict) => attempt(async () => {
+  const scope = lookupScope();
   const res = await inReview(id, async (review, env) => {
     if (!VERDICTS.includes(verdict)) throw invalid(`verdict must be one of ${VERDICTS.join(', ')}`);
     assertOpen(review);
@@ -158,12 +162,13 @@ export const setVerdict = (id, hunkId, verdict) => attempt(async () => {
     if (!known) throw new Refusal('HUNK_UNKNOWN', `no such hunk in round ${currentRound(review).n}: ${hunkId}`);
     record(review, hunkId, verdict);
     return { ok: true };
-  });
-  return res.ok ? { ...(await summaryById(id)), hunkId, verdict } : res;
+  }, scope);
+  return res.ok ? { ...(await summaryById(id, scope)), hunkId, verdict } : res;
 });
 
 /** Accepts the listed pending hunks of one file in one write; hunks with a verdict keep it. */
 export const acceptFile = (id, file, hunkIds) => attempt(async () => {
+  const scope = lookupScope();
   const res = await inReview(id, async (review, env) => {
     if (typeof file !== 'string' || !file) throw invalid('file must be a non-empty string');
     if (!Array.isArray(hunkIds) || !hunkIds.length || !hunkIds.every((h) => typeof h === 'string')) throw invalid('hunkIds must be a non-empty array of hunk ids');
@@ -180,8 +185,8 @@ export const acceptFile = (id, file, hunkIds) => attempt(async () => {
       accepted.push(hunkId);
     }
     return { ok: true, accepted };
-  });
-  return res.ok ? { ...(await summaryById(id)), file, accepted: res.accepted } : res;
+  }, scope);
+  return res.ok ? { ...(await summaryById(id, scope)), file, accepted: res.accepted } : res;
 });
 
 /** Re-snapshots a range or uncommitted review. A new round is activity; one an agent pushes is also agent activity (`agentSeq`). */

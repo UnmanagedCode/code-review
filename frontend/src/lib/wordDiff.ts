@@ -16,12 +16,15 @@ const PAIR_SETUP_CELLS = 64;
 const TOKEN_RE = /\w+|\s+|[^\w\s]/g;
 const SPACE_RE = /^\s+$/;
 
-/** What `wordDiff(a, b)` costs: its LCS table's cells plus a fixed setup; 0 past the caps, where it returns at once. */
+/**
+ * What `wordDiff(a, b)` costs: its LCS table's cells plus a fixed setup. Past the token cap it still tokenizes both
+ * lines (linear in their characters); past the character cap it returns at once, for nothing.
+ */
 export function wordDiffCells(a: string, b: string): number {
   if (a.length > WORD_DIFF_MAX_CHARS || b.length > WORD_DIFF_MAX_CHARS) return 0;
   const n = a.match(TOKEN_RE)?.length ?? 0;
   const m = b.match(TOKEN_RE)?.length ?? 0;
-  if (n > WORD_DIFF_MAX_TOKENS || m > WORD_DIFF_MAX_TOKENS) return 0;
+  if (n > WORD_DIFF_MAX_TOKENS || m > WORD_DIFF_MAX_TOKENS) return a.length + b.length + PAIR_SETUP_CELLS;
   return (n + 1) * (m + 1) + PAIR_SETUP_CELLS;
 }
 

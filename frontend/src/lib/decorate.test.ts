@@ -1,4 +1,4 @@
-import { expect, test } from 'vitest';
+import { expect, test, vi } from 'vitest';
 import { hunk } from '@/test/fixtures';
 import { decorateRows } from './decorate';
 import { buildRows, type Row } from './diffRows';
@@ -6,7 +6,7 @@ import { TOKEN_CLASS } from './highlight';
 import { tokenize } from './highlight/prism';
 import { splitRows } from './splitRows';
 import type { DiffLine, Hunk } from './types';
-import { WORD_DIFF_MAX_TOTAL_CELLS, wordDiffCells } from './wordDiff';
+import { WORD_DIFF_MAX_CHARS, WORD_DIFF_MAX_TOKENS, WORD_DIFF_MAX_TOTAL_CELLS, wordDiffCells } from './wordDiff';
 
 const L = (t: DiffLine['t'], old: number | null, nu: number | null, text: string): DiffLine => ({ t, old, new: nu, text });
 const lineRows = (rows: Row[]) => rows.flatMap((r) => (r.kind === 'line' ? [r.line] : []));
@@ -91,9 +91,41 @@ test('word emphasis stops once WORD_DIFF_MAX_TOTAL_CELLS is spent: later pairs g
   for (const l of lineRows(built)) expect(text(decos.get(l))).toBe(l.text);
 });
 
-test('wordDiffCells counts the LCS table and a fixed setup, and 0 for a pair past the per-line caps', () => {
-  // Invariant: the budget charges what wordDiff actually does, and nothing for pairs it skips at once.
+test('wordDiffCells counts the LCS table and setup, a token-capped pair\'s tokenizing, and nothing for a length-capped pair', () => {
+  // Invariant: the budget charges what wordDiff actually does: the table, or (past the token cap) the tokenizing it still
+  // does, and nothing for a pair it rejects on length before any work.
   expect(wordDiffCells('a b', 'a')).toBeGreaterThan(wordDiffCells('a', 'a'));
-  expect(wordDiffCells('x'.repeat(2000), 'y')).toBe(0);
   expect(wordDiffCells('', '')).toBeGreaterThan(0);
+  expect(wordDiffCells('x'.repeat(WORD_DIFF_MAX_CHARS + 1), 'y')).toBe(0);
+  const tokenCapped = Array.from({ length: WORD_DIFF_MAX_TOKENS }, () => 'x').join(' ');
+  expect(tokenCapped.length).toBeLessThanOrEqual(WORD_DIFF_MAX_CHARS);
+  expect(wordDiffCells(tokenCapped, 'y')).toBeGreaterThanOrEqual(tokenCapped.length + 1);
+});
+
+test('a file of token-capped pairs drains the budget: pairs after it are not even tokenized', () => {
+  // Invariant: pairs too long to diff still spend the budget, so a file full of them stops paying for tokenizing.
+  const long = Array.from({ length: WORD_DIFF_MAX_TOKENS }, (_, i) => `w${i % 10}`).join(' ');
+  const per = wordDiffCells(long, long);
+  const fit = Math.floor(WORD_DIFF_MAX_TOTAL_CELLS / per);
+  const pairs = 3 * fit;
+  const capped = hunk({ lines: Array.from({ length: pairs }, (_, i) => [L('del', 2 * i + 1, null, long), L('add', null, 2 * i + 1, long), L('ctx', 2 * i + 2, 2 * i + 2, 'x')]).flat() });
+  const built = buildRows({ hunks: [capped], expansions: {}, texts: {}, total: null });
+  const match = vi.spyOn(String.prototype, 'match');
+  decorateRows(built, null, null, ws);
+  // Each charged pair is tokenized at most twice per line (to charge it, then inside wordDiff); once the budget is spent
+  // no pair is. Without the charge every pair would be: at least 2 × pairs = 6 × fit calls.
+  expect(match.mock.calls.length).toBeLessThanOrEqual(4 * (fit + 1));
+  match.mockRestore();
+});
+
+test('a side whose text is unchanged is not tokenized again', () => {
+  // Invariant: re-decorating identical sides (a refetch, a toggle that leaves a side alone) reuses its segments.
+  const spy = vi.fn((t: string) => [t]);
+  decorateRows(rows, 'typescript', spy, ws);
+  expect(spy).toHaveBeenCalledTimes(2);
+  decorateRows(buildRows({ hunks: [h1, h2], expansions: { 'after:h1': { top: 2, bottom: 2 } }, texts: { 5: 'g5', 6: 'g6', 7: 'g7', 8: 'g8' }, total: null }), 'typescript', spy, ws);
+  expect(spy).toHaveBeenCalledTimes(2);
+  // Fewer gap lines on both sides: both re-tokenized.
+  decorateRows(buildRows({ hunks: [h1, h2], expansions: { 'after:h1': { top: 1, bottom: 1 } }, texts: { 5: 'g5', 6: 'g6', 7: 'g7', 8: 'g8' }, total: null }), 'typescript', spy, ws);
+  expect(spy).toHaveBeenCalledTimes(4);
 });

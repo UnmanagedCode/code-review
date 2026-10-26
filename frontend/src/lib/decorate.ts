@@ -4,6 +4,19 @@ import { mergeSegments, type MarkedSeg } from './segments';
 import type { DiffLine, Side } from './types';
 import { WORD_DIFF_MAX_TOTAL_CELLS, wordDiff, wordDiffCells, type Range } from './wordDiff';
 
+// The last sides highlighted: a refetch (uncommitted polling) or a toggle that leaves a side's text as it was reuses its
+// segments instead of tokenizing it again. highlightLines depends on nothing else.
+const SIDE_CACHE_SIZE = 4;
+const sideCache: { text: string; lang: string | null; tokenize: Tokenize | null; segs: Seg[][] }[] = [];
+function highlightSide(text: string, lang: string | null, tokenize: Tokenize | null): Seg[][] {
+  const hit = sideCache.find((e) => e.lang === lang && e.tokenize === tokenize && e.text === text);
+  if (hit) return hit.segs;
+  const segs = highlightLines(text, lang, tokenize);
+  sideCache.unshift({ text, lang, tokenize, segs });
+  sideCache.length = Math.min(sideCache.length, SIDE_CACHE_SIZE);
+  return segs;
+}
+
 /** A line's text as highlighted and shown: a trailing CR is dropped. */
 export const displayText = (line: DiffLine) => line.text.replace(/\r$/, '');
 
@@ -19,7 +32,7 @@ export function decorateRows(rows: Row[], lang: string | null, tokenize: Tokeniz
   const lines = rows.flatMap((r) => (r.kind === 'line' ? [r.line] : []));
   const highlight = (s: Side) => {
     const own = lines.filter((l) => l[s] != null);
-    const segs = highlightLines(own.map(displayText).join('\n'), lang, tokenize);
+    const segs = highlightSide(own.map(displayText).join('\n'), lang, tokenize);
     return new Map(own.map((l, i) => [l, segs[i]]));
   };
   const sides = { old: highlight('old'), new: highlight('new') };

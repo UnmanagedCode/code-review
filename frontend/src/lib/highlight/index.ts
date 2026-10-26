@@ -40,6 +40,27 @@ const EXT: Record<string, string> = {
   rb: 'ruby', php: 'php', yml: 'yaml', yaml: 'yaml', md: 'markdown', markdown: 'markdown', sql: 'sql', diff: 'diff', patch: 'diff',
 };
 const BASENAME: Record<string, string> = { Dockerfile: 'bash', Gemfile: 'ruby', Rakefile: 'ruby', '.bashrc': 'bash', '.zshrc': 'bash' };
+/** Every language `languageFor` can return. */
+export const HIGHLIGHT_LANGUAGES = [...new Set([...Object.values(EXT), ...Object.values(BASENAME)])];
+
+/**
+ * Per-language side caps below HIGHLIGHT_MAX_SIDE_CHARS. Prism's greedy patterns go quadratic on lines of unterminated
+ * literals, so each keeps the worst stress input of `harness/bench/highlight.mjs` within about 150 ms per side (its README
+ * has the numbers). A language not listed takes HIGHLIGHT_MAX_SIDE_CHARS.
+ */
+export const HIGHLIGHT_MAX_SIDE_CHARS_BY_LANG: Partial<Record<string, number>> = {
+  markup: 250_000, rust: 250_000, ruby: 250_000, yaml: 250_000,
+  sql: 128_000,
+  json: 96_000, python: 96_000,
+  go: 64_000, java: 64_000,
+  javascript: 48_000, typescript: 48_000, c: 48_000,
+  jsx: 32_000, tsx: 32_000, cpp: 32_000, csharp: 32_000,
+  bash: 16_000, php: 16_000,
+  css: 8_000, markdown: 8_000,
+};
+
+/** The most characters one side of `lang` may have and still be highlighted. */
+export const sideCharCap = (lang: string): number => HIGHLIGHT_MAX_SIDE_CHARS_BY_LANG[lang] ?? HIGHLIGHT_MAX_SIDE_CHARS;
 
 /** The Prism language for a path, or null (render plain). */
 export function languageFor(path: string): string | null {
@@ -59,7 +80,7 @@ const plain = (lines: string[]): Seg[][] => lines.map((text) => [{ text, cls: nu
  */
 export function highlightLines(text: string, lang: string | null, tokenize: Tokenize | null): Seg[][] {
   const lines = text.split('\n');
-  if (!lang || !tokenize || text.length > HIGHLIGHT_MAX_SIDE_CHARS || lines.length > HIGHLIGHT_MAX_LINES
+  if (!lang || !tokenize || text.length > sideCharCap(lang) || lines.length > HIGHLIGHT_MAX_LINES
     || lines.some((l) => l.length > HIGHLIGHT_MAX_LINE_CHARS)) return plain(lines);
   const out: Seg[][] = [[]];
   const emit = (s: string, cls: string | null) => {

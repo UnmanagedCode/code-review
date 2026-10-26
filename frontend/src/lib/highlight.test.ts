@@ -1,5 +1,7 @@
 import { expect, test, vi } from 'vitest';
-import { HIGHLIGHT_MAX_LINE_CHARS, HIGHLIGHT_MAX_LINES, HIGHLIGHT_MAX_SIDE_CHARS, highlightLines, languageFor, TOKEN_CLASS } from './highlight';
+import {
+  HIGHLIGHT_LANGUAGES, HIGHLIGHT_MAX_LINE_CHARS, HIGHLIGHT_MAX_LINES, HIGHLIGHT_MAX_SIDE_CHARS, HIGHLIGHT_MAX_SIDE_CHARS_BY_LANG, highlightLines, languageFor, sideCharCap, TOKEN_CLASS,
+} from './highlight';
 import { tokenize } from './highlight/prism';
 
 test('languageFor maps extensions and known basenames; anything else is plain', () => {
@@ -54,4 +56,31 @@ test('bounds: past the line length, line count or side size cap the side is plai
   const spy = vi.fn((t: string) => [t]);
   highlightLines(under, 'javascript', spy);
   expect(spy).toHaveBeenCalledTimes(1);
+});
+
+/** A side of exactly `n` characters in 199-character lines (within the line-length and line-count caps). */
+const sideOf = (n: number) => Array.from({ length: Math.ceil(n / 200) }, () => 'y'.repeat(199)).join('\n').slice(0, n);
+
+test('a side over its language\'s cap is plain and never tokenized; at the cap it is tokenized', () => {
+  // Invariant: no language is tokenized past its HIGHLIGHT_MAX_SIDE_CHARS_BY_LANG cap (else HIGHLIGHT_MAX_SIDE_CHARS), the
+  // bound that keeps a quadratic grammar's worst case short (harness/bench/highlight.mjs).
+  for (const lang of HIGHLIGHT_LANGUAGES) {
+    const cap = sideCharCap(lang);
+    expect(cap).toBe(HIGHLIGHT_MAX_SIDE_CHARS_BY_LANG[lang] ?? HIGHLIGHT_MAX_SIDE_CHARS);
+    const over = vi.fn((t: string) => [t]);
+    const text = sideOf(cap + 1);
+    expect(highlightLines(text, lang, over).flat().every((seg) => seg.cls === null)).toBe(true);
+    expect(over).not.toHaveBeenCalled();
+    const at = vi.fn((t: string) => [t]);
+    highlightLines(sideOf(cap), lang, at);
+    expect(at).toHaveBeenCalledTimes(1);
+  }
+});
+
+test('the per-language caps name only languages languageFor returns, and only lower the global cap', () => {
+  // Invariant: the table can't silently miss a language through a typo, or raise a cap above HIGHLIGHT_MAX_SIDE_CHARS.
+  for (const [lang, cap] of Object.entries(HIGHLIGHT_MAX_SIDE_CHARS_BY_LANG)) {
+    expect(HIGHLIGHT_LANGUAGES).toContain(lang);
+    expect(cap).toBeLessThan(HIGHLIGHT_MAX_SIDE_CHARS);
+  }
 });

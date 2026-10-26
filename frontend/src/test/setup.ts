@@ -1,6 +1,7 @@
 import { cleanup } from '@testing-library/react';
 import { afterEach, vi } from 'vitest';
 import { resetCodeGit } from '@/lib/codeGit';
+import { resetSse } from '@/lib/sse';
 import { resetDiffPrefs } from '@/state/diffPrefs';
 import { resetDrafts } from '@/state/drafts';
 import { resetDropped } from '@/state/dropped';
@@ -11,6 +12,7 @@ afterEach(() => {
   cleanup();
   resetDropped();
   resetMarks();
+  resetSse();
   resetDrafts();
   vi.useRealTimers();
   vi.unstubAllGlobals();

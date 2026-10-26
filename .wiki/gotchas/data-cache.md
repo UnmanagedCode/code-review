@@ -1,0 +1,4 @@
+# Client data layer gotchas
+
+- **The event stream is never closed by unsubscribing.** `App` swaps `ListPane` for `ReviewView`, and React runs every passive unmount before the mounts, so a stream released with its last subscriber closed and reopened on each list ↔ review move. `frontend/src/lib/sse.ts` opens it once per page load. The host contract (cc's `docs/plugin-ui.md`) is the same: create long-lived resources once per page load, never release them because the page was hidden.
+- **CLOSED is not reconnecting.** The browser retries an `EventSource` that hit a network error, but gives up for good (`readyState` CLOSED) on a non-2xx answer such as 503 `STORE_UNCONFIGURED` or a 502 while the plugin backend restarts. With a permanent stream nothing else would reopen it, so `openSource` (`frontend/src/lib/sseSource.ts`) retries with a doubling delay and treats the next `open` as a reconnect (events may have been missed).

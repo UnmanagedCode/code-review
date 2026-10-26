@@ -158,7 +158,7 @@ Counted by the fake cc (`execCalls`); locally each costs roughly an HTTP round t
 
 | Dir | Responsibility |
 |---|---|
-| `lib/` | `api.ts` (`ApiError {status, code, reason}`), `endpoints.ts` (the only place `api/…` paths are built), `types.ts` (wire shapes), `refusals.ts` (`messageFor` for backend codes, `bridgeMessage` for bridge codes), `route.ts`, `bridge.ts` (`window.ccBridge`, read per call), `sse.ts` (one shared EventSource), `storage.ts` (the only `localStorage` user, `code-review:` keys: `lastCheckout`, `diffView`, `sidePaneWidth`, `diffContext`, `ignoreWhitespace`), `useMediaQuery.ts`, `useWidthObserver.ts` (ResizeObserver callback ref), `codeGit.ts` ("Open in code-git": subpath, top-frame href, `useCodeGit` memoising `api/integrations` per page, `shownHeadSha`) |
+| `lib/` | `api.ts` (`ApiError {status, code, reason}`), `endpoints.ts` (the only place `api/…` paths are built), `types.ts` (wire shapes), `refusals.ts` (`messageFor` for backend codes, `bridgeMessage` for bridge codes), `route.ts`, `bridge.ts` (`window.ccBridge`, read per call), `sse.ts` (the one page-lifetime EventSource, `subscribe`/`onReconnect`), `sseSource.ts` (`openSource`: keeps an EventSource alive), `storage.ts` (the only `localStorage` user, `code-review:` keys: `lastCheckout`, `diffView`, `sidePaneWidth`, `diffContext`, `ignoreWhitespace`), `useMediaQuery.ts`, `useWidthObserver.ts` (ResizeObserver callback ref), `codeGit.ts` ("Open in code-git": subpath, top-frame href, `useCodeGit` memoising `api/integrations` per page, `shownHeadSha`) |
 | `lib/` (pure) | `markdown.ts` (body → AST; citations and URLs as atoms), `diffRows.ts` (rows, collapsible gaps, `gapNeeds`, `collapseRows`), `splitRows.ts` (side-by-side pairing), `selection.ts` (selection model), `ranges.ts` (thread range rails: `rangeMarks`, lanes, `rangeLabel`/`lineSpan`, `markNote`), `paneWidth.ts` (side pane bounds, `clampPane`), `fileTree.ts`, `highlight/` (`index.ts`: `languageFor`, `TOKEN_CLASS`, `highlightLines`; `prism.ts`: Prism + grammars, the lazy chunk, `prismManual.ts` imported first), `wordDiff.ts`, `segments.ts` (`mergeSegments`), `decorate.ts` (`decorateRows`), `whitespace.ts` (`ignoreWhitespace`, `isWhitespaceOnly`), `contextLines.ts` (`trimContext`, `contextBaseline`), `gitContext.ts` (`GIT_CONTEXT_LINES`, type-strippable), `prefill.ts` (`parsePrefill`: a route's `range`/`sha` → the New review prefill) |
 | `state/` | Hooks that fetch and write: `useFetch`, `live` (SSE reload, polling), `checkout`, `reviewList`, `inbox` (`useInbox`, `useCloseReview`), `review`, `round` (past-round view), `compare` (round comparison), `fileDiff`, `threads` (write actions), `threadIndex`, `submit` (delivery state machine), `admin`, `dropped`, `drafts` (unsent reply/comment text by review and thread or anchor), `diffPrefs` (Diff options, an in-memory store over `storage.ts`), `readMarks` (per-thread read marks, deduped per visit), `reviewContext` |
 | `features/` | Components by area: `checkout`, `picker`, `reviews`, `inbox`, `review`, `files`, `diff`, `threads`, `submit`, `layout`, `common` |
@@ -179,13 +179,17 @@ Counted by the fake cc (`execCalls`); locally each costs roughly an HTTP round t
 - **Message bodies** render only through `features/threads/Markdown.tsx`: `parseMarkdown` (`lib/markdown.ts`) AST → React elements from a fixed tag map, no HTML strings, links only via `safeHref` or a citation in the message's server-parsed `citations`. Styles: the `.md` block in `index.css`.
 - **Theme.** Colours only through tokens (`bg-success/10`, `text-muted-foreground`); a guard test bans literal colours and palette classes.
 
+### Client data layer
+
+- **One event stream per page load.** `lib/sse.ts` opens `api/events` on the first `subscribe`/`onReconnect` and never closes it when handlers unsubscribe (`resetSse()` is the test seam). `openSource` (`lib/sseSource.ts`) owns the EventSource: a transient `error` is the browser's to retry and the next `open` calls the reconnect handlers; an `error` that leaves `readyState` CLOSED (non-2xx, e.g. 503 `STORE_UNCONFIGURED` or a 502 while the plugin backend restarts) is reopened after `RETRY_MS`, doubling to `RETRY_MAX_MS`, and that `open` also counts as a reconnect.
+
 ### UI tests
 
 `npm run test:ui` (vitest, happy-dom). `src/test/` holds the shared fakes:
 
 - `setup.ts`: cleanup, `vi.unstubAllGlobals()`, deletes `window.ccBridge`, clears storage, tombstones and drafts, forgets the memoised `api/integrations` answer (`resetCodeGit`), restores `window.top`, resets the URL.
 - `stubFetch.ts`: route table keyed `METHOD path` (or RegExp); an unstubbed request fails the test.
-- `fakeEventSource.ts`: `emit`, `fail`, `reopen`; installed through `setEventSourceFactory`.
+- `fakeEventSource.ts`: `emit`, `emitRaw`, `fail` (transient), `failClosed` (the browser gave up: `readyState` CLOSED), `reopen`; installed through `setEventSourceFactory`. `setup.ts` calls `resetSse()` after each test.
 - `fakeBridge.ts`: `installBridge(session?)` with programmable `sendPrompt`/`openSession` and `emit`.
 - `fakeTop.ts`: `installTop(location | 'unreadable')` makes the page look framed by cc (`window.top`); with `installBridge()` it enables the code-git links.
 - `fixtures.ts`: wire-shaped builders. `renderCtx.tsx`: render under a `ReviewProvider` with spies.

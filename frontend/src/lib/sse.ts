@@ -1,43 +1,46 @@
-/** One shared EventSource on `api/events`. Opened on the first subscriber, closed with the last. */
+import { openSource } from './sseSource';
+
+/**
+ * One shared EventSource on `api/events` per page load. Opened on the first subscriber and never closed by unsubscribing:
+ * the list ↔ review swap unmounts every subscriber before the next mounts, and the page, not a component, owns the stream.
+ */
 export interface ReviewEvent { id: string; rev?: number; deleted?: boolean }
 
-let make: () => EventSource = () => new EventSource('api/events');
+let make: (url: string) => EventSource = (url) => new EventSource(url);
 /** Test seam: replace the EventSource factory. */
-export const setEventSourceFactory = (f: () => EventSource): void => { make = f; };
+export const setEventSourceFactory = (f: (url: string) => EventSource): void => { make = f; };
 
 const handlers = new Set<(e: ReviewEvent) => void>();
 const reconnects = new Set<() => void>();
-let source: EventSource | null = null;
-let errored = false;
+let stream: { close: () => void } | null = null;
 
-function open() {
-  source = make();
-  source.addEventListener('review', (ev) => {
-    try {
-      const data = JSON.parse((ev as MessageEvent).data) as ReviewEvent;
-      handlers.forEach((h) => h(data));
-    } catch { /* a malformed event carries nothing to act on */ }
+function ensureOpen() {
+  stream ??= openSource('api/events', make, {
+    review(data) {
+      try {
+        const e = JSON.parse(data) as ReviewEvent;
+        handlers.forEach((h) => h(e));
+      } catch { /* a malformed event carries nothing to act on */ }
+    },
+    reconnect: () => reconnects.forEach((r) => r()),
   });
-  source.addEventListener('error', () => { errored = true; });
-  source.addEventListener('open', () => {
-    if (errored) reconnects.forEach((r) => r());
-    errored = false;
-  });
-}
-function release() {
-  if (handlers.size || reconnects.size) return;
-  source?.close();
-  source = null;
-  errored = false;
 }
 
 export function subscribe(fn: (e: ReviewEvent) => void): () => void {
   handlers.add(fn);
-  if (!source) open();
-  return () => { handlers.delete(fn); release(); };
+  ensureOpen();
+  return () => { handlers.delete(fn); };
 }
 export function onReconnect(fn: () => void): () => void {
   reconnects.add(fn);
-  if (!source) open();
-  return () => { reconnects.delete(fn); release(); };
+  ensureOpen();
+  return () => { reconnects.delete(fn); };
+}
+
+/** Test isolation: close the stream and forget every handler. */
+export function resetSse(): void {
+  stream?.close();
+  stream = null;
+  handlers.clear();
+  reconnects.clear();
 }

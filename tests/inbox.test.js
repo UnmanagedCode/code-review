@@ -218,6 +218,40 @@ test('a row carries the review\'s identity, label, title, round, unread count an
   assert.deepEqual([read.title, read.unread, read.seenByHuman], ['Named', 0, true]);
 });
 
+test('a row\'s label is the review\'s target label, independent of its title', async () => {
+  // Invariant: inboxItem's label comes from targetLabel (the target), title from the stored title.
+  const { review } = await onFeature();
+  ok(await reviews.patchReview(review.id, { title: 'Named' }));
+  const row = await item(review.id);
+  assert.deepEqual([row.label, row.title], ['main...br-feature', 'Named']);
+});
+
+test('turn is the agent\'s when the delivered submission was composed at the agent\'s own seq', async () => {
+  // Invariant: turnOf's boundary is inclusive: agentSeq == the newest delivered submission's seq is 'agent'.
+  const { review } = await onFeature();
+  ok(await threads.annotate(review.id, author, { anchor: at('a.js', 2), kind: 'comment', body: 'agent first' }));
+  const { submission } = ok(await submissions.composeSubmission(review.id));
+  ok(await submissions.recordResult(review.id, submission.id, { ok: true }));
+  const stored = store.read(review.id);
+  assert.equal(stored.submissions.at(-1).seq, stored.agentSeq, 'no bump between the agent and the compose');
+  assert.equal((await item(review.id)).turn, 'agent');
+});
+
+test('an open review without the migrated fields is logged and left out; the other rows still show', async (t) => {
+  // Invariant: listInbox drops (via store.logSkipped) any open review lacking lastActivityAt or agentSeq instead of failing; no fallback value is invented.
+  const errors = t.mock.method(console, 'error', () => {});
+  const { review: current } = await onFeature();
+  w.repo.write('a.js', editLines({ 5: 'dirty' }));
+  const other = ok(await reviews.openReview({ project: 'app', kind: 'uncommitted' }, HUMAN)).review;
+  const old = ok(await reviews.openReview({ project: 'app', kind: 'commit' }, HUMAN)).review;
+  const raw = store.read(old.id);
+  delete raw.lastActivityAt;
+  delete raw.agentSeq;
+  store.write(raw);
+  assert.deepEqual((await list()).map((r) => r.id).sort(), [current.id, other.id].sort());
+  assert.ok(errors.mock.calls.some((c) => String(c.arguments[0]).includes(`review ${old.id} left out of the inbox`)), 'logged through logSkipped');
+});
+
 test('listing the inbox runs no git: zero exec calls', async () => {
   // Invariant: listInbox never calls /api/exec (no summaryOf, no snapshot, no status).
   await onFeature();

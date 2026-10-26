@@ -57,7 +57,8 @@ Services return a plain object or a refusal `{ok:false, code, reason}`. Low-leve
 
 - `migrateStore()` (`src/migrate.js`) runs once per start, in `server.js` `start()` before `listen`. It lists `store.ids()` and runs each review through `store.mutate`, so a review it leaves unchanged is not rewritten.
 - Each step self-checks: it fills only fields that are missing, so a second run, or a review already in the current shape, writes nothing.
-- A file `mutate` cannot read is logged (`logSkipped`, `not migrated`) and left byte-identical; an unconfigured store (`STORE_UNCONFIGURED`) is a no-op. Any other error stops the start.
+- Any per-review failure (a file `mutate` cannot read, a write error) is logged (`logSkipped`, `not migrated`) and skipped; an unreadable file stays byte-identical. Only a failure to list the store (`store.ids()`) stops the start, and an unconfigured store (`STORE_UNCONFIGURED`) is a no-op.
+- So an open review can still lack the current fields (a skipped file, or one copied into `reviews/` while the server runs). `listInbox` guards against it: such a review is logged (`logSkipped`, `left out of the inbox`) and dropped from the inbox, with no fallback value; every other row still shows.
 - Current steps: `lastActivityAt` = the latest of `createdAt`, message `at`s, verdict `at`s, round `createdAt`s, submission `composedAt`s and `deliveredAt`s; `agentSeq` = the highest `seq` of a non-human message, else 0. Rounds carry no actor, so agent refreshes stored before `agentSeq` existed are not counted.
 - Application code reads the current shape only; a new format change adds a step here.
 

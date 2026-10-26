@@ -20,9 +20,17 @@ async function goneMarks(reviews) {
   });
 }
 
+// Store-integrity guard: a file `migrateStore` could not upgrade (or one copied in since) lacks the inbox's fields; it is logged and left out.
+function migrated(review) {
+  const missing = ['lastActivityAt', 'agentSeq'].filter((k) => review[k] === undefined);
+  if (!missing.length) return true;
+  store.logSkipped(review.id, 'left out of the inbox', new Error(`not migrated: no ${missing.join(', ')}`));
+  return false;
+}
+
 /** Every open review of every checkout, latest activity first. Store-only plus cc's lists: no git, no System is asked. */
 export const listInbox = () => attempt(async () => {
-  const open = store.list().filter((r) => r.status === 'open');
+  const open = store.list().filter((r) => r.status === 'open' && migrated(r));
   const gone = open.length ? await goneMarks(open) : [];
   const reviews = open.map((r, i) => inboxItem(r, gone[i]))
     .sort((a, b) => b.lastActivityAt.localeCompare(a.lastActivityAt) || b.id.localeCompare(a.id));

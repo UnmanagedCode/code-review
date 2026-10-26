@@ -4,16 +4,19 @@ import { mergeSegments, type MarkedSeg } from './segments';
 import type { DiffLine, Side } from './types';
 import { WORD_DIFF_MAX_TOTAL_CELLS, wordDiff, wordDiffCells, type Range } from './wordDiff';
 
-// The last sides highlighted: a refetch (uncommitted polling) or a toggle that leaves a side's text as it was reuses its
-// segments instead of tokenizing it again. highlightLines depends on nothing else.
+// The last sides tokenized: a refetch (uncommitted polling) or a toggle that leaves a side's text as it was reuses its
+// segments instead of tokenizing it again (highlightLines depends on nothing else). A side left plain is never kept:
+// rebuilding it is cheap, and past the caps it can be megabytes.
 const SIDE_CACHE_SIZE = 4;
 const sideCache: { text: string; lang: string | null; tokenize: Tokenize | null; segs: Seg[][] }[] = [];
 function highlightSide(text: string, lang: string | null, tokenize: Tokenize | null): Seg[][] {
   const hit = sideCache.find((e) => e.lang === lang && e.tokenize === tokenize && e.text === text);
   if (hit) return hit.segs;
-  const segs = highlightLines(text, lang, tokenize);
-  sideCache.unshift({ text, lang, tokenize, segs });
-  sideCache.length = Math.min(sideCache.length, SIDE_CACHE_SIZE);
+  const { lines: segs, tokenized } = highlightLines(text, lang, tokenize);
+  if (tokenized) {
+    sideCache.unshift({ text, lang, tokenize, segs });
+    sideCache.length = Math.min(sideCache.length, SIDE_CACHE_SIZE);
+  }
   return segs;
 }
 

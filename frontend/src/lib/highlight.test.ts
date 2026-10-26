@@ -15,7 +15,8 @@ test('languageFor maps extensions and known basenames; anything else is plain', 
 
 test('real Prism: a keyword gets the keyword class; a multi-line comment splits into per-line segments', () => {
   // Invariant: real Prism output becomes per-line segments whose text round-trips, with classes only from TOKEN_CLASS.
-  const lines = highlightLines('const a = 1; /* one\ntwo */ let b;', 'javascript', tokenize);
+  const { lines, tokenized } = highlightLines('const a = 1; /* one\ntwo */ let b;', 'javascript', tokenize);
+  expect(tokenized).toBe(true);
   expect(lines).toHaveLength(2);
   expect(lines[0].find((s) => s.text === 'const')?.cls).toBe(TOKEN_CLASS.keyword);
   expect(lines[0].at(-1)).toEqual({ text: '/* one', cls: TOKEN_CLASS.comment });
@@ -26,13 +27,13 @@ test('real Prism: a keyword gets the keyword class; a multi-line comment splits 
 test('an unknown token type, including an Object.prototype key, gets no class; no language or tokenizer means plain text', () => {
   // Invariant: a token type outside TOKEN_CLASS never becomes a class; no language or tokenizer means plain text.
   const spy = vi.fn(() => ['a', { type: 'nonsense-type', content: 'b', alias: undefined, length: 1 } as never]);
-  expect(highlightLines('ab', 'x', spy)).toEqual([[{ text: 'a', cls: null }, { text: 'b', cls: null }]]);
-  expect(highlightLines('a\nb', null, spy)).toEqual([[{ text: 'a', cls: null }], [{ text: 'b', cls: null }]]);
-  expect(highlightLines('a', 'x', null)).toEqual([[{ text: 'a', cls: null }]]);
+  expect(highlightLines('ab', 'x', spy).lines).toEqual([[{ text: 'a', cls: null }, { text: 'b', cls: null }]]);
+  expect(highlightLines('a\nb', null, spy).lines).toEqual([[{ text: 'a', cls: null }], [{ text: 'b', cls: null }]]);
+  expect(highlightLines('a', 'x', null).lines).toEqual([[{ text: 'a', cls: null }]]);
   // A plain `in` or `TOKEN_CLASS[type]` lookup would hand these a function or an object as the class.
   const proto = ['constructor', 'toString', '__proto__', 'hasOwnProperty'];
   const tokens = vi.fn(() => proto.map((type) => ({ type, content: type, alias: undefined, length: type.length }) as never));
-  expect(highlightLines(proto.join(''), 'x', tokens)).toEqual([proto.map((text) => ({ text, cls: null }))]);
+  expect(highlightLines(proto.join(''), 'x', tokens).lines).toEqual([proto.map((text) => ({ text, cls: null }))]);
 });
 
 test('bounds: past the line length, line count or side size cap the side is plain and the tokenizer is never called', () => {
@@ -45,7 +46,8 @@ test('bounds: past the line length, line count or side size cap the side is plai
   ];
   for (const text of over) {
     const spy = vi.fn(() => [text]);
-    const out = highlightLines(text, 'javascript', spy);
+    const { lines: out, tokenized } = highlightLines(text, 'javascript', spy);
+    expect(tokenized).toBe(false);
     expect(spy).not.toHaveBeenCalled();
     expect(out.every((l) => l.length === 1 && l[0].cls === null)).toBe(true);
     expect(out.map((l) => l[0].text).join('\n')).toBe(text);
@@ -69,11 +71,20 @@ test('a side over its language\'s cap is plain and never tokenized; at the cap i
     expect(cap).toBe(HIGHLIGHT_MAX_SIDE_CHARS_BY_LANG[lang] ?? HIGHLIGHT_MAX_SIDE_CHARS);
     const over = vi.fn((t: string) => [t]);
     const text = sideOf(cap + 1);
-    expect(highlightLines(text, lang, over).flat().every((seg) => seg.cls === null)).toBe(true);
+    const res = highlightLines(text, lang, over);
+    expect(res.tokenized).toBe(false);
+    expect(res.lines.flat().every((seg) => seg.cls === null)).toBe(true);
     expect(over).not.toHaveBeenCalled();
     const at = vi.fn((t: string) => [t]);
-    highlightLines(sideOf(cap), lang, at);
+    expect(highlightLines(sideOf(cap), lang, at).tokenized).toBe(true);
     expect(at).toHaveBeenCalledTimes(1);
+  }
+  // A prototype key is no language with a cap of its own: it gets the global cap, never an inherited value.
+  for (const key of ['constructor', 'toString', '__proto__', 'valueOf']) {
+    expect(sideCharCap(key)).toBe(HIGHLIGHT_MAX_SIDE_CHARS);
+    const spy = vi.fn((t: string) => [t]);
+    expect(highlightLines(sideOf(HIGHLIGHT_MAX_SIDE_CHARS + 1), key, spy).tokenized).toBe(false);
+    expect(spy).not.toHaveBeenCalled();
   }
 });
 

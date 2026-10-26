@@ -60,7 +60,8 @@ export const HIGHLIGHT_MAX_SIDE_CHARS_BY_LANG: Partial<Record<string, number>> =
 };
 
 /** The most characters one side of `lang` may have and still be highlighted. */
-export const sideCharCap = (lang: string): number => HIGHLIGHT_MAX_SIDE_CHARS_BY_LANG[lang] ?? HIGHLIGHT_MAX_SIDE_CHARS;
+export const sideCharCap = (lang: string): number =>
+  (Object.hasOwn(HIGHLIGHT_MAX_SIDE_CHARS_BY_LANG, lang) ? HIGHLIGHT_MAX_SIDE_CHARS_BY_LANG[lang] : undefined) ?? HIGHLIGHT_MAX_SIDE_CHARS;
 
 /** The Prism language for a path, or null (render plain). */
 export function languageFor(path: string): string | null {
@@ -72,13 +73,14 @@ export function languageFor(path: string): string | null {
   return Object.hasOwn(EXT, ext) ? EXT[ext] : null;
 }
 
-const plain = (lines: string[]): Seg[][] => lines.map((text) => [{ text, cls: null }]);
+const plain = (lines: string[]) => ({ lines: lines.map((text): Seg[] => [{ text, cls: null }]), tokenized: false });
 
 /**
- * `text` (one file side) as segments per line. Plain — without calling `tokenize` — when there is no language or
- * tokenizer, or the side passes a cap (HIGHLIGHT_MAX_LINE_CHARS, HIGHLIGHT_MAX_LINES, HIGHLIGHT_MAX_SIDE_CHARS).
+ * `text` (one file side) as segments per line, and whether `tokenize` ran. Plain — without calling `tokenize` — when
+ * there is no language or tokenizer, or the side passes a cap (HIGHLIGHT_MAX_LINE_CHARS, HIGHLIGHT_MAX_LINES,
+ * `sideCharCap`).
  */
-export function highlightLines(text: string, lang: string | null, tokenize: Tokenize | null): Seg[][] {
+export function highlightLines(text: string, lang: string | null, tokenize: Tokenize | null): { lines: Seg[][]; tokenized: boolean } {
   const lines = text.split('\n');
   if (!lang || !tokenize || text.length > sideCharCap(lang) || lines.length > HIGHLIGHT_MAX_LINES
     || lines.some((l) => l.length > HIGHLIGHT_MAX_LINE_CHARS)) return plain(lines);
@@ -98,5 +100,5 @@ export function highlightLines(text: string, lang: string | null, tokenize: Toke
     }
   };
   walk(tokenize(text, lang), null);
-  return out;
+  return { lines: out, tokenized: true };
 }

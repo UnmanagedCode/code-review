@@ -2,7 +2,7 @@ import { expect, test, vi } from 'vitest';
 import { hunk } from '@/test/fixtures';
 import { decorateRows } from './decorate';
 import { buildRows, type Row } from './diffRows';
-import { TOKEN_CLASS } from './highlight';
+import { HIGHLIGHT_MAX_LINE_CHARS, sideCharCap, TOKEN_CLASS } from './highlight';
 import { tokenize } from './highlight/prism';
 import { splitRows } from './splitRows';
 import type { DiffLine, Hunk } from './types';
@@ -128,4 +128,25 @@ test('a side whose text is unchanged is not tokenized again', () => {
   // Fewer gap lines on both sides: both re-tokenized.
   decorateRows(buildRows({ hunks: [h1, h2], expansions: { 'after:h1': { top: 1, bottom: 1 } }, texts: { 5: 'g5', 6: 'g6', 7: 'g7', 8: 'g8' }, total: null }), 'typescript', spy, ws);
   expect(spy).toHaveBeenCalledTimes(4);
+});
+
+test('a side left plain is never cached: over-cap sides take no cache slot, and a tokenized side stays a hit', () => {
+  // Invariant: the side cache holds only sides that were tokenized, so a huge plain side is never retained, and plain
+  // sides never evict tokenized ones.
+  const spy = vi.fn((t: string) => [t]);
+  decorateRows(rows, 'typescript', spy, ws);
+  expect(spy).toHaveBeenCalledTimes(2);
+  // More over-cap sides than the cache has slots: a side over the language's size cap, and lines over the line cap.
+  const tsCap = sideCharCap('typescript');
+  for (let i = 0; i < 6; i++) {
+    const big = Array.from({ length: Math.ceil(tsCap / 50) }, (_, n) => `const v${i}_${n} = ${'1'.repeat(80)};`);
+    expect(big.join('\n').length).toBeGreaterThan(tsCap);
+    const huge = hunk({ lines: [...big.map((t, n) => L('del', n + 1, null, t)), ...big.map((t, n) => L('add', null, n + 1, `${t} `))] });
+    decorateRows(buildRows({ hunks: [huge], expansions: {}, texts: {}, total: null }), 'typescript', spy, ws);
+    const wide = hunk({ lines: [L('del', 1, null, `x${i}`.repeat(HIGHLIGHT_MAX_LINE_CHARS)), L('add', null, 1, `y${i}`.repeat(HIGHLIGHT_MAX_LINE_CHARS))] });
+    decorateRows(buildRows({ hunks: [wide], expansions: {}, texts: {}, total: null }), 'typescript', spy, ws);
+  }
+  expect(spy).toHaveBeenCalledTimes(2);
+  decorateRows(rows, 'typescript', spy, ws);
+  expect(spy).toHaveBeenCalledTimes(2);
 });

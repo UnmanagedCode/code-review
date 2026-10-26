@@ -23,7 +23,7 @@ export function useThreadIndex(reviewId: string, files: FileState[], version: nu
     const found: Thread[] = [];
     const worker = async () => {
       for (let p = queue.shift(); p !== undefined; p = queue.shift()) {
-        const d = await ensure(diffKey(reviewId, round, p.path), diffSpec(reviewId, round, p.path), (c) => p.sig !== undefined && c.sig === p.sig);
+        const d = await ensure(diffKey(reviewId, round, p.path), diffSpec(reviewId, round, p.path, () => String(version)), (c) => p.sig !== undefined && c.sig === p.sig);
         found.push(...d.threads);
       }
     };

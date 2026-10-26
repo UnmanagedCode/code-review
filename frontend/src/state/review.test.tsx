@@ -74,3 +74,60 @@ test('a range review is not polled', async () => {
   await act(() => vi.advanceTimersByTimeAsync(60_000));
   expect(net.count('GET api/reviews/r-1')).toBe(1);
 });
+
+// Invariant: a review deleted while nobody had it open shows as deleted on the next visit, from the cache and without a fetch,
+// instead of rendering the cached pre-delete detail as live.
+test('a delete event for a cached review makes a later mount deleted, with no refetch', async () => {
+  const { hook, net } = await loaded();
+  expect(hook.result.current.deleted).toBe(false);
+  hook.unmount();
+  act(() => { FakeEventSource.last!.emit({ id: 'r-1', deleted: true }); });
+  const renders: { deleted: boolean; data: unknown }[] = [];
+  renderHook(() => { const r = useReview('r-1'); renders.push({ deleted: r.deleted, data: r.data }); return r; });
+  expect(renders[0]).toEqual({ deleted: true, data: undefined });
+  await act(() => vi.advanceTimersByTimeAsync(1000));
+  expect(net.count('GET api/reviews/r-1')).toBe(1);
+});
+
+// Invariant: a delete while the review is open still shows the deleted state at once.
+test('a delete event while mounted marks the review deleted', async () => {
+  const { hook } = await loaded();
+  act(() => { FakeEventSource.last!.emit({ id: 'r-1', deleted: true }); });
+  expect(hook.result.current.deleted).toBe(true);
+});
+
+// Invariant: one transition costs one request: a stale uncommitted review whose tab shows again is fetched by the cache's
+// visibility flush, and the poll's focus/visibility kick joins that fetch instead of starting a second.
+test('an uncommitted review whose tab shows again after an event is fetched once', async () => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date'] });
+  let state: DocumentVisibilityState = 'visible';
+  Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => state });
+  try {
+    const net = stubFetch({ 'GET api/reviews/r-1': () => detail(5, 'uncommitted') });
+    renderHook(() => useReview('r-1'));
+    await vi.waitFor(() => expect(net.count('GET api/reviews/r-1')).toBe(1));
+    await act(() => vi.advanceTimersByTimeAsync(0));
+    act(() => { state = 'hidden'; document.dispatchEvent(new Event('visibilitychange')); });
+    act(() => { FakeEventSource.last!.emit({ id: 'r-1', rev: 6 }); });
+    await act(() => vi.advanceTimersByTimeAsync(REFOCUS_MIN_MS * 2));
+    expect(net.count('GET api/reviews/r-1')).toBe(1);
+    await act(async () => { state = 'visible'; document.dispatchEvent(new Event('visibilitychange')); window.dispatchEvent(new Event('focus')); });
+    await act(() => vi.advanceTimersByTimeAsync(0));
+    expect(net.count('GET api/reviews/r-1')).toBe(2);
+  } finally {
+    Reflect.deleteProperty(document, 'visibilityState');
+  }
+});
+
+// Invariant: revisiting an uncommitted review older than the poll interval costs one request: the mount's revalidation and
+// the overdue poll kick are the same fetch.
+test('revisiting an old uncommitted review fetches once', async () => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date'] });
+  const net = stubFetch({ 'GET api/reviews/r-1': () => detail(5, 'uncommitted') });
+  renderHook(() => useReview('r-1')).unmount();
+  await vi.waitFor(() => expect(net.count('GET api/reviews/r-1')).toBe(1));
+  await act(() => vi.advanceTimersByTimeAsync(60_000));
+  renderHook(() => useReview('r-1'));
+  await act(() => vi.advanceTimersByTimeAsync(100));
+  expect(net.count('GET api/reviews/r-1')).toBe(2);
+});

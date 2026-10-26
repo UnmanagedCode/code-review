@@ -54,15 +54,16 @@ export function useFileDiff({ reviewId, path, sig, version, uncommitted, commitF
   const commitMode = !!commitFiles;
   const listed = commitMode || !!compare;
   const key = path && !listed ? diffKey(reviewId, round, path) : null;
-  const fetched = useResource(key, diffSpec(reviewId, round, path ?? ''), { keepPrevious: true });
+  const versionRef = useRef(version);
+  versionRef.current = version;
+  const fetched = useResource(key, diffSpec(reviewId, round, path ?? '', () => String(versionRef.current)), { keepPrevious: true });
   const switching = fetched.placeholder;
   // Refetch when the cached diff is not the file's current one: its sig differs from the view's, or (a sig missing on either
-  // side) the review's load counter moved since the diff was fetched.
-  const fetchedUnder = useRef(new Map<string, string>());
+  // side) the review's load counter moved past the one the diff was fetched at. That baseline lives on the cache entry
+  // (`dataTag`), so a remount cannot adopt a diff fetched under an unknown one: a missing tag reloads.
   const compared = useRef('');
   useEffect(() => {
     if (!key || switching || fetched.loading || !fetched.data) return;
-    const under = fetchedUnder.current;
     if (sig !== undefined && fetched.data.sig !== undefined) {
       // Compared once per (file, view sig): a local patch (`patchSig`) moves the cached sig ahead of the view's until the
       // review reloads, and must not read as a stale diff.
@@ -72,10 +73,8 @@ export function useFileDiff({ reviewId, path, sig, version, uncommitted, commitF
       if (fetched.data.sig !== sig) fetched.reload();
       return;
     }
-    if (version === 0) return; // the review has not loaded: nothing to compare yet
-    const now = `v${version}`;
-    if (under.get(key) !== undefined && under.get(key) !== now) fetched.reload();
-    under.set(key, now);
+    // A diff fetched before the review ever loaded (tag 0) is as current as the review's first load (version 1).
+    if (fetched.dataTag === undefined || version > Math.max(Number(fetched.dataTag), 1)) fetched.reload();
   }, [key, sig, version, switching, fetched.loading, fetched.data]);
 
   const file: DiffFile | undefined = commitMode ? commitFiles.find((f) => f.path === path)

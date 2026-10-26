@@ -7,7 +7,7 @@ import { setDiffPrefs } from './diffPrefs';
 import { useDropped } from './dropped';
 import { useFileDiff } from './fileDiff';
 import { POLL_MS, REFOCUS_MIN_MS } from './live';
-import { resetResources } from './resource';
+import { ensure, resetResources } from './resource';
 import { useReview } from './review';
 
 beforeEach(() => installFakeEventSource());
@@ -262,15 +262,16 @@ function sigWorld(opts: { sig?: boolean; lineCount?: boolean; gate?: Record<stri
     },
     'GET api/reviews/r-1/file': { path: 'src/a.ts', side: 'new', total: 40, lines: [] },
   });
-  const hook = renderHook(({ path }) => {
+  const mount = () => renderHook(({ path }) => {
     const r = useReview('r-1');
     const sig = r.data?.files.find((f) => f.path === path)?.sig;
     return { r, f: useFileDiff({ reviewId: 'r-1', path, sig, version: r.version, uncommitted: true }) };
   }, { initialProps: { path: 'src/a.ts' } });
+  const hook = mount();
   const settle = () => act(() => vi.advanceTimersByTimeAsync(0));
   const diffs = () => net.count('GET api/reviews/r-1/diff');
   const reviews = () => net.count('GET api/reviews/r-1');
-  return { sigs, net, hook, settle, diffs, reviews, reload: () => act(() => hook.result.current.r.reload()) };
+  return { sigs, net, hook, mount, settle, diffs, reviews, reload: () => act(() => hook.result.current.r.reload()) };
 }
 
 // Invariant: a review reload that leaves the open file's sig alone costs no diff fetch; a moved sig costs exactly one.
@@ -378,4 +379,22 @@ test('a fileSig from a write response removes the own-write refetch', async () =
   w.sigs['src/a.ts'] = 'a3';
   await w.reload(); await w.settle();
   expect(w.diffs()).toBe(2);
+});
+
+// Invariant: a remount cannot adopt a diff fetched under an unknown baseline: after the review entry is evicted and
+// recreated, a diff fetched at an older review version (no sig) is refetched once the review loads again.
+test('without a sig, a diff cached across a review eviction is refetched on reopen', async () => {
+  const w = sigWorld({ sig: false });
+  await vi.waitFor(() => expect(w.hook.result.current.f.file).toBeDefined());
+  await w.settle();
+  await w.reload(); await w.settle();
+  await w.reload(); await w.settle();
+  w.hook.unmount();
+  // The review entry went idle first; 31 more idle entries evict it and keep the diff entry.
+  for (let i = 0; i < 31; i++) await ensure(`filler${i}`, { fetch: async () => i });
+  const before = w.diffs();
+  const again = w.mount();
+  await vi.waitFor(() => expect(again.result.current.f.file).toBeDefined());
+  await w.settle();
+  expect(w.diffs()).toBe(before + 1);
 });

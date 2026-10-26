@@ -208,3 +208,69 @@ test('a failed refetch keeps the previous data', async () => {
   expect(h.result.current).toMatchObject({ data: 'ok', loading: false });
   expect((h.result.current.error as Error).message).toBe('boom');
 });
+
+// Invariant: an entry flagged gone by a delete drops its data, reports `gone` on every later mount and is never fetched again.
+test('a gone event leaves the entry gone for a later mount, without a fetch', async () => {
+  const { fetch, spec } = counter({ gone: (e) => !!e.deleted });
+  renderHook(() => useResource('k', spec)).unmount();
+  await settle();
+  await emit({ id: 'r-1', deleted: true });
+  const again = mount('k', spec);
+  expect(again.first).toMatchObject({ gone: true, data: undefined, loading: false });
+  await settle(MAX_AGE_MS * 2);
+  expect(fetch).toHaveBeenCalledTimes(1);
+});
+
+// Invariant: `version` keeps rising across an eviction, so a consumer holding an older version sees a recreated entry as newer.
+test('an evicted entry comes back with its load count, not from zero', async () => {
+  const { spec } = counter();
+  const first = renderHook(() => useResource('k0', spec));
+  await settle();
+  first.unmount();
+  for (let i = 1; i <= 32; i++) { const h = renderHook(() => useResource(`k${i}`, spec)); await settle(); h.unmount(); }
+  const again = mount('k0', spec);
+  expect(again.first.version).toBe(1);
+  expect(again.first.data).toBeUndefined();
+  await settle();
+  expect(again.result.current.version).toBe(2);
+});
+
+// Invariant: the tag read when a fetch starts is reported with the data that fetch returned, not with a later fetch's.
+test('dataTag is the tag of the fetch that produced the data', async () => {
+  let tag = 'a';
+  const fetch = vi.fn(async () => 1);
+  const h = renderHook(() => useResource('k', { fetch, tag: () => tag }));
+  await settle();
+  expect(h.result.current.dataTag).toBe('a');
+  tag = 'b';
+  expect(h.result.current.dataTag).toBe('a');
+  act(() => h.result.current.reload());
+  await settle();
+  expect(h.result.current.dataTag).toBe('b');
+});
+
+// Invariant: a join reload (poll or focus kick) shares a fetch the visibility flush just started: one transition, one request.
+test('a join reload during a fetch started after the last invalidation starts no second one', async () => {
+  const { fetch, spec } = counter({ matches: matchAll });
+  const h = renderHook(() => useResource('k', spec));
+  await settle();
+  act(() => setVisibility('hidden'));
+  await emit({ id: 'r-1' });
+  act(() => { setVisibility('visible'); h.result.current.reload({ join: true }); });
+  await settle(DEBOUNCE_MS * 3);
+  expect(fetch).toHaveBeenCalledTimes(2);
+});
+
+// Invariant: joining never hides a change announced after the running fetch started: that reload still refetches.
+test('a join reload after an event during a fetch still refetches', async () => {
+  const gates: (() => void)[] = [];
+  const fetch = vi.fn(() => new Promise<number>((res) => { gates.push(() => res(gates.length)); }));
+  const h = renderHook(() => useResource('k', { fetch, matches: matchAll }));
+  await settle();
+  await emit({ id: 'r-1' });
+  act(() => h.result.current.reload({ join: true }));
+  expect(fetch).toHaveBeenCalledTimes(1);
+  await act(async () => { gates[0](); });
+  await settle();
+  expect(fetch).toHaveBeenCalledTimes(2);
+});

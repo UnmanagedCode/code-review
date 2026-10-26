@@ -905,6 +905,25 @@ try {
     await row('Spike experiment').waitFor({ state: 'detached' });
     assert.equal((await world.call('GET', `reviews/${spike.id}`)).review.status, 'closed');
     await shot('17-inbox-closed');
+
+    // 18. Switching to a file that is not cached keeps the previous file on screen, busy and inert, until the new diff arrives.
+    await page.goto(q({ review: range, file: 'a.js' }));
+    await page.getByRole('grid', { name: /a\.js/ }).waitFor();
+    let release;
+    const gate = new Promise((r) => { release = r; });
+    await page.route(/\/diff\?.*file=c\.js/, async (route) => { await gate; await route.continue(); });
+    await page.getByRole('link', { name: /c\.js/ }).first().click();
+    const busy = page.locator('[aria-busy="true"]');
+    await busy.waitFor();
+    assert.equal(await busy.getAttribute('inert'), '', 'the switching diff is inert');
+    assert.ok(await page.getByRole('grid', { name: /a\.js/ }).isVisible(), 'the previous file stays on screen while the next loads');
+    assert.equal(await page.getByLabel('Loading diff').count(), 0, 'no skeleton replaces the previous file');
+    await shot('18-switching');
+    release();
+    await page.getByRole('grid', { name: /c\.js/ }).waitFor();
+    assert.equal(await page.locator('[aria-busy="true"]').count(), 0, 'the new file is not busy');
+    await shot('18-switched');
+    await page.unroute(/\/diff\?.*file=c\.js/);
     assert.deepEqual(errors, []);
   }, { headless: true, viewport: { width: 1280, height: 800 } });
   console.log('golden path ok');

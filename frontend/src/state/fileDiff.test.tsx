@@ -7,6 +7,7 @@ import { setDiffPrefs } from './diffPrefs';
 import { useDropped } from './dropped';
 import { useFileDiff } from './fileDiff';
 import { POLL_MS, REFOCUS_MIN_MS } from './live';
+import { resetResources } from './resource';
 import { useReview } from './review';
 
 beforeEach(() => installFakeEventSource());
@@ -239,4 +240,142 @@ test('in a comparison the context baseline reads round B\'s head', async () => {
   act(() => setDiffPrefs({ context: 10 }));
   await vi.waitFor(() => expect(shownNew(result.current.rows)).toContain(4));
   expect(fileCalls(net).every(([side, round]) => side === 'new' && round === '3')).toBe(true);
+});
+
+// --- sig-gated refetch, line counts, switching ---------------------------------------------------------------------
+
+const PATHS = ['src/a.ts', 'src/b.ts'];
+function sigWorld(opts: { sig?: boolean; lineCount?: boolean; gate?: Record<string, Promise<void>> } = {}) {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date'] });
+  installFakeEventSource();
+  const sigs: Record<string, string> = { 'src/a.ts': 'a1', 'src/b.ts': 'b1' };
+  const withSig = opts.sig !== false;
+  const net = stubFetch({
+    'GET api/reviews/r-1': () => ({
+      review: review({ kind: 'uncommitted' }), rounds: [], submissions: [], outdatedThreads: [],
+      files: PATHS.map((path) => fileState({ path, ...(withSig ? { sig: sigs[path] } : {}) })),
+    }),
+    'GET api/reviews/r-1/diff': async (u: URL) => {
+      const path = u.searchParams.get('file')!;
+      await opts.gate?.[path];
+      return { review: review(), files: [diffFile({ path, ...(withSig ? { sig: sigs[path] } : {}), ...(opts.lineCount ? { lineCount: { old: 40, new: 40 } } : {}) })] };
+    },
+    'GET api/reviews/r-1/file': { path: 'src/a.ts', side: 'new', total: 40, lines: [] },
+  });
+  const hook = renderHook(({ path }) => {
+    const r = useReview('r-1');
+    const sig = r.data?.files.find((f) => f.path === path)?.sig;
+    return { r, f: useFileDiff({ reviewId: 'r-1', path, sig, version: r.version, uncommitted: true }) };
+  }, { initialProps: { path: 'src/a.ts' } });
+  const settle = () => act(() => vi.advanceTimersByTimeAsync(0));
+  const diffs = () => net.count('GET api/reviews/r-1/diff');
+  const reviews = () => net.count('GET api/reviews/r-1');
+  return { sigs, net, hook, settle, diffs, reviews, reload: () => act(() => hook.result.current.r.reload()) };
+}
+
+// Invariant: a review reload that leaves the open file's sig alone costs no diff fetch; a moved sig costs exactly one.
+test('the open file is refetched only when its sig moves', async () => {
+  const w = sigWorld();
+  await vi.waitFor(() => expect(w.hook.result.current.f.file).toBeDefined());
+  await w.settle();
+  expect([w.reviews(), w.diffs()]).toEqual([1, 1]);
+  await w.reload(); await w.settle();
+  expect([w.reviews(), w.diffs()]).toEqual([2, 1]);
+  w.sigs['src/a.ts'] = 'a2';
+  await w.reload(); await w.settle();
+  expect([w.reviews(), w.diffs()]).toEqual([3, 2]);
+  expect(w.hook.result.current.f.file?.sig).toBe('a2');
+});
+
+// Invariant: another file's change (the review's version moves, the open file's sig does not) does not refetch the open diff.
+test('a reload that moves only another file\'s sig leaves the open diff alone', async () => {
+  const w = sigWorld();
+  await vi.waitFor(() => expect(w.hook.result.current.f.file).toBeDefined());
+  await w.settle();
+  w.sigs['src/b.ts'] = 'b2';
+  await w.reload(); await w.settle();
+  expect(w.hook.result.current.r.version).toBe(2);
+  expect(w.diffs()).toBe(1);
+});
+
+// Invariant: without a sig the open diff refetches on every review load that moves the version (today's behaviour, the fallback).
+test('without a sig, every version move refetches the open diff', async () => {
+  const w = sigWorld({ sig: false });
+  await vi.waitFor(() => expect(w.hook.result.current.f.file).toBeDefined());
+  await w.settle();
+  const base = w.diffs();
+  await w.reload(); await w.settle();
+  expect(w.diffs()).toBe(base + 1);
+  await w.reload(); await w.settle();
+  expect(w.diffs()).toBe(base + 2);
+});
+
+// Invariant: a lineCount in the diff response replaces the one-line `file` read for the total (old side for a deleted file).
+test('lineCount supplies the total without a file read; absent, one read does', async () => {
+  const withCount = sigWorld({ lineCount: true });
+  await vi.waitFor(() => expect(withCount.hook.result.current.f.total).toBe(40));
+  expect(withCount.net.count('GET api/reviews/r-1/file')).toBe(0);
+  withCount.hook.unmount();
+  resetResources(); // the cached diff of the same key would answer the next world
+
+  const none = sigWorld();
+  await vi.waitFor(() => expect(none.hook.result.current.f.total).toBe(40));
+  expect(none.net.count('GET api/reviews/r-1/file')).toBe(1);
+  none.hook.unmount();
+  resetResources();
+
+  const net = stubFetch({ 'GET api/reviews/r-1/diff': { review: review(), files: [{ ...diffFile({ status: 'deleted' }), lineCount: { old: 7, new: null } }] } });
+  const { result } = renderHook(() => useFileDiff({ reviewId: 'r-1', path: 'src/a.ts', version: 1, uncommitted: false }));
+  await vi.waitFor(() => expect(result.current.total).toBe(7));
+  expect(net.count('GET api/reviews/r-1/file')).toBe(0);
+});
+
+// Invariant: switching to an uncached file keeps the previous file (flagged `switching`), makes no line reads for it, then shows the new file.
+test('an uncached file switch shows the previous file as switching, then the new one', async () => {
+  let open!: () => void;
+  const w = sigWorld({ lineCount: true, gate: { 'src/b.ts': new Promise<void>((r) => { open = r; }) } });
+  await vi.waitFor(() => expect(w.hook.result.current.f.file?.path).toBe('src/a.ts'));
+  await w.settle();
+  w.hook.rerender({ path: 'src/b.ts' });
+  await w.settle();
+  const f = () => w.hook.result.current.f;
+  expect(f()).toMatchObject({ switching: true, loading: true });
+  expect(f().file?.path).toBe('src/a.ts');
+  await act(async () => { await f().expand('pre', 'bottom'); f().reveal([{ side: 'new', start: 1, end: 1 }]); });
+  expect(w.net.count('GET api/reviews/r-1/file')).toBe(0);
+  await act(async () => { open(); });
+  await w.settle();
+  expect(f()).toMatchObject({ switching: false, loading: false });
+  expect(f().file?.path).toBe('src/b.ts');
+});
+
+// Invariant: revisiting a cached file whose sig is unchanged costs no fetch and shows at once.
+test('revisiting a cached file with an unchanged sig fetches nothing', async () => {
+  const w = sigWorld({ lineCount: true });
+  await vi.waitFor(() => expect(w.hook.result.current.f.file?.path).toBe('src/a.ts'));
+  w.hook.rerender({ path: 'src/b.ts' });
+  await vi.waitFor(() => expect(w.hook.result.current.f.file?.path).toBe('src/b.ts'));
+  await w.settle();
+  const base = w.diffs();
+  w.hook.rerender({ path: 'src/a.ts' });
+  expect(w.hook.result.current.f.file?.path).toBe('src/a.ts');
+  await w.settle();
+  expect(w.diffs()).toBe(base);
+});
+
+// Invariant: a write response's fileSig makes the patched cached diff current, so the following review reload refetches no diff.
+test('a fileSig from a write response removes the own-write refetch', async () => {
+  const w = sigWorld();
+  await vi.waitFor(() => expect(w.hook.result.current.f.file).toBeDefined());
+  await w.settle();
+  act(() => { w.hook.result.current.f.patchThread(thread({ id: 't-9' })); w.hook.result.current.f.patchSig({ path: 'src/a.ts', sig: 'a2' }); });
+  w.sigs['src/a.ts'] = 'a2';
+  await w.reload(); await w.settle();
+  expect(w.diffs()).toBe(1);
+  expect(w.hook.result.current.f.file?.threads.map((t) => t.id)).toEqual(['t-9']);
+  // a sig for another file, or an unknown one, patches nothing: the reload then refetches
+  act(() => { w.hook.result.current.f.patchSig({ path: 'src/b.ts', sig: 'zzz' }); w.hook.result.current.f.patchSig({ path: 'src/a.ts', sig: null }); });
+  w.sigs['src/a.ts'] = 'a3';
+  await w.reload(); await w.settle();
+  expect(w.diffs()).toBe(2);
 });

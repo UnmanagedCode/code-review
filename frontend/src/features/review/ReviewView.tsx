@@ -69,8 +69,9 @@ export function ReviewView({ id, chrome }: { id: string; chrome?: ReactNode }) {
   const roundView = useRoundView(id, round, rv.version);
   // Until the review loads, a round= or compare= URL cannot tell a past view from the live one: the open file waits.
   const path = (route.round || route.compare) && !route.commit && !detail ? undefined : route.file;
+  const sig = (round !== undefined ? roundView.data?.files : detail?.files)?.find((f) => f.path === path)?.sig;
   const fileDiff = useFileDiff({
-    reviewId: id, path, version: rv.version, uncommitted: detail?.review.kind === 'uncommitted', commitFiles, round,
+    reviewId: id, path, sig, version: rv.version, uncommitted: detail?.review.kind === 'uncommitted', commitFiles, round,
     compare: compare && { ...compare, files: compareView.data?.files, error: compareView.error, reload: compareView.reload },
   });
   const treeFiles = useMemo(

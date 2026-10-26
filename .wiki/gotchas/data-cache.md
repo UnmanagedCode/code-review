@@ -9,3 +9,8 @@
 - **The list ignores only its own echo:** an event for a listed row at or below the row's `rev`. An own write on a review leaves the list's row older, so it still refetches the list.
 - **`focus` fires on every click into the plugin iframe from cc's shell**, and a return to a tab fires `focus` and `visibilitychange` together; `usePolling` gates both on `REFOCUS_MIN_MS` since the last kick or load.
 - **The idle cache holds `MAX_IDLE_ENTRIES` (32) unmounted entries**, least recently used out: file diffs can be large.
+- **Compare against the response's sig, not the sig the request was made under.** A diff fetched after a change already carries the new sig, so the next review load finds it current instead of fetching twice (`useFileDiff`).
+- **A local `patchSig` runs ahead of the review's sig until the review reloads.** The sig comparison therefore runs once per (file, view sig), not on every cache change; otherwise the patched entry would read as stale and refetch at once.
+- **One diff refetch per own write remains unless the write response carries `fileSig`.** The UI cannot know the file's new sig without the server; `patchSig` only accepts a non-null sig for the open path, because only the open file's entry holds the local patch.
+- **`keepPrevious` needs the switching guard.** While the previous file stays on screen, `expand`, `reveal`, `ensureTexts`, the total effect and the baseline effect return early (`switching`), or they would read lines of the new path for the old file; the baseline effect also depends on `path`, since two files can want the identical baseline.
+- **Fallback without a sig:** the open diff refetches on each `version` move, but not while the review has not loaded (`version` 0) and not while the diff is loading.

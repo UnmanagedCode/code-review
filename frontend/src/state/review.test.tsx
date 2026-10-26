@@ -3,6 +3,7 @@ import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { FakeEventSource, installFakeEventSource } from '@/test/fakeEventSource';
 import { fileState, review } from '@/test/fixtures';
 import { stubFetch } from '@/test/stubFetch';
+import { REFOCUS_MIN_MS } from './live';
 import { useReview } from './review';
 
 const detail = (rev: number, kind: 'range' | 'uncommitted' = 'range') => ({ review: review({ rev, kind }), files: [fileState()], rounds: [], submissions: [], outdatedThreads: [] });
@@ -57,12 +58,13 @@ test('an SSE reconnect refetches at once', async () => {
 });
 
 test('an uncommitted review refetches on the interval and on window focus; a range review does not', async () => {
-  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date'] });
   const net = stubFetch({ 'GET api/reviews/r-1': () => detail(1, 'uncommitted') });
   const hook = renderHook(() => useReview('r-1'));
   await vi.waitFor(() => expect(hook.result.current.data).toBeDefined());
   await act(() => vi.advanceTimersByTimeAsync(15_000));
   expect(net.count('GET api/reviews/r-1')).toBe(2);
+  await act(() => vi.advanceTimersByTimeAsync(REFOCUS_MIN_MS));
   act(() => { window.dispatchEvent(new Event('focus')); });
   await vi.waitFor(() => expect(net.count('GET api/reviews/r-1')).toBe(3));
 });

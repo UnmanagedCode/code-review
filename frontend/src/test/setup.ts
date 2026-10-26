@@ -7,11 +7,13 @@ import { resetDrafts } from '@/state/drafts';
 import { resetDropped } from '@/state/dropped';
 import { resetMarks } from '@/state/readMarks';
 import { resetTop } from './fakeTop';
+import { resetResources } from '@/state/resource';
 
 afterEach(() => {
   cleanup();
   resetDropped();
   resetMarks();
+  resetResources();
   resetSse();
   resetDrafts();
   vi.useRealTimers();

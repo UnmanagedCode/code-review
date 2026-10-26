@@ -1,40 +1,39 @@
 import { useEffect, useRef } from 'react';
-import { onReconnect, subscribe, type ReviewEvent } from '@/lib/sse';
 
-export const DEBOUNCE_MS = 300;
+export const POLL_MS = 15_000;
+/** No focus or visibility kick within this long of the last kick or load. */
+export const REFOCUS_MIN_MS = 5_000;
 
-/** Calls `reload` (debounced) for each SSE event `match` accepts, and at once after an SSE reconnect. */
-export function useSseReload(reload: () => void, match: (e: ReviewEvent) => boolean, enabled = true): void {
-  const matchRef = useRef(match);
-  matchRef.current = match;
+/**
+ * Keeps an uncommitted review current: `reload` on window focus or the page showing (one request for both: they share a
+ * gate of REFOCUS_MIN_MS since the last kick or load) and POLL_MS after the last load while visible. The timer is cleared
+ * while hidden. `loadedAt` is the resource's last load, so a load caused by an event pushes the next poll back.
+ */
+export function usePolling(reload: () => void, enabled: boolean, loadedAt: number): void {
   const reloadRef = useRef(reload);
   reloadRef.current = reload;
+  const lastKick = useRef(0);
   useEffect(() => {
     if (!enabled) return;
     let timer: ReturnType<typeof setTimeout> | undefined;
-    const off = subscribe((e) => {
-      if (!matchRef.current(e)) return;
-      clearTimeout(timer);
-      timer = setTimeout(() => reloadRef.current(), DEBOUNCE_MS);
-    });
-    const offReconnect = onReconnect(() => reloadRef.current());
-    return () => { clearTimeout(timer); off(); offReconnect(); };
-  }, [enabled]);
-}
-
-export const POLL_MS = 15_000;
-
-/** Calls `reload` on window focus / page becoming visible, and every POLL_MS while visible. */
-export function usePolling(reload: () => void, enabled: boolean): void {
-  const reloadRef = useRef(reload);
-  reloadRef.current = reload;
-  useEffect(() => {
-    if (!enabled) return;
     const visible = () => document.visibilityState !== 'hidden';
-    const kick = () => { if (visible()) reloadRef.current(); };
-    const timer = setInterval(kick, POLL_MS);
-    window.addEventListener('focus', kick);
-    document.addEventListener('visibilitychange', kick);
-    return () => { clearInterval(timer); window.removeEventListener('focus', kick); document.removeEventListener('visibilitychange', kick); };
-  }, [enabled]);
+    const since = () => Date.now() - Math.max(loadedAt, lastKick.current);
+    const arm = () => {
+      clearTimeout(timer);
+      if (visible()) timer = setTimeout(kick, Math.max(0, POLL_MS - since()));
+    };
+    function kick() {
+      lastKick.current = Date.now();
+      reloadRef.current();
+      arm();
+    }
+    const wake = () => {
+      if (!visible()) { clearTimeout(timer); return; }
+      if (since() >= REFOCUS_MIN_MS) kick(); else arm();
+    };
+    arm();
+    window.addEventListener('focus', wake);
+    document.addEventListener('visibilitychange', wake);
+    return () => { clearTimeout(timer); window.removeEventListener('focus', wake); document.removeEventListener('visibilitychange', wake); };
+  }, [enabled, loadedAt]);
 }

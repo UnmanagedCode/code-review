@@ -4,6 +4,9 @@ import { navigateTo, type Route } from '@/lib/route';
 import * as storage from '@/lib/storage';
 import { useProjects, useSessions } from '@/state/checkout';
 
+/** A bridge session whose project the cached project list lacks triggers a refetch of a list older than this. */
+export const PROJECTS_RECHECK_MS = 10_000;
+
 function remembered(): { project: string; worktree?: string } | null {
   try {
     const v = JSON.parse(storage.getItem('lastCheckout') ?? 'null') as { project?: string; worktree?: string | null } | null;
@@ -45,6 +48,12 @@ export function useFollowSession(route: Route) {
       if (last && names.includes(last.project)) navigateTo({ ...last, ...keep }, { replace: true });
     }
   }, [names?.join(), session?.sessionId, session?.project, session?.worktree, known]);
+
+  // A project created since the cached list was fetched becomes followable.
+  const missing = !!session && !!names && !known;
+  useEffect(() => {
+    if (missing && Date.now() - projects.loadedAt > PROJECTS_RECHECK_MS) projects.reload();
+  }, [missing, session?.project, projects.loadedAt]);
 
   const followed = known ? sessions.data?.sessions.find((s) => s.sessionId === session!.sessionId) : undefined;
   return {

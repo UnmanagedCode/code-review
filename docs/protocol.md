@@ -85,7 +85,7 @@ REST under `/api` (JSON), an SSE stream, and the cc MCP endpoint. Behaviour behi
 
 ### SSE
 
-`event: review` with data `{id, rev}` after every stored write, or `{id, deleted:true}` after a delete. The UI refetches the inbox on any event. A `: heartbeat` comment every 25 s. Uncommitted working-tree edits emit nothing: the UI re-fetches an uncommitted diff on focus or an interval.
+`event: review` with data `{id, rev}` after every stored write, or `{id, deleted:true}` after a delete. The UI refetches the inbox on any event, and the review list on any event except one for a row at or below the `rev` it already shows. It defers refetches while the tab is hidden. A `: heartbeat` comment every 25 s. Uncommitted working-tree edits emit nothing: the UI re-fetches an uncommitted diff on focus (at most once per 5 s) or an interval.
 
 ### Submission delivery
 

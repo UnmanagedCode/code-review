@@ -6,12 +6,13 @@ import { stubFetch } from '@/test/stubFetch';
 import { setDiffPrefs } from './diffPrefs';
 import { useDropped } from './dropped';
 import { useFileDiff } from './fileDiff';
+import { POLL_MS, REFOCUS_MIN_MS } from './live';
 import { useReview } from './review';
 
 beforeEach(() => installFakeEventSource());
 
 function setup(threadsNow: () => ReturnType<typeof thread>[], kind: 'uncommitted' | 'range' = 'uncommitted') {
-  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date'] });
   const net = stubFetch({
     'GET api/reviews/r-1': { review: review({ kind }), files: [fileState()], rounds: [], submissions: [], outdatedThreads: [] },
     'GET api/reviews/r-1/diff': () => ({ review: review({ kind }), files: [diffFile({ threads: threadsNow() })] }),
@@ -25,15 +26,17 @@ function setup(threadsNow: () => ReturnType<typeof thread>[], kind: 'uncommitted
   return { hook, net };
 }
 
-test('an uncommitted file diff is refetched on visibilitychange, focus and the interval', async () => {
+test('an uncommitted file diff is refetched once for focus and visibilitychange together, then on the interval', async () => {
   const { net } = setup(() => []);
-  await vi.waitFor(() => expect(net.count('GET api/reviews/r-1/diff')).toBe(1));
-  act(() => { document.dispatchEvent(new Event('visibilitychange')); });
-  await vi.waitFor(() => expect(net.count('GET api/reviews/r-1/diff')).toBe(2));
-  act(() => { window.dispatchEvent(new Event('focus')); });
-  await vi.waitFor(() => expect(net.count('GET api/reviews/r-1/diff')).toBe(3));
-  await act(() => vi.advanceTimersByTimeAsync(15_000));
-  await vi.waitFor(() => expect(net.count('GET api/reviews/r-1/diff')).toBe(4));
+  await vi.waitFor(() => expect(net.count('GET api/reviews/r-1/diff')).toBeGreaterThan(0));
+  await act(() => vi.advanceTimersByTimeAsync(0));
+  const diffs = () => net.count('GET api/reviews/r-1/diff');
+  const base = diffs();
+  await act(() => vi.advanceTimersByTimeAsync(REFOCUS_MIN_MS));
+  act(() => { document.dispatchEvent(new Event('visibilitychange')); window.dispatchEvent(new Event('focus')); });
+  await vi.waitFor(() => expect(diffs()).toBe(base + 1));
+  await act(() => vi.advanceTimersByTimeAsync(POLL_MS));
+  await vi.waitFor(() => expect(diffs()).toBe(base + 2));
 });
 
 test('a thread that vanishes between loads becomes a tombstone holding its last copy; one that returns is cleared', async () => {
@@ -41,10 +44,12 @@ test('a thread that vanishes between loads becomes a tombstone holding its last 
   const { hook } = setup(() => present);
   await vi.waitFor(() => expect(hook.result.current.f.file?.threads).toHaveLength(1));
   present = [];
+  await act(() => vi.advanceTimersByTimeAsync(REFOCUS_MIN_MS));
   act(() => { window.dispatchEvent(new Event('focus')); });
   await vi.waitFor(() => expect(hook.result.current.dropped.map((t) => t.id)).toEqual(['t-1']));
   expect(hook.result.current.dropped[0].messages[0].body).toBe('hello');
   present = [thread({ id: 't-1' })];
+  await act(() => vi.advanceTimersByTimeAsync(REFOCUS_MIN_MS));
   act(() => { window.dispatchEvent(new Event('focus')); });
   await vi.waitFor(() => expect(hook.result.current.dropped).toEqual([]));
 });

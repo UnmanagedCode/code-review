@@ -5,6 +5,7 @@ import { expect, test, vi } from 'vitest';
 import { parseRoute } from '@/lib/route';
 import { installBridge } from '@/test/fakeBridge';
 import { parsePrefill } from '@/lib/prefill';
+import { resetResources } from '@/state/resource';
 import { refusal, review } from '@/test/fixtures';
 import { stubFetch } from '@/test/stubFetch';
 import { NewReviewDialog } from './NewReviewDialog';
@@ -123,6 +124,7 @@ test('an unlisted, null or absent active session leaves both fields blank', asyn
     await screen.findByRole('option', { name: 'Fix login' });
     expect(fields()).toEqual({ title: '', recipient: '' });
     unmount();
+    resetResources(); // each session case starts from an empty cache
   }
 });
 

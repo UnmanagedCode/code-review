@@ -709,3 +709,21 @@ test('the committed-snapshot cache is per place: one virtual path on two systems
     cc.state.systems = {};
   }
 });
+
+test('the finishing call keeps the per-diff limit: a restaged re-diff or an untracked diff over maxDiffBytes is DIFF_TOO_LARGE, and the dir is gone', async () => {
+  // Invariant: FINISH checks the redone tracked diff and the untracked diff each against maxDiffBytes (as every call did before), not only its total output cap.
+  const big = Array.from({ length: 200 }, (_, i) => `line ${i}`).join('\n') + '\n'; // ~1.7 KB: under maxFileBytes, its diff over maxDiffBytes
+  const limits = { maxDiffBytes: 1500, maxFileBytes: 5000 };
+  const restaged = repo();
+  restaged.commit({ 'a.txt': 'a\n' });
+  restaged.git('rm', '--cached', '-q', 'a.txt');
+  restaged.write('a.txt', big);
+  const tmp = pinTmp();
+  assert.equal((await attempt(() => snapOf(restaged, 'uncommitted', {}, limits))).code, 'DIFF_TOO_LARGE');
+  const untracked = repo();
+  untracked.commit({ 'a.txt': 'a\n' });
+  untracked.write('u.txt', big);
+  assert.equal((await attempt(() => snapOf(untracked, 'uncommitted', {}, limits))).code, 'DIFF_TOO_LARGE');
+  assert.equal(cc.state.execCalls.filter(isFinish).length, 2, 'both were refused by the finishing call');
+  assert.deepEqual(fs.readdirSync(tmp), []);
+});

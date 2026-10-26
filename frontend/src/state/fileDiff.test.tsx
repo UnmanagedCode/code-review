@@ -245,20 +245,29 @@ test('in a comparison the context baseline reads round B\'s head', async () => {
 // --- sig-gated refetch, line counts, switching ---------------------------------------------------------------------
 
 const PATHS = ['src/a.ts', 'src/b.ts'];
-function sigWorld(opts: { sig?: boolean; lineCount?: boolean; gate?: Record<string, Promise<void>> } = {}) {
+/**
+ * `sig` false: neither side has a sig; `viewSig`/`respSig` set each side on its own (the review's file list, the diff response).
+ * `hunkAt`: the first hunk starts there, leaving a gap above it. `reviewGate`: the review fetch waits for it.
+ */
+function sigWorld(opts: { sig?: boolean; viewSig?: boolean; respSig?: boolean; lineCount?: boolean; hunkAt?: number; gate?: Record<string, Promise<void>>; reviewGate?: Promise<void> } = {}) {
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date'] });
   installFakeEventSource();
   const sigs: Record<string, string> = { 'src/a.ts': 'a1', 'src/b.ts': 'b1' };
-  const withSig = opts.sig !== false;
+  const viewSig = opts.viewSig ?? opts.sig !== false;
+  const respSig = opts.respSig ?? opts.sig !== false;
   const net = stubFetch({
-    'GET api/reviews/r-1': () => ({
-      review: review({ kind: 'uncommitted' }), rounds: [], submissions: [], outdatedThreads: [],
-      files: PATHS.map((path) => fileState({ path, ...(withSig ? { sig: sigs[path] } : {}) })),
-    }),
+    'GET api/reviews/r-1': async () => {
+      await opts.reviewGate;
+      return {
+        review: review({ kind: 'uncommitted' }), rounds: [], submissions: [], outdatedThreads: [],
+        files: PATHS.map((path) => fileState({ path, ...(viewSig ? { sig: sigs[path] } : {}) })),
+      };
+    },
     'GET api/reviews/r-1/diff': async (u: URL) => {
       const path = u.searchParams.get('file')!;
       await opts.gate?.[path];
-      return { review: review(), files: [diffFile({ path, ...(withSig ? { sig: sigs[path] } : {}), ...(opts.lineCount ? { lineCount: { old: 40, new: 40 } } : {}) })] };
+      const hunks = opts.hunkAt ? [hunk({ oldStart: opts.hunkAt, newStart: opts.hunkAt })] : undefined;
+      return { review: review(), files: [diffFile({ path, ...(hunks ? { hunks } : {}), ...(respSig ? { sig: sigs[path] } : {}), ...(opts.lineCount ? { lineCount: { old: 40, new: 40 } } : {}) })] };
     },
     'GET api/reviews/r-1/file': { path: 'src/a.ts', side: 'new', total: 40, lines: [] },
   });
@@ -331,10 +340,11 @@ test('lineCount supplies the total without a file read; absent, one read does', 
   expect(net.count('GET api/reviews/r-1/file')).toBe(0);
 });
 
-// Invariant: switching to an uncached file keeps the previous file (flagged `switching`), makes no line reads for it, then shows the new file.
+// Invariant: switching to an uncached file keeps the previous file (flagged `switching`), makes no line reads (the previous
+// file's gap lines would be read under the new path), then shows the new file.
 test('an uncached file switch shows the previous file as switching, then the new one', async () => {
   let open!: () => void;
-  const w = sigWorld({ lineCount: true, gate: { 'src/b.ts': new Promise<void>((r) => { open = r; }) } });
+  const w = sigWorld({ lineCount: true, hunkAt: 11, gate: { 'src/b.ts': new Promise<void>((r) => { open = r; }) } });
   await vi.waitFor(() => expect(w.hook.result.current.f.file?.path).toBe('src/a.ts'));
   await w.settle();
   w.hook.rerender({ path: 'src/b.ts' });
@@ -342,8 +352,9 @@ test('an uncached file switch shows the previous file as switching, then the new
   const f = () => w.hook.result.current.f;
   expect(f()).toMatchObject({ switching: true, loading: true });
   expect(f().file?.path).toBe('src/a.ts');
-  await act(async () => { await f().expand('pre', 'bottom'); f().reveal([{ side: 'new', start: 1, end: 1 }]); });
-  expect(w.net.count('GET api/reviews/r-1/file')).toBe(0);
+  // The previous file has a gap above its hunk (lines 1–10): without the guards these would read it for src/b.ts.
+  await act(async () => { await f().expand('pre', 'bottom'); f().reveal([{ side: 'new', start: 2, end: 3 }]); });
+  expect(w.net.calls.filter((c) => c.url.pathname.endsWith('/file'))).toEqual([]);
   await act(async () => { open(); });
   await w.settle();
   expect(f()).toMatchObject({ switching: false, loading: false });
@@ -397,4 +408,33 @@ test('without a sig, a diff cached across a review eviction is refetched on reop
   await vi.waitFor(() => expect(again.result.current.f.file).toBeDefined());
   await w.settle();
   expect(w.diffs()).toBe(before + 1);
+});
+
+// Invariant: a sig on only one side (the view's file list or the diff response) is no sig: the fallback applies, and
+// refetches on every version move, not once per sig.
+test.each([
+  ['the view has a sig, the response lacks it', { viewSig: true, respSig: false }],
+  ['the response has a sig, the view lacks it', { viewSig: false, respSig: true }],
+])('%s: every version move refetches the open diff', async (_name, opts) => {
+  const w = sigWorld(opts);
+  await vi.waitFor(() => expect(w.hook.result.current.f.file).toBeDefined());
+  await w.settle();
+  const base = w.diffs();
+  await w.reload(); await w.settle();
+  expect(w.diffs()).toBe(base + 1);
+  await w.reload(); await w.settle();
+  expect(w.diffs()).toBe(base + 2);
+});
+
+// Invariant: without a sig, opening a file costs one diff fetch across the review's first load: a diff that arrived before
+// the review ever loaded (tag 0) is as current as the review's first load (version 1).
+test('without a sig, a diff fetched before the review loads is not refetched by its first load', async () => {
+  let loadReview!: () => void;
+  const w = sigWorld({ sig: false, reviewGate: new Promise<void>((r) => { loadReview = r; }) });
+  await vi.waitFor(() => expect(w.hook.result.current.f.file).toBeDefined());
+  expect(w.hook.result.current.r.data).toBeUndefined();
+  await act(async () => { loadReview(); });
+  await vi.waitFor(() => expect(w.hook.result.current.r.version).toBe(1));
+  await w.settle();
+  expect(w.diffs()).toBe(1);
 });

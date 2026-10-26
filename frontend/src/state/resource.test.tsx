@@ -104,13 +104,15 @@ test('an event during an in-flight fetch triggers a second fetch', async () => {
 });
 
 // Invariant: after the stream reconnects (events may be missed) every mounted, visible entry that listens refetches at once.
-test('a reconnect refetches mounted entries immediately', async () => {
-  const { fetch, spec } = counter({ matches: () => false });
-  renderHook(() => useResource('k', spec));
+test('a reconnect refetches mounted entries that listen to events, and only those', async () => {
+  const listening = counter({ matches: () => false });
+  const plain = counter();
+  renderHook(() => [useResource('k', listening.spec), useResource('plain', plain.spec)]);
   await settle();
   act(() => { FakeEventSource.last!.fail(); FakeEventSource.last!.reopen(); });
   await settle();
-  expect(fetch).toHaveBeenCalledTimes(2);
+  expect(listening.fetch).toHaveBeenCalledTimes(2);
+  expect(plain.fetch).toHaveBeenCalledTimes(1);
 });
 
 // Invariant: an entry invalidated while nobody shows it is revalidated when next mounted, not served stale.
@@ -235,18 +237,23 @@ test('an evicted entry comes back with its load count, not from zero', async () 
   expect(again.result.current.version).toBe(2);
 });
 
-// Invariant: the tag read when a fetch starts is reported with the data that fetch returned, not with a later fetch's.
-test('dataTag is the tag of the fetch that produced the data', async () => {
+// Invariant: the tag is read when a fetch starts and kept with the data that fetch returns, not read at completion.
+test('dataTag is the tag the fetch started under, even if the tag changes while it runs', async () => {
   let tag = 'a';
-  const fetch = vi.fn(async () => 1);
+  const gates: (() => void)[] = [];
+  const fetch = vi.fn(() => new Promise<number>((res) => { gates.push(() => res(gates.length)); }));
   const h = renderHook(() => useResource('k', { fetch, tag: () => tag }));
   await settle();
-  expect(h.result.current.dataTag).toBe('a');
-  tag = 'b';
-  expect(h.result.current.dataTag).toBe('a');
+  tag = 'b'; // flipped while the first fetch is in flight
+  await act(async () => { gates[0](); });
+  await settle();
+  expect(h.result.current).toMatchObject({ data: 1, dataTag: 'a' });
   act(() => h.result.current.reload());
   await settle();
-  expect(h.result.current.dataTag).toBe('b');
+  tag = 'c';
+  await act(async () => { gates[1](); });
+  await settle();
+  expect(h.result.current).toMatchObject({ data: 2, dataTag: 'b' });
 });
 
 // Invariant: a join reload (poll or focus kick) shares a fetch the visibility flush just started: one transition, one request.

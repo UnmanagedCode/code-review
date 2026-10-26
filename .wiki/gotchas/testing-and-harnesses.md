@@ -15,5 +15,5 @@
 - Mutation `baseline` needs a clean tree and `CC_PROJECTS_ROOT` exported.
 - UI tests: vitest + happy-dom with shared fakes in `frontend/src/test/` (fetch route table, EventSource, `ccBridge`, fixtures); see [ui.md](ui.md).
 - **Scope harness waits to the pane you shot.** The diff's inline thread cards are `article`s too, so a bare `getByRole('article')` resolves before the Threads tab's list has loaded; `snap.mjs` waits inside the `tabpanel`.
-- `harness/playwright/seed.mjs` seeds one world through the REST/MCP API using `tests/_world.js`; `snap.mjs` and `golden.mjs` use it. Run `npm run prepare` first so `frontend/dist` is current.
+- `harness/playwright/seed.mjs` seeds one world through the REST/MCP API using `tests/_world.js`; `snap.mjs` and `golden.mjs` use it. Run `npm run prepare` first so `frontend/dist` is current. Its `syntax` worktree (the highlighting review) is a second worktree of `app`, so the checkout selects list it.
 - **`tests/links.test.js` imports `frontend/src/lib/route.ts` under Node type stripping**, so `route.ts` must stay erasable-only TypeScript, import nothing but `react` (no `@/` aliases), and touch DOM globals only inside functions.

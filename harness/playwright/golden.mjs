@@ -15,7 +15,7 @@ mkdirSync(outDir, { recursive: true });
 const HOST_URLS = /pluginBridge\.js|pluginTheme\.css/;
 
 const world = await seed();
-const { range, uncommitted, main } = world.ids;
+const { range, uncommitted, main, syntax } = world.ids;
 const q = (o) => `${world.url}/?${new URLSearchParams({ project: 'app', worktree: 'feature', ...o })}`;
 
 function watchErrors(page) {
@@ -237,7 +237,7 @@ try {
     // 4b: the active session's checkouts lead each select; New review prefills from it, and a typed title survives a session change.
     const groups = (id) => page.evaluate((i) => [...document.querySelectorAll(`#${i} optgroup`)].map((g) => [g.label, [...g.querySelectorAll('option')].map((o) => o.textContent)]), id);
     assert.deepEqual(await groups('cb-project'), [['Active session', ['app']], ['Other projects', ['other']]]);
-    assert.deepEqual(await groups('cb-worktree'), [['Active session', ['feature']], ['Other worktrees', ['Main checkout']]]);
+    assert.deepEqual(await groups('cb-worktree'), [['Active session', ['feature']], ['Other worktrees', ['Main checkout', 'syntax']]]);
     await page.getByRole('button', { name: 'New review' }).click();
     const title = page.getByLabel('Title (optional)');
     const recipient = page.getByLabel('Recipient session');
@@ -256,7 +256,7 @@ try {
     await shot('4b-new-review-title-kept');
     await page.keyboard.press('Escape');
     assert.deepEqual(await groups('cb-project'), [['Active session', ['app', 'other']]]);
-    assert.deepEqual(await groups('cb-worktree'), [['Active session', ['Main checkout']], ['Other worktrees', ['feature']]]);
+    assert.deepEqual(await groups('cb-worktree'), [['Active session', ['Main checkout']], ['Other worktrees', ['feature', 'syntax']]]);
 
     await page.goto(q({ review: uncommitted }));
     // The stub is re-installed on navigation (no session emitted); make the first send fail.
@@ -640,7 +640,142 @@ try {
     }
     assert.deepEqual(errors, []);
   }, { headless: true, viewport: { width: 1100, height: 800 }, deviceScaleFactor: 2 });
-  // 16: the inbox, with a stub cc bridge. From an open review, Inbox → the main checkout's row opens that review in its own
+  // 16: syntax highlighting, word emphasis and the Diff options, on the syntax review's hl.ts (seed.mjs: a one-word
+  // change, a comment with a line added inside it, a re-indent-only hunk, a mixed hunk, markup in a string).
+  await withPage(async (page) => {
+    const errors = watchErrors(page);
+    const sq = () => q({ worktree: 'syntax', review: syntax, file: 'hl.ts' });
+    const grid = page.getByRole('grid');
+    const cell = (c) => page.locator(`[data-cell="${c}"]`);
+    const rowOf = (c) => page.locator('[role=row]', { has: cell(c) });
+    const viewGroup = page.getByRole('group', { name: 'Diff view' });
+    const menu = async (item, role = 'menuitemradio') => {
+      await page.getByRole('button', { name: /^Diff options/ }).click();
+      await page.getByRole(role, { name: item, exact: true }).click();
+    };
+    /**
+     * WCAG text contrast of each token span in the rows matched by `rowSel`: its colour over the span's and its
+     * ancestors' backgrounds (translucent tints, composited top-down on a 1×1 canvas), lowest per class (and emphasis).
+     * Every token must reach WCAG AA 4.5:1 on each row tint and under word emphasis (index.css `--cr-token-*`).
+     */
+    const tokenContrast = (rowSel) => page.locator(rowSel).evaluateAll((rows) => {
+      const ctx = Object.assign(document.createElement('canvas'), { width: 1, height: 1 }).getContext('2d', { willReadFrequently: true });
+      const paint = (colors) => { ctx.clearRect(0, 0, 1, 1); for (const c of colors) { ctx.fillStyle = c; ctx.fillRect(0, 0, 1, 1); } return [...ctx.getImageData(0, 0, 1, 1).data.slice(0, 3)]; };
+      const lum = (rgb) => { const [r, g, b] = rgb.map((v) => { v /= 255; return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }); return 0.2126 * r + 0.7152 * g + 0.0722 * b; };
+      const out = {};
+      for (const row of rows) {
+        for (const span of row.querySelectorAll('[data-token], [data-emphasis]')) {
+          const layers = [];
+          for (let n = span; n; n = n.parentElement) { const bg = getComputedStyle(n).backgroundColor; if (bg && bg !== 'rgba(0, 0, 0, 0)' && bg !== 'transparent') layers.unshift(bg); }
+          const [a, b] = [lum(paint([...layers, getComputedStyle(span).color])), lum(paint(layers))];
+          const ratio = Math.round(((Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05)) * 100) / 100;
+          const key = `${span.className || 'plain'}${span.hasAttribute('data-emphasis') ? ' +em' : ''}`;
+          out[key] = Math.min(out[key] ?? Infinity, ratio);
+        }
+      }
+      return out;
+    });
+
+    for (const scheme of ['light', 'dark']) {
+      await page.emulateMedia({ colorScheme: scheme });
+      const shot = (name) => shotter(page)(`${name}-${scheme}`);
+      await page.goto(sq());
+      await page.evaluate(() => localStorage.setItem('code-review:diffView', 'inline'));
+      await page.reload();
+      await grid.locator('[data-token]').first().waitFor();
+      assert.ok(await grid.locator('[data-emphasis]').count() >= 4, 'paired changed lines carry word emphasis');
+      assert.equal(await grid.locator('img, script').count(), 0, 'markup in the file renders no element');
+      assert.ok((await rowOf('new:81').textContent()).includes("'<img src=x onerror=alert(1)><script>alert(2)</script>'"), 'the markup line shows as its text');
+      // The comment opened on context line 20 colours the added line 22 too.
+      assert.equal(await rowOf('new:22').locator('[data-token]').first().getAttribute('class'), 'text-token-comment italic');
+      const contrast = {
+        add: await tokenContrast('[role=row].bg-success\\/10'),
+        del: await tokenContrast('[role=row].bg-destructive\\/10'),
+        ctx: await tokenContrast('[role=row]:not(.bg-success\\/10):not(.bg-destructive\\/10)'),
+      };
+      await shot('16-syntax-inline');
+      // A selection (info tint) over an emphasised changed line, deleted and added.
+      for (const side of ['old', 'new']) {
+        await cell(`${side}:5`).click();
+        const form = page.getByRole('form', { name: `Comment on L5 (${side})` });
+        await form.waitFor();
+        contrast[`selected ${side === 'old' ? 'del' : 'add'}`] = await tokenContrast('[role=row][aria-selected=true]');
+        await rowOf(`${side}:5`).scrollIntoViewIfNeeded();
+        await shot(`16-syntax-selection-${side}`);
+        await form.getByRole('button', { name: 'Cancel' }).click();
+      }
+      // Split: each half tinted on its own.
+      await viewGroup.getByRole('button', { name: 'Split' }).click();
+      await page.locator('[role=row].grid').first().waitFor();
+      await grid.locator('[data-token]').first().waitFor();
+      await shot('16-syntax-split');
+      await viewGroup.getByRole('button', { name: 'Inline' }).click();
+      console.log(`token contrast (${scheme}):`, JSON.stringify(contrast));
+      for (const [tint, byClass] of Object.entries(contrast)) {
+        for (const [cls, ratio] of Object.entries(byClass)) assert.ok(ratio >= 4.5, `${scheme}: ${cls} on ${tint} reaches 4.5:1 (${ratio})`);
+      }
+    }
+    await page.emulateMedia({ colorScheme: 'light' });
+    const shot = shotter(page);
+
+    // Ignore whitespace: the re-indent-only hunk collapses to a "whitespace only" summary; the mixed hunk shows its
+    // re-indented line as one row (old 61 / new 62) and keeps the real change. Then drag-select across the merged row.
+    await page.goto(sq());
+    await grid.locator('[data-token]').first().waitFor();
+    await menu('Ignore whitespace', 'menuitemcheckbox');
+    const wsOnly = page.getByRole('button', { name: /^@@ -38,9 \+39,9 @@.*whitespace only$/ });
+    await wsOnly.waitFor();
+    assert.equal(await cell('new:41').count(), 0, 'the whitespace-only hunk is collapsed');
+    assert.equal(await rowOf('old:61').locator('[data-cell="new:62"]').count(), 1, 'the re-indented pair is one row');
+    assert.equal(await rowOf('old:62').locator('[data-cell="new:63"]').count(), 0, 'the real change stays a change');
+    assert.equal(await page.getByRole('button', { name: 'Diff options · ignoring whitespace' }).count(), 1);
+    await shot('16-ignore-whitespace');
+    await cell('new:62').evaluate((el) => el.scrollIntoView({ block: 'center' }));
+    const [from, to] = [await cell('new:61').boundingBox(), await cell('new:63').boundingBox()];
+    await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(to.x + to.width / 2, to.y + to.height / 2, { steps: 6 });
+    await page.mouse.up();
+    await page.getByRole('form', { name: 'Comment on L61–L63 (new)' }).waitFor();
+    await page.getByLabel('Message').fill('Why the extra + 1?');
+    await page.getByRole('button', { name: 'Post' }).click();
+    const posted = page.locator('[role=rowgroup] article', { hasText: 'Why the extra + 1?' });
+    await posted.waitFor();
+    assert.ok((await rowBefore(posted)).cells.includes('new:63'), 'the comment renders under line 63');
+    await shot('16-ignore-whitespace-comment');
+    // Expanded, the whitespace-only hunk shows its verdict bar.
+    await wsOnly.click();
+    await cell('new:41').waitFor();
+    assert.equal(await page.getByRole('group', { name: 'Hunk verdict' }).count(), 5);
+    await shot('16-ignore-whitespace-expanded');
+
+    // Context 0: edge context goes into gaps (the first hunk is just its change); 10: the gaps open 7 lines each side.
+    await menu('0');
+    await page.waitForFunction(() => !document.querySelector('[data-cell="new:4"]'));
+    assert.equal(await cell('new:5').count(), 1);
+    assert.equal(await cell('new:3').count(), 0);
+    await shot('16-context-0');
+    await menu('10');
+    await cell('new:15').waitFor();
+    assert.equal(await cell('new:1').count(), 1, 'the leading gap (1 line) is fully open');
+    await shot('16-context-10');
+    await viewGroup.getByRole('button', { name: 'Split' }).click();
+    await page.locator('[role=row].grid').first().waitFor();
+    await cell('new:60').scrollIntoViewIfNeeded();
+    await shot('16-options-split');
+    await viewGroup.getByRole('button', { name: 'Inline' }).click();
+
+    // Phone: the menu is reachable from the wrapped header.
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto(sq());
+    await grid.locator('[data-token]').first().waitFor();
+    await page.getByRole('button', { name: /^Diff options/ }).click();
+    await page.getByRole('menuitemcheckbox', { name: 'Ignore whitespace' }).waitFor();
+    await shot('16-phone-options');
+    await page.keyboard.press('Escape');
+    assert.deepEqual(errors, []);
+  }, { headless: true, viewport: { width: 1100, height: 800 } });
+  // 17: the inbox, with a stub cc bridge. From an open review, Inbox → the main checkout's row opens that review in its own
   // checkout; a session switch while it is open leaves it open; Back returns to the inbox. A destroyed worktree's row says
   // "checkout gone", and its Close closes the review. Runs last: it removes a worktree.
   await withPage(async (page) => {
@@ -656,7 +791,7 @@ try {
     await row('Main checkout tidy-up').getByText('Waiting on agent').waitFor();
     await row('Conductor review').getByText('Your turn').waitFor();
     assert.deepEqual(params(page), { project: 'app', worktree: 'feature', view: 'inbox' });
-    await shot('16-inbox');
+    await shot('17-inbox');
 
     await row('Main checkout tidy-up').getByRole('link').click();
     const heading = page.getByRole('heading', { name: 'Main checkout tidy-up' });
@@ -666,7 +801,7 @@ try {
     await page.waitForTimeout(300); // nothing to wait for: following must not navigate
     assert.deepEqual(params(page), { project: 'app', review: main });
     assert.ok(await heading.isVisible(), 'the review stays open after a session switch');
-    await shot('16-session-switch-ignored');
+    await shot('17-session-switch-ignored');
     await page.goBack();
     await row('Main checkout tidy-up').waitFor();
     assert.deepEqual(params(page), { project: 'app', worktree: 'feature', view: 'inbox' });
@@ -676,14 +811,13 @@ try {
     await page.reload();
     await row('Spike experiment').getByText('checkout gone').waitFor();
     assert.equal(await row('Feature work').getByText('checkout gone').count(), 0);
-    await shot('16-inbox-checkout-gone');
+    await shot('17-inbox-checkout-gone');
     await row('Spike experiment').getByRole('button', { name: 'Close review Spike experiment' }).click();
     await row('Spike experiment').waitFor({ state: 'detached' });
     assert.equal((await world.call('GET', `reviews/${spike.id}`)).review.status, 'closed');
-    await shot('16-inbox-closed');
+    await shot('17-inbox-closed');
     assert.deepEqual(errors, []);
   }, { headless: true, viewport: { width: 1280, height: 800 } });
-
   console.log('golden path ok');
 } finally {
   await world.close();

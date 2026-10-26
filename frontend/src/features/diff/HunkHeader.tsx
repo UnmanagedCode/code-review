@@ -2,10 +2,12 @@ import { ChevronDownIcon, ChevronRightIcon } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import type { Row } from '@/lib/diffRows';
+import { isWhitespaceOnly } from '@/lib/whitespace';
 import { HunkBar } from './HunkBar';
 
 /**
- * A hunk's header row. Collapsed (an accepted hunk): one summary button that expands it, no verdict bar.
+ * A hunk's header row. Collapsed (an accepted hunk, or a whitespace-only one under Ignore whitespace): one summary
+ * button that expands it, no verdict bar.
  * Expanded and `toggleable`: the usual header with a collapse button.
  */
 export function HunkHeader({ row, toggleable, onToggle }: { row: Extract<Row, { kind: 'hunk' }>; toggleable: boolean; onToggle: (open: boolean) => void }) {
@@ -16,7 +18,8 @@ export function HunkHeader({ row, toggleable, onToggle }: { row: Extract<Row, { 
         <Button variant="ghost" aria-expanded={false} className="h-auto w-full min-w-0 justify-start gap-2 overflow-hidden" onClick={() => onToggle(true)}>
           <ChevronRightIcon />
           <span className="min-w-0 flex-1 truncate text-left font-mono text-xs text-muted-foreground">{hunk.header}</span>
-          <Badge variant="success">accepted</Badge>
+          {isWhitespaceOnly(hunk) && <Badge variant="secondary">whitespace only</Badge>}
+          {hunk.verdict === 'accepted' && <Badge variant="success">accepted</Badge>}
         </Button>
       </div>
     );

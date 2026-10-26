@@ -16,7 +16,7 @@ const HOST_URLS = /pluginBridge\.js|pluginTheme\.css/;
 const VIEWPORTS = { desktop: { width: 1280, height: 800 }, phone: { width: 390, height: 844 } };
 
 const world = await seed();
-const { range, uncommitted, conducted } = world.ids;
+const { range, uncommitted, conducted, syntax } = world.ids;
 const q = (o) => `${world.url}/?${new URLSearchParams({ project: 'app', worktree: 'feature', ...o })}`;
 try {
   await withPage(async (page) => {
@@ -111,6 +111,20 @@ try {
           await open(q({ review: range, compare: '1..2', file: 'a.js' }), page.getByRole('grid'));
           await page.locator('[role=rowgroup] article').first().waitFor();
           await shot('diff-compare'); // inline: one combined diff
+        }
+
+        // Syntax highlighting and word emphasis (the syntax review's hl.ts); split at the 1100px desktop that still gets it.
+        const syntaxFile = q({ worktree: 'syntax', review: syntax, file: 'hl.ts' });
+        await open(syntaxFile, page.getByRole('grid').locator('[data-token]'));
+        await shot('diff-syntax');
+        if (vp === 'desktop') {
+          await page.setViewportSize({ width: 1100, height: 800 });
+          await open(syntaxFile, page.getByRole('grid').locator('[data-token]'));
+          await page.getByRole('group', { name: 'Diff view' }).getByRole('button', { name: 'Split' }).click();
+          await page.locator('[role=row].grid').first().waitFor();
+          await shot('diff-syntax-split');
+          await page.getByRole('group', { name: 'Diff view' }).getByRole('button', { name: 'Inline' }).click();
+          await page.setViewportSize(size);
         }
 
         await open(q({ review: range, file: 'logo.bin' }), page.getByText('Binary file changed'));

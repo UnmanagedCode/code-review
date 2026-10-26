@@ -4,6 +4,27 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/* Syntax token colours (TOKEN_CLASS, lib/highlight/index.ts): plugin-specific, so they live here and never in the copied
+   host palette (cc-theme-fallback.css). Each mixes a palette hue toward --foreground in oklab (no hue shift) just far
+   enough that a token reaches WCAG AA 4.5:1 on every diff row tint (context, added, deleted, target, selection) and
+   under word emphasis; the hue share differs per theme. golden.mjs step 16 measures it, App.test.tsx pins the shape. */
+:root {
+  --cr-token-keyword: color-mix(in oklab, var(--plan) 40%, var(--foreground));
+  --cr-token-string: color-mix(in oklab, var(--success) 35%, var(--foreground));
+  --cr-token-number: color-mix(in oklab, var(--warning) 25%, var(--foreground));
+  --cr-token-function: color-mix(in oklab, var(--info) 35%, var(--foreground));
+  --cr-token-tag: color-mix(in oklab, var(--primary) 30%, var(--foreground));
+  --cr-token-comment: color-mix(in oklab, var(--muted-foreground) 45%, var(--foreground));
+}
+.dark {
+  --cr-token-keyword: color-mix(in oklab, var(--plan) 30%, var(--foreground));
+  --cr-token-string: color-mix(in oklab, var(--success) 35%, var(--foreground));
+  --cr-token-number: color-mix(in oklab, var(--warning) 50%, var(--foreground));
+  --cr-token-function: color-mix(in oklab, var(--info) 30%, var(--foreground));
+  --cr-token-tag: color-mix(in oklab, var(--primary) 30%, var(--foreground));
+  --cr-token-comment: color-mix(in oklab, var(--muted-foreground) 25%, var(--foreground));
+}
+
 @theme inline {
   --font-sans: 'Geist Variable', ui-sans-serif, system-ui, sans-serif;
   --font-mono: 'Geist Mono Variable', ui-monospace, SFMono-Regular, Menlo, monospace;
@@ -39,6 +60,12 @@
   --color-warning: var(--warning);
   --color-info: var(--info);
   --color-plan: var(--plan);
+  --color-token-keyword: var(--cr-token-keyword);
+  --color-token-string: var(--cr-token-string);
+  --color-token-number: var(--cr-token-number);
+  --color-token-function: var(--cr-token-function);
+  --color-token-tag: var(--cr-token-tag);
+  --color-token-comment: var(--cr-token-comment);
 }
 
 @layer base {

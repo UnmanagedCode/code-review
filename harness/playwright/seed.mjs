@@ -9,6 +9,30 @@ import { editLines, world } from '../../tests/_world.js';
 const { bootServer } = await import(BROWSER);
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 
+// hl.ts, 100 lines of filler (`const fN = N;`) with five edited spots, each far enough apart to be its own hunk.
+const filler = Array.from({ length: 100 }, (_, i) => `const f${i + 1} = ${i + 1};`);
+const HL_BASE_LINES = [...filler];
+const HL_HEAD_LINES = [...filler];
+const put = (lines, at, block) => lines.splice(at - 1, block.length, ...block);
+// 1. A one-word change (line 5).
+put(HL_BASE_LINES, 5, ['const limit = 10; // the max']);
+put(HL_HEAD_LINES, 5, ['const limit = 20; // the max']);
+// 2. A re-indented block only (lines 40–44): a whitespace-only hunk.
+put(HL_BASE_LINES, 40, ['function inner(n: number) {', 'if (n > 0) {', 'return n * 2;', '}', '}']);
+put(HL_HEAD_LINES, 40, ['function inner(n: number) {', '  if (n > 0) {', '    return n * 2;', '  }', '}']);
+// 3. A mixed hunk: a re-indent and a real change (lines 60–63).
+put(HL_BASE_LINES, 60, ['export class Box {', 'value = 1;', 'get(): number { return this.value; }', '}']);
+put(HL_HEAD_LINES, 60, ['export class Box {', '  value = 1;', '  get(): number { return this.value + 1; }', '}']);
+// 4. Markup inside a string, which must render as text (line 80).
+put(HL_BASE_LINES, 80, ["const html = '<b>bold</b>';"]);
+put(HL_HEAD_LINES, 80, ["const html = '<img src=x onerror=alert(1)><script>alert(2)</script>';"]);
+// 5. A block comment opened in context, with a line added inside it (line 22). Last: the added line shifts the head below it.
+put(HL_BASE_LINES, 20, ['/* Notes on the fixture:', ' * first note', ' */', 'export function greet(who: string): string { return `hello ${who}`; }']);
+put(HL_HEAD_LINES, 20, ['/* Notes on the fixture:', ' * first note', ' */', 'export function greet(who: string): string { return `hello ${who}`; }']);
+HL_HEAD_LINES.splice(21, 0, ' * an added note, still inside the comment');
+const HL_BASE = `${HL_BASE_LINES.join('\n')}\n`;
+const HL_HEAD = `${HL_HEAD_LINES.join('\n')}\n`;
+
 export async function seed() {
   const w = await world();
   let srv;
@@ -78,6 +102,13 @@ export async function seed() {
     const un = (await call('POST', 'reviews', { project: 'app', worktree: 'feature', kind: 'uncommitted', recipient: 's-author' })).review;
     await mcp('annotate', { review: un.id, kind: 'finding', severity: 'minor', body: 'Name this better.', file: 'a.js', side: 'new', startLine: 2 }, rev);
 
+    // Highlighting and the Diff options, on their own worktree so the other reviews' files and counts don't move:
+    // a range review of hl.ts from the commit that added it (a sha base) to its edit.
+    const sx = w.addWorktree('syntax');
+    const hlBase = sx.commit({ 'hl.ts': HL_BASE }, 'add hl.ts');
+    sx.commit({ 'hl.ts': HL_HEAD }, 'edit hl.ts');
+    const syntax = (await call('POST', 'reviews', { project: 'app', worktree: 'syntax', kind: 'range', base: hlBase, recipient: 's-author', title: 'Syntax' })).review;
+
     const deliver = async (rid) => {
       const { submission } = await call('POST', `reviews/${rid}/submissions`);
       await call('POST', `reviews/${rid}/submissions/${submission.id}/result`, { ok: true });
@@ -94,9 +125,9 @@ export async function seed() {
     await deliver(main.id);
 
     return {
-      url: srv.url, ids: { range: id, uncommitted: un.id, conducted: conducted.id, main: main.id }, call,
+      url: srv.url, ids: { range: id, uncommitted: un.id, conducted: conducted.id, main: main.id, syntax: syntax.id }, call,
       /**
-       * Adds a throwaway worktree `spike` with a review titled "Spike experiment" (on demand, so earlier steps see only `feature`).
+       * Adds a throwaway worktree `spike` with a review titled "Spike experiment" (on demand, so earlier steps never list it).
        * Resolves {id, destroy}; `destroy()` simulates cc deleting the worktree.
        */
       async spike() {

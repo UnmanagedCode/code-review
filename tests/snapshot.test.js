@@ -6,10 +6,10 @@ import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { makeRepo, git, lines, gitDirSig, localPlace } from './_git.js';
 import { fakeCc } from './_fakeCc.js';
-import { resolveTarget, buildSnapshot, ARGV_BUDGET } from '../src/snapshot.js';
+import { resolveTarget, buildSnapshot } from '../src/snapshot.js';
 import { parseDiff } from '../src/diff.js';
 import { attempt } from '../src/refusals.js';
-import { statusOf, commitLog, removeTemp, sizes, objectsExist, DIFF_FLAGS } from '../src/git.js';
+import { statusOf, commitLog, removeTemp, sizes, objectsExist, DIFF_FLAGS, ARGV_BUDGET } from '../src/git.js';
 
 let cc;
 before(async () => { cc = await fakeCc(); });

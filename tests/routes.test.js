@@ -185,12 +185,12 @@ test('verdicts, threads, messages, status, read, refresh, submissions each retur
   assert.equal(done.status, 'delivered');
 });
 
-test('accept-file returns {file, accepted, review}; an unknown file is 404 FILE_NOT_IN_DIFF', async () => {
+test('accept-file returns {file, accepted, fileSig, review}; an unknown file is 404 FILE_NOT_IN_DIFF', async () => {
   const id = (await openReview()).review.id;
   const ids = (await req('GET', `/reviews/${id}/diff`)).body.files[0].hunks.map((h) => h.id);
   const res = await req('POST', `/reviews/${id}/accept-file`, { file: 'a.js', hunkIds: ids });
   assert.equal(res.status, 200);
-  assert.deepEqual(Object.keys(res.body).sort(), ['accepted', 'file', 'ok', 'review']);
+  assert.deepEqual(Object.keys(res.body).sort(), ['accepted', 'file', 'fileSig', 'ok', 'review']);
   assert.deepEqual([res.body.file, res.body.accepted, res.body.review.counts.hunks.accepted], ['a.js', ids, 2]);
   const gone = await req('POST', `/reviews/${id}/accept-file`, { file: 'zzz.js', hunkIds: ids });
   assert.deepEqual([gone.status, gone.body.code], [404, 'FILE_NOT_IN_DIFF']);

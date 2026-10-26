@@ -9,7 +9,7 @@ import { mapLimit, ROW_CONCURRENCY } from './limit.js';
 import { resolveTarget, buildSnapshot, isBinaryFile } from './snapshot.js';
 import { followThreads } from './follow.js';
 import { currentRound, authorFor, assertOpen, inReview, viewReview } from './context.js';
-import { summarize, fileStates, hunkView, threadView, targetLabel } from './rollup.js';
+import { summarize, fileStates, hunkView, threadView, targetLabel, liveView, signStates, diffFiles, liveSig } from './rollup.js';
 import { pickRound, roundDiff } from './rounds.js';
 
 const KINDS = ['range', 'commit', 'uncommitted'];
@@ -137,7 +137,8 @@ export const listReviews = ({ project, worktree, status } = {}) => attempt(async
 
 export const getReview = (id) => attempt(() => viewReview(id, async (review, env) => {
   const summary = await summaryOf(review, env);
-  const files = summary.snapshotError ? [] : fileStates(review, (await env.snapshot()).files);
+  const snap = summary.snapshotError ? null : await env.snapshot();
+  const files = snap ? signStates(snap, fileStates(review, snap.files), snap.files, liveView(review)) : [];
   return {
     ok: true, review: summary, files, rounds: review.rounds, submissions: review.submissions,
     outdatedThreads: review.threads.filter((t) => t.status === 'outdated').map(threadView),
@@ -168,12 +169,13 @@ export const setVerdict = (id, hunkId, verdict) => attempt(async () => {
     if (!VERDICTS.includes(verdict)) throw invalid(`verdict must be one of ${VERDICTS.join(', ')}`);
     assertOpen(review);
     if (review.kind === 'uncommitted') throw new Refusal('NO_VERDICTS', 'uncommitted reviews carry no verdicts');
-    const known = (await env.snapshot()).files.some((f) => f.hunks.some((h) => h.id === hunkId));
-    if (!known) throw new Refusal('HUNK_UNKNOWN', `no such hunk in round ${currentRound(review).n}: ${hunkId}`);
+    const snap = await env.snapshot();
+    const f = snap.files.find((x) => x.hunks.some((h) => h.id === hunkId));
+    if (!f) throw new Refusal('HUNK_UNKNOWN', `no such hunk in round ${currentRound(review).n}: ${hunkId}`);
     record(review, hunkId, verdict);
-    return { ok: true };
+    return { ok: true, fileSig: liveSig(review, snap, f.path) };
   }, scope);
-  return res.ok ? { ...(await summaryById(id, scope)), hunkId, verdict } : res;
+  return res.ok ? { ...(await summaryById(id, scope)), hunkId, verdict, fileSig: res.fileSig } : res;
 });
 
 /** Accepts the listed pending hunks of one file in one write; hunks with a verdict keep it. */
@@ -184,7 +186,8 @@ export const acceptFile = (id, file, hunkIds) => attempt(async () => {
     if (!Array.isArray(hunkIds) || !hunkIds.length || !hunkIds.every((h) => typeof h === 'string')) throw invalid('hunkIds must be a non-empty array of hunk ids');
     assertOpen(review);
     if (review.kind === 'uncommitted') throw new Refusal('NO_VERDICTS', 'uncommitted reviews carry no verdicts');
-    const f = (await env.snapshot()).files.find((x) => x.path === file);
+    const snap = await env.snapshot();
+    const f = snap.files.find((x) => x.path === file);
     if (!f) throw new Refusal('FILE_NOT_IN_DIFF', `${file} is not in the diff`);
     const unknown = hunkIds.find((h) => !f.hunks.some((x) => x.id === h));
     if (unknown) throw new Refusal('HUNK_UNKNOWN', `no such hunk in ${file} in round ${currentRound(review).n}: ${unknown}`);
@@ -194,9 +197,9 @@ export const acceptFile = (id, file, hunkIds) => attempt(async () => {
       record(review, hunkId, 'accepted');
       accepted.push(hunkId);
     }
-    return { ok: true, accepted };
+    return { ok: true, accepted, fileSig: liveSig(review, snap, file) };
   }, scope);
-  return res.ok ? { ...(await summaryById(id, scope)), file, accepted: res.accepted } : res;
+  return res.ok ? { ...(await summaryById(id, scope)), file, accepted: res.accepted, fileSig: res.fileSig } : res;
 });
 
 /** Re-snapshots a range or uncommitted review. A new round is activity; one an agent pushes is also agent activity (`agentSeq`). */
@@ -240,8 +243,6 @@ export const refreshReview = (id, actor) => attempt(async () => inReview(id, asy
   return { ok: true, unchanged: false, round: cur.n + 1, hunks, threads };
 }));
 
-const withThreads = (review, file) => review.threads.filter((t) => t.status !== 'outdated' && t.anchor.file === file).map(threadView);
-
 /** Files with hunks and threads for the whole review, one file, or (read-only) one commit or one past round of a range. */
 export const diff = (id, { file, commit, round } = {}) => attempt(() => viewReview(id, async (review, env) => {
   if (round !== undefined) {
@@ -256,7 +257,7 @@ export const diff = (id, { file, commit, round } = {}) => attempt(() => viewRevi
     if (!hit) throw new Refusal('COMMIT_NOT_IN_RANGE', `${commit} is not in round ${cur.n}'s range`);
     const snap = await buildSnapshot({ kind: 'commit', repo, checkout: repo, ...(await resolveTarget(repo, 'commit', { sha: hit.sha })) });
     const bare = { ...review, kind: 'commit', threads: [], verdicts: {} };
-    const states = fileStates(bare, snap.files).map((s, i) => ({ ...s, verdicts: null, hunks: snap.files[i].hunks.map((h) => ({ ...h, verdict: null })), threads: [] }));
+    const states = await diffFiles(snap, fileStates(bare, snap.files).map((s) => ({ ...s, verdicts: null })), snap.files, { hunk: (h) => ({ ...h, verdict: null }), threads: () => [] });
     return { ok: true, readOnly: true, commit: { sha: hit.sha, subject: hit.subject }, files: states };
   }
   const summary = await summaryOf(review, env);
@@ -264,11 +265,7 @@ export const diff = (id, { file, commit, round } = {}) => attempt(() => viewRevi
   const snap = await env.snapshot();
   const picked = file ? snap.files.filter((f) => f.path === file) : snap.files;
   if (file && !picked.length) throw new Refusal('FILE_NOT_IN_DIFF', `${file} is not in the diff`);
-  const states = fileStates(review, picked);
-  return {
-    ok: true, review: summary,
-    files: states.map((s, i) => ({ ...s, hunks: picked[i].hunks.map((h) => hunkView(review, h)), threads: withThreads(review, s.path) })),
-  };
+  return { ok: true, review: summary, files: await diffFiles(snap, fileStates(review, picked), picked, liveView(review)) };
 }));
 
 /** Commits of the current round (newest first). */

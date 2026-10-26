@@ -1,7 +1,7 @@
 import { makeAnchor } from './anchor.js';
 import { attempt, Refusal } from './refusals.js';
 import { authorFor, assertOpen, currentRound, inReview, viewReview } from './context.js';
-import { threadView, tally } from './rollup.js';
+import { threadView, tally, liveSig } from './rollup.js';
 import { citationsForMessage } from './citations.js';
 import { bump, summaryById } from './reviews.js';
 import { isBinaryFile } from './snapshot.js';
@@ -64,6 +64,21 @@ async function buildAnchor(review, snap, spec) {
   return makeAnchor({ file: file.path, side, startLine, endLine, round: currentRound(review).n, fileLines, hunks: file.hunks });
 }
 
+/**
+ * `{path, sig}` of the thread's file in the live diff after a write, from a snapshot this request already has
+ * (uncommitted: the sweep's; committed: this process's cached one, else read). Never fails the write: `sig` null.
+ */
+async function sigAfterWrite(review, env, path) {
+  let snap = null;
+  try {
+    if (review.kind === 'uncommitted') snap = env.sweep ? await env.snapshot() : null;
+    else snap = (await env.cachedSnapshot()) ?? (await env.snapshot());
+  } catch (e) {
+    if (!(e instanceof Refusal)) console.warn(`code-review: no file sig for ${path} on review ${review.id}: ${e.message}`);
+  }
+  return liveSig(review, snap, path);
+}
+
 function message(review, actor, body, extra = {}) {
   const seq = bump(review);
   if (actor.kind === 'human') review.humanSeq = seq;
@@ -80,7 +95,8 @@ export const annotate = (id, actor, { anchor, kind, severity, body }) => attempt
   if (!KINDS.includes(kind)) throw invalid(`kind must be one of ${KINDS.join(', ')}`);
   if (kind === 'finding' && !SEVERITIES.includes(severity)) throw new Refusal('SEVERITY_REQUIRED', `a finding needs a severity: ${SEVERITIES.join(', ')}`);
   needBody(body);
-  const built = await buildAnchor(review, await env.snapshot(), anchor);
+  const snap = await env.snapshot();
+  const built = await buildAnchor(review, snap, anchor);
   const first = message(review, actor, body);
   const thread = {
     id: `t${review.nextThread++}`, kind, severity: kind === 'finding' ? severity : null, status: 'open', disposition: null,
@@ -88,11 +104,11 @@ export const annotate = (id, actor, { anchor, kind, severity, body }) => attempt
     humanReadSeq: actor.kind === 'human' ? first.seq : 0, createdAt: now(), messages: [first],
   };
   review.threads.push(thread);
-  return { ok: true, thread: threadView(thread) };
+  return { ok: true, thread: threadView(thread), fileSig: liveSig(review, snap, built.file) };
 }));
 
 /** Adds a message. `resolve` closes a thread the caller may close (`mayClose`), otherwise it proposes resolution. */
-export const reply = (id, actor, tid, { body, resolve = false, disposition }) => attempt(() => inReview(id, async (review) => {
+export const reply = (id, actor, tid, { body, resolve = false, disposition }) => attempt(() => inReview(id, async (review, env) => {
   assertOpen(review);
   needBody(body);
   const thread = findThread(review, tid);
@@ -119,11 +135,11 @@ export const reply = (id, actor, tid, { body, resolve = false, disposition }) =>
     thread.resolveProposed = true;
   }
   thread.messages.push(msg);
-  return { ok: true, thread: threadView(thread) };
+  return { ok: true, thread: threadView(thread), fileSig: await sigAfterWrite(review, env, thread.anchor.file) };
 }));
 
 /** Human-only: resolve (a finding needs a disposition) or reopen. */
-export const setThreadStatus = (id, tid, { status, disposition } = {}) => attempt(() => inReview(id, async (review) => {
+export const setThreadStatus = (id, tid, { status, disposition } = {}) => attempt(() => inReview(id, async (review, env) => {
   assertOpen(review);
   const thread = findThread(review, tid);
   if (!['resolved', 'open'].includes(status)) throw invalid('status must be resolved or open');
@@ -144,7 +160,7 @@ export const setThreadStatus = (id, tid, { status, disposition } = {}) => attemp
     thread.disposition = null;
     thread.resolution = null;
   }
-  return { ok: true, thread: threadView(thread) };
+  return { ok: true, thread: threadView(thread), fileSig: await sigAfterWrite(review, env, thread.anchor.file) };
 }));
 
 /** Marks one thread, or (no threadId) the whole review, as read by the human. */

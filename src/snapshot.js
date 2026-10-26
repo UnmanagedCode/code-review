@@ -5,7 +5,12 @@ import { placeKey } from './exec.js';
 import * as git from './git.js';
 
 const CACHE_MAX = 32;
-const cache = new Map(); // committed snapshots are immutable: `${placeKey(repo)}\0${base}\0${head}\0${kind}` -> {files, fingerprint}
+const cache = new Map(); // committed snapshots are immutable: `${placeKey(repo)}\0${base}\0${head}\0${kind}` -> {files, fingerprint, hashes}
+
+// Line counts at a commit are immutable: `${sha}\0${path}` -> count | null, least recently used dropped first.
+const LINE_COUNTS_MAX = 4096;
+const lineCountCache = new Map();
+const countKey = (sha, path) => `${sha}\0${path}`;
 
 /** Splits file content into lines; a trailing newline does not add an empty line. */
 export function splitLines(content) {
@@ -47,9 +52,6 @@ const tooLargeFile = (rel, status = 'added') => {
   return f;
 };
 
-/** Untracked path bytes passed to the finishing call; the rest (rare) are measured and diffed by the batched helpers. */
-export const ARGV_BUDGET = 256 * 1024;
-
 /**
  * The working tree against HEAD in two exec calls (scan, then finish), one entry per path: {files, head, prefetched}.
  * `prefetch` ([{side, file}], thread anchors) names lines read in the finishing call; `prefetched` maps
@@ -69,7 +71,7 @@ async function uncommittedDiff(checkout, limits, prefetch) {
   let passed = 0;
   for (let bytes = 0; passed < counted.length; passed++) {
     bytes += Buffer.byteLength(counted[passed]) + 1;
-    if (bytes > ARGV_BUDGET) break;
+    if (bytes > git.ARGV_BUDGET) break; // the rest (rare) are measured and diffed by the batched helpers
   }
   const inDiff = new Map(files.map((f) => [f.path, f]));
   const reads = new Map();
@@ -123,7 +125,7 @@ export async function buildSnapshot({ kind, repo, checkout, baseSha, headSha, ve
   if (kind === 'uncommitted') {
     const { files, head, prefetched } = await uncommittedDiff(checkout, limits, prefetch);
     const fingerprint = createHash('sha256').update(head).update(JSON.stringify(files)).digest('hex');
-    return withLines({ kind, repo: checkout, checkout, baseSha: head, headSha: head, files, fingerprint, prefetched });
+    return withLines({ kind, repo: checkout, checkout, baseSha: head, headSha: head, files, fingerprint, hashes: contentHashes(head, head, files), prefetched });
   }
   const missing = verified ? null : await git.objectsExist(repo, [baseSha, headSha]);
   if (missing) throw snapshotGone(missing);
@@ -132,15 +134,27 @@ export async function buildSnapshot({ kind, repo, checkout, baseSha, headSha, ve
   if (entry) entry = structuredClone(entry);
   else {
     const files = parseDiff(await git.diffBetween(repo, baseSha, headSha, { maxBuffer: limits.maxDiffBytes }));
-    entry = { files, fingerprint: createHash('sha256').update(headSha).update(JSON.stringify(files)).digest('hex') };
+    entry = { files, fingerprint: createHash('sha256').update(headSha).update(JSON.stringify(files)).digest('hex'), hashes: contentHashes(baseSha, headSha, files) };
     cache.set(key, structuredClone(entry));
     if (cache.size > CACHE_MAX) cache.delete(cache.keys().next().value);
   }
   return withLines({ kind, repo, checkout, baseSha, headSha, ...entry, prefetched: new Map() });
 }
 
+/** The committed snapshot of a round if this process has built it, else null; runs nothing. */
+export function cachedSnapshot({ kind, repo, baseSha, headSha }) {
+  const entry = cache.get(`${placeKey(repo)}\0${baseSha}\0${headSha}\0${kind}`);
+  return entry ? withLines({ kind, repo, checkout: repo, baseSha, headSha, ...structuredClone(entry), prefetched: new Map() }) : null;
+}
+
+// Per path: a hash of the round's shas and the file's whole diff entry (hunk texts, blob ids, modes), so any change to
+// what the diff shows changes it. Kept beside `files`, never in them: `fingerprint` hashes `files` and is stored.
+const contentHashes = (baseSha, headSha, files) => new Map(files.map((f) => [
+  f.path, createHash('sha256').update(`${baseSha}\0${headSha}\0`).update(JSON.stringify(f)).digest('hex'),
+]));
+
 // The snapshot object: `lines(side, rel)` serves prefetched content, else reads it.
-function withLines({ kind, repo, checkout, baseSha, headSha, files, fingerprint, prefetched }) {
+function withLines({ kind, repo, checkout, baseSha, headSha, files, fingerprint, hashes, prefetched }) {
   /** Lines of `rel` on one side, or null when the file is absent there. `rel` is the file's current path. */
   async function lines(side, rel) {
     const f = files.find((x) => x.path === rel);
@@ -153,5 +167,41 @@ function withLines({ kind, repo, checkout, baseSha, headSha, files, fingerprint,
     return content === null ? null : splitLines(content);
   }
 
-  return { files, fingerprint, baseSha, headSha, lines };
+  /**
+   * `{old, new}` line counts per file, as `GET …/file` reports each side's `total`: null for a side the file lacks,
+   * and both null for binary or tooLarge files. Modified and renamed files read the old side's count at `baseSha`
+   * (cached, at most one exec for every miss) and derive the new one: every old line is kept or deleted.
+   */
+  async function lineCounts(of) {
+    const counted = (f) => !f.binary && !f.tooLarge && (f.status === 'modified' || f.status === 'renamed');
+    const known = new Map();
+    for (const p of new Set(of.filter(counted).map((f) => f.oldPath ?? f.path))) {
+      const key = countKey(baseSha, p);
+      if (!lineCountCache.has(key)) continue;
+      known.set(p, lineCountCache.get(key));
+      lineCountCache.delete(key);
+      lineCountCache.set(key, known.get(p)); // most recently used
+    }
+    const misses = [...new Set(of.filter(counted).map((f) => f.oldPath ?? f.path))].filter((p) => !known.has(p));
+    if (misses.length) {
+      const got = await git.lineCountsAt(repo, baseSha, misses);
+      for (const p of misses) {
+        known.set(p, got.get(p) ?? null);
+        lineCountCache.set(countKey(baseSha, p), known.get(p));
+        if (lineCountCache.size > LINE_COUNTS_MAX) lineCountCache.delete(lineCountCache.keys().next().value);
+      }
+    }
+    return of.map((f) => {
+      if (f.binary || f.tooLarge) return { old: null, new: null };
+      if (f.status === 'added') return { old: null, new: f.additions };
+      if (f.status === 'deleted') return { old: f.deletions, new: null };
+      const old = known.get(f.oldPath ?? f.path) ?? null;
+      return { old, new: old === null ? null : old + f.additions - f.deletions };
+    });
+  }
+
+  /** The content hash of one file of this snapshot ('' when it is not in it). */
+  const contentHash = (path) => hashes.get(path) ?? '';
+
+  return { files, fingerprint, baseSha, headSha, lines, lineCounts, contentHash };
 }

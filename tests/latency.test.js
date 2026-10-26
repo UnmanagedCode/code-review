@@ -176,6 +176,7 @@ test('an uncommitted review\'s detail, summary and diff cost exactly two execs, 
       assert.equal(execs.length, 2, execs.map((b) => b.argv[2]?.slice(0, 40) ?? b.argv[0]).join(' | '));
     }
   };
+  ok(await reviews.diff(uncommitted.id, {})); // reads a.js's line count at HEAD once; tests/diffMeta.test.js pins that cost
   await budget();
   for (const anchor of [{ file: 'a.js', side: 'new', startLine: 5 }, { file: 'a.js', side: 'old', startLine: 5 }, { file: 'n.txt', side: 'new', startLine: 2 }]) {
     ok(await threads.annotate(uncommitted.id, HUMAN, { anchor, kind: 'comment', body: 'x' }));

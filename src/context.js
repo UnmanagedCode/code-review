@@ -3,7 +3,7 @@ import * as git from './git.js';
 import { UNREACHABLE } from './exec.js';
 import { lookupCheckout, isConductorProject } from './checkouts.js';
 import { lookupScope } from './lookups.js';
-import { buildSnapshot, snapshotGone } from './snapshot.js';
+import { buildSnapshot, cachedSnapshot, snapshotGone } from './snapshot.js';
 import { followThreads } from './follow.js';
 import { Refusal, refuse } from './refusals.js';
 
@@ -85,6 +85,16 @@ export function makeEnv(review, scope = lookupScope()) {
       if (where === 'checkout') return c.place;
       if (where === 'main') return c.mainPlace;
       throw gone();
+    },
+    /** The current round's committed snapshot if this process has built it (at the checkout, else its main one), else null; runs nothing. */
+    async cachedSnapshot() {
+      const c = await env.checkout();
+      const { baseSha, headSha } = currentRound(review);
+      for (const repo of [c.place, c.mainPlace].filter(Boolean)) {
+        const snap = cachedSnapshot({ kind: review.kind, repo, baseSha, headSha });
+        if (snap) return snap;
+      }
+      return null;
     },
     /** Snapshot of round `n` (default: current); uncommitted reviews are always live. */
     snapshot(n = currentRound(review).n) {

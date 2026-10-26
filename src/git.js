@@ -23,6 +23,8 @@ const GIT = `git ${BASE_ARGS.join(' ')}`;
 
 // Paths per batched script call, well under any ARG_MAX.
 const SIZE_CHUNK = 200;
+/** Path bytes passed to one script call; past this, a list of paths is split (or, for untracked files, handed on). */
+export const ARGV_BUDGET = 256 * 1024;
 const UNTRACKED_CHUNK = 100;
 
 const REF_RE = /^[A-Za-z0-9._\/@{}^~-]+$/;
@@ -471,6 +473,30 @@ export async function readWorktreeFile(place, rel) {
     if (e instanceof Refusal || e.exitCode === 126 || e.exitCode === 127) throw e; // a missing tool fails loudly
     return null;
   }
+}
+
+// Line count of each path at $2 (a commit), as `diff --numstat` from the empty tree: `<lines>\t<'-' when binary>\t<path>\0`.
+const OLD_LINE_COUNTS = `${CD}
+e=$(${GIT} hash-object -t tree --stdin </dev/null) || exit 4
+b=$1; shift
+exec ${GIT} diff --numstat -z --no-renames --no-color --no-ext-diff --no-textconv --no-relative "$e" "$b" -- "$@"`;
+
+/** Line counts of `paths` at commit `sha`: Map path -> count (null when git counts it binary); absent paths are left out. */
+export async function lineCountsAt(place, sha, paths) {
+  const counts = new Map();
+  for (let i = 0; i < paths.length;) {
+    const chunk = [];
+    for (let bytes = 0; i < paths.length && (!chunk.length || bytes + Buffer.byteLength(paths[i]) <= ARGV_BUDGET); i++) {
+      bytes += Buffer.byteLength(paths[i]) + 1;
+      chunk.push(paths[i]);
+    }
+    const r = await readSh(place, OLD_LINE_COUNTS, [sha, ...chunk], { env: { GIT_LITERAL_PATHSPECS: '1' } });
+    for (const rec of r.stdout.split('\0')) {
+      const m = rec.match(/^(-|\d+)\t(?:-|\d+)\t([\s\S]*)$/);
+      if (m) counts.set(m[2], m[1] === '-' ? null : Number(m[1]));
+    }
+  }
+  return counts;
 }
 
 /** Rename map for `from..to`: {newPath: oldPath}. */

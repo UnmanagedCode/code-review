@@ -12,7 +12,7 @@ export function App() {
   const route = useRoute();
   const wide = useMediaQuery(WIDE_QUERY);
   const follow = useFollowSession(route);
-  if (route.review) return <ReviewView id={route.review} />;
+  if (route.review) return <ReviewView key={route.review} id={route.review} />;
 
   const left = (
     <>

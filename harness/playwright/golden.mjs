@@ -5,6 +5,7 @@ import { mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { BROWSER } from './resolve.mjs';
+import { threadLink } from '../../src/links.js';
 import { seed } from './seed.mjs';
 
 const { withPage } = await import(BROWSER);
@@ -445,6 +446,24 @@ try {
     assert.ok(await historyTab.evaluate((t) => t === document.activeElement), 'the History tab has focus');
     await page.getByRole('navigation', { name: 'History' }).getByRole('link', { name: /^[0-9a-f]{7} / }).first().waitFor(); // the current round's commits
     await shot('13-history');
+    assert.deepEqual(errors, []);
+  }, { headless: true, viewport: { width: 1400, height: 900 } });
+
+  // 13b. cc steers an open frame onto a thread link of another review: replaceState + popstate, no reload.
+  await withPage(async (page) => {
+    const errors = watchErrors(page);
+    const shot = shotter(page);
+    const { files } = await world.call('GET', `reviews/${uncommitted}/diff?file=a.js`);
+    const { review } = await world.call('GET', `reviews/${uncommitted}`);
+    const link = threadLink(review, files[0].threads[0]);
+    await page.goto(q({ review: range, file: 'a.js' }));
+    await page.getByRole('grid', { name: 'Changes in a.js' }).waitFor();
+    await page.evaluate((p) => { history.replaceState(null, '', p); dispatchEvent(new PopStateEvent('popstate')); }, link.slice('#plugin/code-review/'.length));
+    const card = page.getByRole('article', { name: /thread$/ }).filter({ hasText: 'Name this better.' });
+    await card.waitFor();
+    assert.equal(await card.getByRole('button', { name: 'Focus' }).count(), 0, 'the linked thread is the focused one');
+    assert.equal(new URL(page.url()).searchParams.get('review'), uncommitted);
+    await shot('13-steer-to-thread-link');
     assert.deepEqual(errors, []);
   }, { headless: true, viewport: { width: 1400, height: 900 } });
 

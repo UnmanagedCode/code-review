@@ -1,6 +1,6 @@
 import { api } from './api';
 import type {
-  CheckoutInfo, Commit, ComparedThread, DiffFile, FileState, ForkPoint, Kind, RefreshReport, ReviewSummary, Round, Session, SessionPlace,
+  CheckoutInfo, Commit, ComparedThread, DiffFile, FileState, ForkPoint, InboxItem, Kind, RefreshReport, ReviewSummary, Round, Session, SessionPlace,
   Severity, Submission, Thread, ThreadAnchorInput, ThreadCounts, ThreadKind, UnplacedThread, Verdict,
 } from './types';
 
@@ -32,6 +32,9 @@ export const sessions = (project: string, worktree: string | null) =>
   api<{ sessions: Session[] }>(`api/sessions${q({ project, worktree })}`);
 export const sessionPlaces = (sessionId: string) =>
   api<{ places: SessionPlace[] }>(`api/sessions/${encodeURIComponent(sessionId)}/places`);
+
+/** Every open review of every project and checkout, latest activity first. */
+export const inbox = () => api<{ reviews: InboxItem[] }>('api/inbox');
 
 /** `worktree`: undefined = every checkout of the project, '' = main, else the named worktree. */
 export const reviews = (project: string, worktree: string | undefined, status: string) =>

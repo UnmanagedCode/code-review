@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import { world, HUMAN, editLines } from './_world.js';
 import * as reviews from '../src/reviews.js';
 import * as threads from '../src/threads.js';
+import * as store from '../src/store.js';
 import { handle, _toolNames } from '../src/mcp.js';
 import { reviewLink, threadLink } from '../src/links.js';
 import { parseRoute } from '../frontend/src/lib/route.ts';
@@ -197,6 +198,19 @@ test('refresh_review reports the new round', async () => {
   const out = await result('refresh_review', { review: review.id });
   assert.deepEqual([out.ok, out.unchanged, out.round], [true, false, 2]);
   void HUMAN;
+});
+
+test('refresh_review by an agent is agent activity: agentSeq advances when it adds a round, not when unchanged', async () => {
+  // Invariant: refresh_review passes the needCaller actor to refreshReview, which sets agentSeq for an agent's new round.
+  const { wt, review } = await reviewOnFeature();
+  const before = store.read(review.id).agentSeq;
+  await result('refresh_review', { review: review.id });
+  assert.equal(store.read(review.id).agentSeq, before, 'an unchanged refresh');
+  wt.commit({ 'b.js': 'z\n' });
+  await result('refresh_review', { review: review.id });
+  const after = store.read(review.id);
+  assert.equal(after.agentSeq, after.seq);
+  assert.ok(after.agentSeq > before);
 });
 
 test('the tool set is exactly the expected list, and mcp.js never references setVerdict', () => {

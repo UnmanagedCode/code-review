@@ -49,6 +49,9 @@ try {
         await open(q({}), page.getByText('Feature work'));
         await shot('review-list');
 
+        await open(q({ view: 'inbox' }), page.getByRole('region', { name: 'Inbox' }).getByText('Feature work'));
+        await shot('inbox'); // every open review: both turn states, the main checkout's row among the worktree's
+
         await open(q({ view: 'new' }), page.getByRole('dialog'));
         await page.getByRole('radio', { name: /main/ }).first().waitFor();
         await shot('new-review');

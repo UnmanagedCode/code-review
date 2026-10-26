@@ -78,8 +78,33 @@ export async function seed() {
     const un = (await call('POST', 'reviews', { project: 'app', worktree: 'feature', kind: 'uncommitted', recipient: 's-author' })).review;
     await mcp('annotate', { review: un.id, kind: 'finding', severity: 'minor', body: 'Name this better.', file: 'a.js', side: 'new', startLine: 2 }, rev);
 
+    const deliver = async (rid) => {
+      const { submission } = await call('POST', `reviews/${rid}/submissions`);
+      await call('POST', `reviews/${rid}/submissions/${submission.id}/result`, { ok: true });
+    };
+    // The conductor's review was delivered, then the conductor answered: your turn again.
+    const asked = (await call('POST', `reviews/${conducted.id}/threads`, { anchor: { file: 'c.js', side: 'new', startLine: 12, endLine: 12 }, kind: 'question', body: 'Is this line needed?' })).thread;
+    await deliver(conducted.id);
+    await mcp('reply', { review: conducted.id, thread: asked.id, body: 'Yes, the parser reads it.' }, { sessionId: 's-cond', project: '.conduct' });
+
+    // A review of the main checkout, delivered with no answer yet: waiting on the agent.
+    w.repo.write('b.js', `${lines(10, 'b')}main edit\n`);
+    const main = (await call('POST', 'reviews', { project: 'app', kind: 'uncommitted', recipient: 's-rev', title: 'Main checkout tidy-up' })).review;
+    await call('POST', `reviews/${main.id}/threads`, { anchor: { file: 'b.js', side: 'new', startLine: 11, endLine: 11 }, kind: 'comment', body: 'Keep this edit.' });
+    await deliver(main.id);
+
     return {
-      url: srv.url, ids: { range: id, uncommitted: un.id, conducted: conducted.id }, call,
+      url: srv.url, ids: { range: id, uncommitted: un.id, conducted: conducted.id, main: main.id }, call,
+      /**
+       * Adds a throwaway worktree `spike` with a review titled "Spike experiment" (on demand, so earlier steps see only `feature`).
+       * Resolves {id, destroy}; `destroy()` simulates cc deleting the worktree.
+       */
+      async spike() {
+        const wt = w.addWorktree('spike');
+        wt.commit({ 'd.js': 'spike\n' }, 'spike');
+        const { review: r } = await call('POST', 'reviews', { project: 'app', worktree: 'spike', kind: 'range', base: 'main', title: 'Spike experiment' });
+        return { id: r.id, destroy: () => wt.destroy() };
+      },
       /** Makes the fake cc refuse every exec as SYSTEM_UNREACHABLE (true) or run them again (false). */
       systemDown(down) { w.cc.state.execHook = down ? () => ({ status: 502, body: { error: 'provider down', code: 'SYSTEM_UNREACHABLE' } }) : null; },
       async close() { await srv.close(); w.cleanup(); },

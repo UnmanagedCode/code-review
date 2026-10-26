@@ -15,7 +15,7 @@ mkdirSync(outDir, { recursive: true });
 const HOST_URLS = /pluginBridge\.js|pluginTheme\.css/;
 
 const world = await seed();
-const { range, uncommitted } = world.ids;
+const { range, uncommitted, main } = world.ids;
 const q = (o) => `${world.url}/?${new URLSearchParams({ project: 'app', worktree: 'feature', ...o })}`;
 
 function watchErrors(page) {
@@ -37,6 +37,20 @@ const rowBefore = (el) => el.evaluate((node) => {
   };
 });
 const ACCEPTED_SUMMARY = /^@@.*accepted$/;
+
+// A stub cc bridge, installed before the page's scripts: `window.__emit(session)` plays cc's active-session changes.
+const STUB_BRIDGE = () => {
+  const subs = new Set();
+  const b = {
+    session: undefined, sent: [], results: [],
+    onSession(fn) { subs.add(fn); if (b.session !== undefined) fn(b.session); return () => subs.delete(fn); },
+    async openSession() { return { ok: true }; },
+    async sendPrompt(id, text) { b.sent.push([id, text]); return b.results.shift() ?? { ok: true }; },
+  };
+  window.ccBridge = b;
+  window.__emit = (s) => { b.session = s; subs.forEach((f) => f(s)); };
+};
+const params = (page) => Object.fromEntries(new URL(page.url()).searchParams);
 
 const shotter = (page) => async (name) => {
   const file = path.join(outDir, `golden-${name}.png`);
@@ -211,19 +225,9 @@ try {
   await withPage(async (page) => {
     const errors = watchErrors(page);
     const shot = shotter(page);
-    await page.addInitScript(() => {
-      const subs = new Set();
-      const b = {
-        session: undefined, sent: [], results: [],
-        onSession(fn) { subs.add(fn); if (b.session !== undefined) fn(b.session); return () => subs.delete(fn); },
-        async openSession() { return { ok: true }; },
-        async sendPrompt(id, text) { b.sent.push([id, text]); return b.results.shift() ?? { ok: true }; },
-      };
-      window.ccBridge = b;
-      window.__emit = (s) => { b.session = s; subs.forEach((f) => f(s)); };
-    });
+    await page.addInitScript(STUB_BRIDGE);
     await page.goto(`${world.url}/?project=app`);
-    await page.getByText('No reviews yet').waitFor();
+    await page.getByText('Main checkout tidy-up').waitFor();
     await page.evaluate(() => window.__emit({ sessionId: 's-rev', project: 'app', worktree: null })); // baseline: matches the route
     await page.evaluate(() => window.__emit({ sessionId: 's-author', project: 'app', worktree: 'feature' }));
     await page.waitForFunction(() => location.search.includes('worktree=feature'));
@@ -636,6 +640,50 @@ try {
     }
     assert.deepEqual(errors, []);
   }, { headless: true, viewport: { width: 1100, height: 800 }, deviceScaleFactor: 2 });
+  // 16: the inbox, with a stub cc bridge. From an open review, Inbox → the main checkout's row opens that review in its own
+  // checkout; a session switch while it is open leaves it open; Back returns to the inbox. A destroyed worktree's row says
+  // "checkout gone", and its Close closes the review. Runs last: it removes a worktree.
+  await withPage(async (page) => {
+    const errors = watchErrors(page);
+    const shot = shotter(page);
+    await page.addInitScript(STUB_BRIDGE);
+    await page.goto(q({ review: range }));
+    await page.getByRole('link', { name: /a\.js/ }).first().waitFor();
+    await page.evaluate(() => window.__emit({ sessionId: 's-author', project: 'app', worktree: 'feature' }));
+    await page.getByRole('link', { name: 'Inbox', exact: true }).click();
+    const inbox = page.getByRole('region', { name: 'Inbox' });
+    const row = (title) => inbox.getByRole('listitem').filter({ hasText: title });
+    await row('Main checkout tidy-up').getByText('Waiting on agent').waitFor();
+    await row('Conductor review').getByText('Your turn').waitFor();
+    assert.deepEqual(params(page), { project: 'app', worktree: 'feature', view: 'inbox' });
+    await shot('16-inbox');
+
+    await row('Main checkout tidy-up').getByRole('link').click();
+    const heading = page.getByRole('heading', { name: 'Main checkout tidy-up' });
+    await heading.waitFor();
+    assert.deepEqual(params(page), { project: 'app', review: main });
+    await page.evaluate(() => window.__emit({ sessionId: 's-rev', project: 'other', worktree: null }));
+    await page.waitForTimeout(300); // nothing to wait for: following must not navigate
+    assert.deepEqual(params(page), { project: 'app', review: main });
+    assert.ok(await heading.isVisible(), 'the review stays open after a session switch');
+    await shot('16-session-switch-ignored');
+    await page.goBack();
+    await row('Main checkout tidy-up').waitFor();
+    assert.deepEqual(params(page), { project: 'app', worktree: 'feature', view: 'inbox' });
+
+    const spike = await world.spike();
+    spike.destroy();
+    await page.reload();
+    await row('Spike experiment').getByText('checkout gone').waitFor();
+    assert.equal(await row('Feature work').getByText('checkout gone').count(), 0);
+    await shot('16-inbox-checkout-gone');
+    await row('Spike experiment').getByRole('button', { name: 'Close review Spike experiment' }).click();
+    await row('Spike experiment').waitFor({ state: 'detached' });
+    assert.equal((await world.call('GET', `reviews/${spike.id}`)).review.status, 'closed');
+    await shot('16-inbox-closed');
+    assert.deepEqual(errors, []);
+  }, { headless: true, viewport: { width: 1280, height: 800 } });
+
   console.log('golden path ok');
 } finally {
   await world.close();

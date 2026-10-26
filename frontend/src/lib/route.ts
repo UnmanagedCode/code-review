@@ -2,7 +2,7 @@ import { useSyncExternalStore } from 'react';
 
 export interface Route {
   project?: string; worktree?: string; review?: string; file?: string; side?: 'old' | 'new';
-  lines?: string; thread?: string; commit?: string; round?: string; compare?: string; view?: 'new' | 'threads' | 'history';
+  lines?: string; thread?: string; commit?: string; round?: string; compare?: string; view?: 'new' | 'threads' | 'history' | 'inbox';
 }
 const KEYS = ['project', 'worktree', 'review', 'file', 'side', 'lines', 'thread', 'commit', 'round', 'compare', 'view'] as const;
 
@@ -32,7 +32,7 @@ export function parseRoute(search: string): Route {
     const v = p.get(k);
     if (v === null || v === '') continue;
     if (k === 'side' && v !== 'old' && v !== 'new') continue;
-    if (k === 'view' && v !== 'new' && v !== 'threads' && v !== 'history') continue;
+    if (k === 'view' && v !== 'new' && v !== 'threads' && v !== 'history' && v !== 'inbox') continue;
     if (k === 'lines' && !/^\d+(-\d+)?$/.test(v)) continue;
     if (k === 'round' && !/^[1-9]\d*$/.test(v)) continue;
     if (k === 'compare' && !COMPARE_RE.test(v)) continue;

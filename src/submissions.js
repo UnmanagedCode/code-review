@@ -2,6 +2,7 @@ import { attempt, Refusal } from './refusals.js';
 import { assertOpen, currentRound, inReview, recipientRole } from './context.js';
 import { renderPrompt } from './prompt.js';
 import { verdictOf } from './rollup.js';
+import { touch } from './reviews.js';
 
 const BRIDGE_CODES = ['INVALID_ARGUMENT', 'SESSION_UNKNOWN', 'SESSION_NOT_LIVE', 'SESSION_NOT_READY', 'SEND_FAILED', 'LOOKUP_FAILED', 'HOST_ERROR'];
 const now = () => new Date().toISOString();
@@ -69,6 +70,7 @@ export const composeSubmission = (id) => attempt(() => inReview(id, async (revie
     status: 'pending', code: null, composedAt: now(), deliveredAt: null,
   };
   review.submissions.push(submission);
+  touch(review);
   return { ok: true, submission: { id: submission.id, round: submission.round, recipient: submission.recipient, text, status: submission.status } };
 }));
 
@@ -89,5 +91,6 @@ export const recordResult = (id, sid, { ok, code } = {}) => attempt(() => inRevi
     sub.status = 'failed';
     sub.code = code;
   }
+  touch(review);
   return { ok: true, submission: { id: sub.id, round: sub.round, recipient: sub.recipient, text: sub.text, status: sub.status, code: sub.code } };
 }));

@@ -59,10 +59,7 @@ const handlers = {
 
   reply: (a, caller) => attempt(async () => threads.reply(a.review, needCaller(caller), a.thread, { body: a.body, resolve: a.resolve === true, disposition: a.disposition })),
 
-  refresh_review: (a, caller) => attempt(async () => {
-    needCaller(caller);
-    return reviews.refreshReview(a.review);
-  }),
+  refresh_review: (a, caller) => attempt(async () => reviews.refreshReview(a.review, needCaller(caller))),
 };
 
 /** Tool names this module implements (test seam: must equal the manifest's). */

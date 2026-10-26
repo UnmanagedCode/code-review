@@ -15,8 +15,14 @@ const VERDICTS = ['pending', 'accepted', 'rejected'];
 const UNREADABLE = ['CHECKOUT_GONE', 'SNAPSHOT_GONE', 'DIFF_TOO_LARGE', 'TEMP_UNUSABLE', ...UNREACHABLE];
 const now = () => new Date().toISOString();
 
-/** Bumps the review-wide change counter; every human or agent mutation takes a fresh seq. */
-export const bump = (review) => ++review.seq;
+/** Stamps the review's latest activity, which orders the inbox. */
+export const touch = (review) => { review.lastActivityAt = now(); };
+
+/** Bumps the review-wide change counter; every human or agent mutation takes a fresh seq and is activity. */
+export const bump = (review) => {
+  touch(review);
+  return ++review.seq;
+};
 
 const invalid = (reason) => new Refusal('INVALID_ARGUMENT', reason);
 
@@ -92,11 +98,12 @@ export const openReview = (args, actor) => attempt(() => withLock('create', asyn
   const snap = await buildSnapshot({ kind, repo: co.place, checkout: co.place, ...shas });
   const recipient = actor.kind === 'agent' ? actor.sessionId : await resolveRecipient(args.recipient, { project: args.project, worktree });
   const branch = co.branch ?? (await git.currentBranch(co.place));
+  const createdAt = now();
   const review = {
     id: store.newId(), project: args.project, worktree, branch, kind, target,
-    baseLabel: kind === 'range' ? target.base : null, title: '', status: 'open', createdAt: now(), createdBy: null,
-    recipient, author: args.author ?? null, seenByHuman: actor.kind === 'human', rev: 0, seq: 0, humanSeq: 0, nextThread: 1, nextSubmission: 1,
-    rounds: [{ n: 1, ...shas, fingerprint: snap.fingerprint, createdAt: now(), submittedAt: null }],
+    baseLabel: kind === 'range' ? target.base : null, title: '', status: 'open', createdAt, lastActivityAt: createdAt, createdBy: null,
+    recipient, author: args.author ?? null, seenByHuman: actor.kind === 'human', rev: 0, seq: 0, humanSeq: 0, agentSeq: 0, nextThread: 1, nextSubmission: 1,
+    rounds: [{ n: 1, ...shas, fingerprint: snap.fingerprint, createdAt, submittedAt: null }],
     verdicts: {}, threads: [], droppedThreads: [], submissions: [],
   };
   review.createdBy = authorFor(review, actor);
@@ -177,8 +184,8 @@ export const acceptFile = (id, file, hunkIds) => attempt(async () => {
   return res.ok ? { ...(await summaryById(id)), file, accepted: res.accepted } : res;
 });
 
-/** Re-snapshots a range or uncommitted review. */
-export const refreshReview = (id) => attempt(async () => inReview(id, async (review, env) => {
+/** Re-snapshots a range or uncommitted review. A new round is activity; one an agent pushes is also agent activity (`agentSeq`). */
+export const refreshReview = (id, actor) => attempt(async () => inReview(id, async (review, env) => {
   assertOpen(review);
   if (review.kind === 'commit') throw new Refusal('IMMUTABLE_TARGET', 'a commit review cannot be refreshed; review the new commit instead');
   const co = await env.checkout();
@@ -186,7 +193,11 @@ export const refreshReview = (id) => attempt(async () => inReview(id, async (rev
   const cur = currentRound(review);
   const shas = await resolveTarget(co.place, review.kind, review.target);
   const zero = { moved: 0, drifted: 0, outdated: 0, dropped: 0 };
-  const push = (snap) => review.rounds.push({ n: cur.n + 1, ...shas, fingerprint: snap.fingerprint, createdAt: now(), submittedAt: null });
+  const push = (snap) => {
+    const seq = bump(review);
+    if (actor.kind === 'agent') review.agentSeq = seq;
+    review.rounds.push({ n: cur.n + 1, ...shas, fingerprint: snap.fingerprint, createdAt: now(), submittedAt: null });
+  };
 
   if (review.kind === 'uncommitted') {
     const snap = await env.snapshot();

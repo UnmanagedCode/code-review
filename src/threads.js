@@ -67,6 +67,7 @@ async function buildAnchor(review, snap, spec) {
 function message(review, actor, body, extra = {}) {
   const seq = bump(review);
   if (actor.kind === 'human') review.humanSeq = seq;
+  else review.agentSeq = seq;
   return {
     id: `m${seq}`, seq, author: authorFor(review, actor), body, at: now(),
     round: currentRound(review).n, proposeResolve: false, ...extra,

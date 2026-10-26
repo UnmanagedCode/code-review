@@ -5,6 +5,7 @@ import { expect, test, vi } from 'vitest';
 import { ReviewHeader } from '@/features/review/ReviewHeader';
 import { installBridge } from '@/test/fakeBridge';
 import { installFakeEventSource } from '@/test/fakeEventSource';
+import { diffFile, fileState, review } from '@/test/fixtures';
 import { renderInReview } from '@/test/renderCtx';
 import { stubFetch } from '@/test/stubFetch';
 import { App } from './App';
@@ -15,6 +16,10 @@ const world = () => stubFetch([
   [/^GET api\/sessions\/[^/?]+\/places$/, { places: [] }],
   [/^GET api\/sessions/, { sessions: [] }],
   [/^GET api\/reviews\?/, { reviews: [] }],
+  [/^GET api\/inbox$/, { reviews: [] }],
+  [/^GET api\/reviews\/r-1$/, { review: review({ title: 'Open review' }), files: [fileState({ path: 'a.js' })], rounds: [{ n: 1, headSha: 'a'.repeat(40), baseSha: 'b'.repeat(40), createdAt: '', submittedAt: null }], submissions: [], outdatedThreads: [] }],
+  [/^GET api\/reviews\/r-1\/diff/, { review: review({ title: 'Open review' }), files: [diffFile({ path: 'a.js' })] }],
+  [/^GET api\/reviews\/r-1\/commits/, { commits: [] }],
 ]);
 
 test('without a bridge nothing follows and the route is untouched', async () => {
@@ -94,4 +99,57 @@ test('Open agent calls openSession(recipient) and toasts a failure code; it is a
   await user.click(await screen.findByRole('menuitem', { name: 'Open agent' }));
   expect(bridge.openSession).toHaveBeenCalledWith('s-author');
   await waitFor(() => expect(error).toHaveBeenCalledWith("The session isn't running"));
+});
+
+// Invariant: a session change while a review is open is dropped (the route stays); leaving the review does not replay it; the next session change follows again.
+test('a session change while a review is open is ignored, not deferred', async () => {
+  installFakeEventSource();
+  world();
+  const bridge = installBridge({ sessionId: 's-0', project: 'app', worktree: 'feature' });
+  history.replaceState(null, '', '?project=app&worktree=feature&review=r-1');
+  render(<App />);
+  await screen.findByRole('heading', { name: 'Open review' });
+  act(() => bridge.emit({ sessionId: 's-1', project: 'other', worktree: null }));
+  await act(async () => {});
+  expect(location.search).toBe('?project=app&worktree=feature&review=r-1');
+  expect(screen.getByRole('heading', { name: 'Open review' })).toBeTruthy();
+
+  await userEvent.setup().click(screen.getByRole('link', { name: 'Reviews' }));
+  await screen.findByText('No reviews yet');
+  await act(async () => {});
+  expect(location.search).toBe('?project=app&worktree=feature');
+
+  act(() => bridge.emit({ sessionId: 's-2', project: 'other', worktree: 'feature' }));
+  await waitFor(() => expect(location.search).toBe('?project=other&worktree=feature'));
+});
+
+// Invariant: following on the inbox switches the checkout and keeps view=inbox.
+test('a session change on the inbox updates the checkout and keeps the inbox', async () => {
+  installFakeEventSource();
+  world();
+  const bridge = installBridge({ sessionId: 's-0', project: 'app', worktree: null });
+  history.replaceState(null, '', '?project=app&view=inbox');
+  render(<App />);
+  await screen.findByText('No open reviews');
+  act(() => bridge.emit({ sessionId: 's-1', project: 'other', worktree: 'feature' }));
+  await waitFor(() => expect(location.search).toBe('?project=other&worktree=feature&view=inbox'));
+  expect(screen.getByText('No open reviews')).toBeTruthy();
+});
+
+// Invariant: the first-run checkout (from the session, or the last one used) fills in project and keeps view=inbox.
+test('?view=inbox with no project keeps the inbox when the checkout fills in', async () => {
+  installFakeEventSource();
+  world();
+  const bridge = installBridge(undefined);
+  history.replaceState(null, '', '?view=inbox');
+  const { unmount } = render(<App />);
+  act(() => bridge.emit({ sessionId: 's-1', project: 'app', worktree: null }));
+  await waitFor(() => expect(location.search).toBe('?project=app&view=inbox'));
+  unmount();
+  delete window.ccBridge;
+
+  localStorage.setItem('code-review:lastCheckout', JSON.stringify({ project: 'app', worktree: 'feature' }));
+  history.replaceState(null, '', '?view=inbox');
+  render(<App />);
+  await waitFor(() => expect(location.search).toBe('?project=app&worktree=feature&view=inbox'));
 });

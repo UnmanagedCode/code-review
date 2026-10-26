@@ -1,4 +1,4 @@
-import { ArrowLeftIcon, MoreHorizontalIcon } from 'lucide-react';
+import { ArrowLeftIcon, InboxIcon, MoreHorizontalIcon } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
 import { RouteLink } from '@/components/RouteLink';
@@ -15,6 +15,8 @@ import { SubmitControls } from '@/features/submit/SubmitControls';
 import { RecipientPicker } from './RecipientPicker';
 
 const CLEAR = { review: undefined, ...REVIEW_SCOPED };
+const TO_INBOX = { ...CLEAR, view: 'inbox' } as const;
+const BACK_LINK = 'inline-flex w-fit items-center gap-1 text-sm text-muted-foreground hover:text-foreground';
 
 export function ReviewHeader() {
   const { review, rounds, sessions, pastView } = useReviewCtx();
@@ -38,7 +40,10 @@ export function ReviewHeader() {
 
   return (
     <header className="flex flex-col gap-2 border-b p-3">
-      <RouteLink to={CLEAR} className="inline-flex w-fit items-center gap-1 text-sm text-muted-foreground hover:text-foreground"><ArrowLeftIcon className="size-4" />Reviews</RouteLink>
+      <nav aria-label="Review lists" className="flex items-center gap-4">
+        <RouteLink to={CLEAR} className={BACK_LINK}><ArrowLeftIcon className="size-4" />Reviews</RouteLink>
+        <RouteLink to={TO_INBOX} className={BACK_LINK}><InboxIcon className="size-4" />Inbox</RouteLink>
+      </nav>
       <div className="flex flex-wrap items-center gap-2">
         <h1 className="min-w-0 flex-1 truncate text-base font-semibold">{review.title || review.label}</h1>
         <Badge variant="outline">{review.kind}</Badge>

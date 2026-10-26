@@ -80,7 +80,7 @@ test('on a system, a refresh follows a thread across a line shift and a rename; 
   const t = ok(await threads.annotate(review.id, HUMAN, { anchor: { file: 'a.js', side: 'new', startLine: 18 }, kind: 'comment', body: 'hm' })).thread;
   wt.git('mv', 'a.js', 'c.js');
   wt.commit({ 'c.js': ['ins1', 'ins2', ...editLines({ 2: 'top-edit', 18: 'bottom-edit' }).split('\n')].join('\n') });
-  const res = ok(await reviews.refreshReview(review.id));
+  const res = ok(await reviews.refreshReview(review.id, HUMAN));
   assert.equal(res.round, 2);
   assert.equal(res.threads.moved, 1);
   const now = ok(await reviews.diff(review.id, {})).files.find((f) => f.path === 'c.js').threads.find((x) => x.id === t.id);
@@ -97,7 +97,7 @@ test('on a system, a worktree removed on the target refuses refresh CHECKOUT_GON
   wt.commit({ 'a.js': editLines({ 2: 'top-edit' }) });
   const { review } = ok(await reviews.openReview({ project: 'app', worktree: 'feature' }, HUMAN));
   w.repo.git('worktree', 'remove', '--force', wt.dir); // cc still lists it
-  assert.equal(codeOf(await reviews.refreshReview(review.id)), 'CHECKOUT_GONE');
+  assert.equal(codeOf(await reviews.refreshReview(review.id, HUMAN)), 'CHECKOUT_GONE');
   const got = ok(await reviews.getReview(review.id));
   assert.equal(got.review.checkoutGone, true);
   assert.deepEqual(got.files.map((f) => f.path), ['a.js']);
@@ -124,7 +124,7 @@ for (const [ccStatus, ccCode, code] of [[502, 'SYSTEM_UNREACHABLE', 'SYSTEM_UNRE
     assert.deepEqual(kept.map((x) => [x.id, x.status, x.anchor.startLine]), [[t.id, 'open', 5]], 'the sweep left the thread untouched');
     assert.equal(codeOf(await reviews.diff(range.id, {})), code);
     assert.equal(codeOf(await reviews.openReview({ project: 'app', worktree: null, kind: 'commit' }, HUMAN)), code);
-    assert.equal(codeOf(await reviews.refreshReview(range.id)), code);
+    assert.equal(codeOf(await reviews.refreshReview(range.id, HUMAN)), code);
     assert.equal((await reviews.listReviews({})).ok, true);
     await assert.rejects(checkoutInfo({ project: 'app', worktree: 'feature' }), (e) => e.code === code);
   });

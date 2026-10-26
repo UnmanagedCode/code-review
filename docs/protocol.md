@@ -30,6 +30,10 @@ REST under `/api` (JSON), an SSE stream, and the cc MCP endpoint. Behaviour behi
 - **ReviewSummary:** `id, project, worktree, branch, kind, target, label, title, status, recipient, author|null, recipientRole, round, headSha, baseSha, headMoved, dirty, checkoutGone, counts:{files, hunks, threads:{open,resolved,outdated}}, mergeBlockers, unread, seenByHuman, rev, createdAt, createdBy, lastSubmission:{id,status,code,round}|null`.
   - `counts.hunks` is `{pending,accepted,rejected}`, or `{total}` for uncommitted reviews.
   - `snapshotError` (`CHECKOUT_GONE|SNAPSHOT_GONE|DIFF_TOO_LARGE|TEMP_UNUSABLE|SYSTEM_UNREACHABLE|GIT_TIMEOUT|GIT_UNAVAILABLE`) is present when the diff is unreadable; `counts.files` and `counts.hunks` are then `null`. With `TEMP_UNUSABLE` or one of the last three the system could not serve the read: `checkoutGone` and `dirty` are then `false`, never a claim that the checkout is missing.
+- **InboxItem** (`GET /inbox`): `id, project, worktree, branch, kind, label, title, round, unread, seenByHuman, lastActivityAt, turn, checkoutGone`.
+  - `lastActivityAt`: ISO time of the review's latest activity (what counts: [features](features.md#review-ui) → Inbox).
+  - `turn`: `agent` when the newest submission is `delivered` and no agent message or agent refresh adding a round came after it was composed (`turnOf` in `src/rollup.js`); else `human`.
+  - `checkoutGone`: `true` when cc's project list lacks the project, or (worktree reviews) its worktree list lacks the worktree; `false` when both list it; `null` when a lookup failed and none said gone.
 - **FileState:** `path, oldPath, status (added|deleted|modified|renamed), binary, tooLarge, additions, deletions, hunks (count), verdicts:{pending,accepted,rejected}|null, threads:{open,resolved,outdated}, unread`.
 - **Hunk:** text `{id, kind:'text', header, oldStart, oldLines, newStart, newLines, lines:[{t:'ctx'|'add'|'del', old, new, text, noEol?}], verdict}`; file-level `{id, kind:'file', lines:[], verdict}`. `verdict` is `null` for uncommitted reviews, in the commit filter view, in past-round views and in round comparisons.
 - **Thread:** `id, kind, severity, status (open|resolved|outdated), disposition, resolveProposed, anchor:{file, side, startLine, endLine, hunkId, round, linesHash, drifted}, openedBy, unread, messages:[{id, author, body, at, round, proposeResolve, citations:[{raw,path,startLine,endLine}]}]`.
@@ -53,6 +57,7 @@ REST under `/api` (JSON), an SSE stream, and the cc MCP endpoint. Behaviour behi
 | `GET /sessions` | `?project&worktree` | `{sessions:[Session]}` (all cc sessions; `attached` is relative to the checkout) | `INVALID_ARGUMENT`, `CONDUCTOR_UNAVAILABLE` |
 | `GET /sessions/:sessionId/places` | | `{places:[SessionPlace]}`: the session's own checkout, then the checkouts of the workers it owns (live, by project name), then those it has spawned workers into (`lastSpawnAt` (ISO string) newest first, then project name); `.conduct` omitted; an unknown id gives `[]` | `CONDUCTOR_UNAVAILABLE` (instances route only: a failing history route is logged and the places come from live rows alone) |
 | `GET /reviews` | `?project&worktree&status` (`open`, `closed` or `all`; `all` or no `status` = every status); no `worktree` = every checkout, empty `worktree=` = main | `{reviews:[ReviewSummary]}` newest first | |
+| `GET /inbox` | | `{reviews:[InboxItem]}`: every open review of every project and checkout, `lastActivityAt` descending, then `id` descending. Reads the store and cc's project list (once) and worktree lists (once per project with an open worktree review); runs no git. A failed cc lookup gives `checkoutGone:null`, never a refusal | |
 | `POST /reviews` | `{project, worktree|null, kind?, base?, sha?, recipient?, title?}` (`author` is refused `INVALID_ARGUMENT`: the human path takes none) | `{review, reused}` | `INVALID_ARGUMENT` `BAD_REF` `REF_UNKNOWN` `BASE_REQUIRED` `NO_COMMON_ANCESTOR` `UNBORN_HEAD` `PROJECT_*` `CHECKOUT_*` `RECIPIENT_UNKNOWN` |
 | `GET /reviews/:id` | | `{review, files:[FileState], rounds, submissions, outdatedThreads:[Thread]}` | `REVIEW_UNKNOWN` |
 | `PATCH /reviews/:id` | `{recipient? (null clears), title?, status?: open|closed}` | `{review}` | `RECIPIENT_UNKNOWN` |
@@ -78,7 +83,7 @@ REST under `/api` (JSON), an SSE stream, and the cc MCP endpoint. Behaviour behi
 
 ### SSE
 
-`event: review` with data `{id, rev}` after every stored write, or `{id, deleted:true}` after a delete. A `: heartbeat` comment every 25 s. Uncommitted working-tree edits emit nothing: the UI re-fetches an uncommitted diff on focus or an interval.
+`event: review` with data `{id, rev}` after every stored write, or `{id, deleted:true}` after a delete. The UI refetches the inbox on any event. A `: heartbeat` comment every 25 s. Uncommitted working-tree edits emit nothing: the UI re-fetches an uncommitted diff on focus or an interval.
 
 ### Submission delivery
 
@@ -157,7 +162,7 @@ The page keeps its state in the query string (`?…`, never the hash) and writes
 | `commit` | Range reviews: commit-filter view (read-only) |
 | `round` | Range reviews: past-round view (read-only), a positive integer; ignored with `commit`, dropped when it names the current round or a later one. Focusing a thread there marks nothing read |
 | `compare` | Range reviews: round comparison (read-only), `A..B` of positive integers. Ignored with `commit`; beats `round` (which is dropped); dropped when the review is not a range review, `A` ≥ `B`, or `B` is past the current round. There `side=old` means round A's lines and `new` round B's |
-| `view` | Outside a review: `new` (New review dialog). Inside one, the side pane's tab: `threads` or `history` (History only on range reviews; elsewhere it shows Files); absent = Files. Tab clicks write it with `replace`; every other in-review navigation keeps it; opening or leaving a review clears it |
+| `view` | Outside a review: `new` (New review dialog) or `inbox` (the side pane's Inbox tab; absent = Checkout, written with `replace`; session following keeps it). Inside one, the side pane's tab: `threads` or `history` (History only on range reviews; elsewhere it shows Files); absent = Files. Tab clicks write it with `replace`; every other in-review navigation keeps it; opening or leaving a review clears it |
 
 **Links.** MCP results carry origin-relative links (never absolute: cc supplies the host) that open the review or a thread in the plugin view; built by `src/links.js`.
 - Format: `#plugin/<manifest id>/?<route>`; values are encoded as `URLSearchParams` does, keys follow the route serialiser's order.

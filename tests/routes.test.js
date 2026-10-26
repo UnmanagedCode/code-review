@@ -289,3 +289,17 @@ test('mutating routes refuse a non-JSON content type with 415 and change nothing
   assert.equal(ok.status, 200);
   assert.equal((await fetch(`${base}/reviews`)).status, 200, 'GET needs no content type');
 });
+
+test('POST /reviews/:id/refresh acts as the human: a new round keeps the turn with the agent', async () => {
+  // Invariant: the REST refresh passes HUMAN, so it never advances agentSeq.
+  const { id } = (await openReview()).review;
+  await req('POST', `/reviews/${id}/threads`, { anchor: { file: 'a.js', side: 'new', startLine: 2, endLine: 2 }, kind: 'question', body: 'why?' });
+  const sub = (await req('POST', `/reviews/${id}/submissions`)).body.submission;
+  await req('POST', `/reviews/${id}/submissions/${sub.id}/result`, { ok: true });
+  const turn = async () => (await req('GET', '/inbox')).body.reviews.find((r) => r.id === id).turn;
+  assert.equal(await turn(), 'agent');
+  bindRepo(w.cc.state.worktrees.app[0].worktreePath, () => {}).commit({ 'b.js': 'z\n' });
+  assert.equal((await req('POST', `/reviews/${id}/refresh`)).body.round, 2);
+  assert.equal(await turn(), 'agent');
+  assert.equal(store.read(id).agentSeq, 0);
+});

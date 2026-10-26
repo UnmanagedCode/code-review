@@ -33,11 +33,11 @@ async function threeRounds() {
   const t2 = await say(review.id, 2);
   ok(await threads.setThreadStatus(review.id, t2.id, { status: 'resolved' }));
   wt.commit({ 'a.js': withTop(['ins1', 'ins2'], { 2: 'top-edit', 18: 'bottom-edit' }) });
-  ok(await reviews.refreshReview(review.id));
+  ok(await reviews.refreshReview(review.id, HUMAN));
   const t3 = await say(review.id, 20);
   ok(await threads.reply(review.id, agent('s-a'), t1.id, { body: 'round-2 reply' }));
   wt.commit({ 'a.js': withTop(['ins1', 'ins2', 'ins3'], { 1: 'r1', 2: 'r2', 3: 'r3', 4: 'r4', 5: 'r5', 18: 'bottom-edit' }) });
-  assert.equal(ok(await reviews.refreshReview(review.id)).threads.outdated, 1);
+  assert.equal(ok(await reviews.refreshReview(review.id, HUMAN)).threads.outdated, 1);
   return { wt, review, t1, t2, t3 };
 }
 
@@ -89,7 +89,7 @@ test('a past round\'s hunks carry no verdict even when the current round has ver
   const [h] = ok(await reviews.diff(review.id, {})).files[0].hunks;
   ok(await reviews.setVerdict(review.id, h.id, 'accepted'));
   wt.commit({ 'b.js': 'other\n' });
-  ok(await reviews.refreshReview(review.id));
+  ok(await reviews.refreshReview(review.id, HUMAN));
   const r1 = await fileAt(review.id, 1);
   assert.equal(r1.hunks[0].id, h.id);
   assert.equal(r1.hunks[0].verdict, null);
@@ -102,7 +102,7 @@ test('a renamed file: round 1 shows the thread under the old path, round 2 under
   const review = await open();
   const t = await say(review.id, 18);
   wt.commit({ 'a.js': null, 'z.js': editLines({ 18: 'bottom-edit', 19: 'more' }) });
-  ok(await reviews.refreshReview(review.id));
+  ok(await reviews.refreshReview(review.id, HUMAN));
   assert.deepEqual(where(await fileAt(review.id, 1, 'a.js')), { [t.id]: 18 });
   assert.deepEqual(where(await fileAt(review.id, 2, 'z.js')), { [t.id]: 18 });
   assert.equal(codeOf(await reviews.diff(review.id, { round: '1', file: 'z.js' })), 'FILE_NOT_IN_DIFF');

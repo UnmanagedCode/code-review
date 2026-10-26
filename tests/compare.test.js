@@ -191,11 +191,11 @@ async function threeRounds() {
   const t2 = await say(review.id, 2);
   ok(await threads.setThreadStatus(review.id, t2.id, { status: 'resolved' }));
   wt.commit({ 'a.js': withTop(['ins1', 'ins2'], { 2: 'top-edit', 18: 'bottom-edit' }) });
-  ok(await reviews.refreshReview(review.id));
+  ok(await reviews.refreshReview(review.id, HUMAN));
   const t3 = await say(review.id, 20);
   ok(await threads.reply(review.id, agent('s-a'), t1.id, { body: 'round-2 reply' }));
   wt.commit({ 'a.js': withTop(['ins1', 'ins2', 'ins3'], { 1: 'r1', 2: 'r2', 3: 'r3', 4: 'r4', 5: 'r5', 18: 'bottom-edit' }) });
-  assert.equal(ok(await reviews.refreshReview(review.id)).threads.outdated, 1);
+  assert.equal(ok(await reviews.refreshReview(review.id, HUMAN)).threads.outdated, 1);
   return { wt, review, t1, t2, t3 };
 }
 
@@ -237,7 +237,7 @@ test('a base-side thread is unplaced with its reason', async () => {
   const review = await open();
   const t = await say(review.id, 8, 'base', 'old');
   wt.commit({ 'a.js': editLines({ 2: 'top-edit-2', 8: 'eight' }) });
-  ok(await reviews.refreshReview(review.id));
+  ok(await reviews.refreshReview(review.id, HUMAN));
   const res = await compare(review.id, '1', '2');
   assert.deepEqual(res.unplaced.map((u) => [u.id, u.placement, u.reason]), [[t.id, 'to', 'base-side']]);
   assert.deepEqual(res.files[0].threads, []);
@@ -251,7 +251,7 @@ test('only files either round reviews: an upstream change merged in between is a
   w.repo.commit({ 'up.js': 'upstream\n' });
   wt.git('merge', '-q', '--no-edit', 'main');
   wt.commit({ 'a.js': editLines({ 2: 'top-edit-2' }), 'b.js': lines(10, 'b'), 'c.js': 'new in round 2\n' });
-  ok(await reviews.refreshReview(review.id));
+  ok(await reviews.refreshReview(review.id, HUMAN));
   assert.deepEqual(ok(await reviews.diff(review.id, {})).files.map((f) => f.path).sort(), ['a.js', 'c.js'], 'round B does not review b.js');
   const res = await compare(review.id, '1', '2');
   assert.deepEqual(res.files.map((f) => f.path).sort(), ['a.js', 'b.js', 'c.js'], 'c.js is reviewed by round B only');
@@ -264,7 +264,7 @@ test('a file reviewed in A and back at base content in B is in the comparison, i
   const review = await open();
   const t = ok(await threads.annotate(review.id, HUMAN, { anchor: { file: 'b.js', side: 'new', startLine: 3, endLine: 3 }, kind: 'comment', body: 'b' })).thread;
   wt.commit({ 'a.js': editLines({ 2: 'top-edit' }), 'b.js': lines(10, 'b') });
-  ok(await reviews.refreshReview(review.id));
+  ok(await reviews.refreshReview(review.id, HUMAN));
   assert.deepEqual(ok(await reviews.diff(review.id, {})).files.map((f) => f.path), ['a.js'], 'round B does not review b.js');
   const res = await compare(review.id, '1', '2');
   assert.deepEqual(res.files.map((f) => [f.path, f.status]), [['b.js', 'modified']], 'a.js is unchanged between the rounds');
@@ -278,7 +278,7 @@ test('a rename reverted in B is present under B\'s path: round A reviewed it und
   wt.commit({ 'a.js': editLines({ 2: 'top-edit' }), 'b.js': null, 'q.js': lines(10, 'b') });
   const review = await open();
   wt.commit({ 'a.js': editLines({ 2: 'top-edit-2' }), 'q.js': null, 'b.js': lines(10, 'b') });
-  ok(await reviews.refreshReview(review.id));
+  ok(await reviews.refreshReview(review.id, HUMAN));
   const res = await compare(review.id, '1', '2');
   assert.deepEqual(res.files.map((f) => [f.path, f.oldPath, f.status]).sort(), [['a.js', null, 'modified'], ['b.js', 'q.js', 'renamed']]);
 });
@@ -289,7 +289,7 @@ test('a rename between the rounds is one file under round B\'s path, holding the
   const review = await open();
   const t = await say(review.id, 18);
   wt.commit({ 'a.js': null, 'z.js': editLines({ 18: 'bottom-edit', 19: 'more' }) });
-  ok(await reviews.refreshReview(review.id));
+  ok(await reviews.refreshReview(review.id, HUMAN));
   const res = await compare(review.id, '1', '2');
   assert.deepEqual(res.files.map((f) => [f.path, f.oldPath, f.status]), [['z.js', 'a.js', 'renamed']]);
   assert.deepEqual(placed(res.files[0]), [[t.id, 'from', 'old', 18], [t.id, 'to', 'new', 18]]);

@@ -91,3 +91,4 @@ Then Settings → Plugins → Rescan, and enable.
 - No syntax highlighting; split view needs a diff pane at least 36rem wide (phones always get the unified view).
 - One file renders at a time; there is no all-files scroll.
 - Dropped uncommitted threads are shown only for the current page session (the backend keeps their ids, not their text).
+- The inbox marks a checkout gone only when cc no longer lists its project or worktree, and never marks a down System (it runs no git); opening the review shows both.

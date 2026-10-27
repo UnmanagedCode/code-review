@@ -9,7 +9,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { world, editLines } from './_world.js';
-import { lines } from './_git.js';
+import { lines, makeRepo } from './_git.js';
 import { tempStore } from './_store.js';
 import { start } from '../server.js';
 
@@ -136,9 +136,10 @@ for (const where of ['main', 'worktree']) {
   });
 }
 
-for (const packed of [false, true]) {
-  test(`reading an uncommitted review with an unchanged restaged path (rm --cached, file byte-identical) leaves .git untouched, its blob ${packed ? 'packed' : 'loose'}`, async () => {
+for (const [packed, hostile] of [[false, false], [true, false], [false, true], [true, true]]) {
+  test(`reading an uncommitted review with an unchanged restaged path (rm --cached, file byte-identical) leaves .git untouched, its blob ${packed ? 'packed' : 'loose'}${hostile ? ', with git location variables in the target\'s environment' : ''}`, async () => {
     // Invariant: restaging a path whose blob is already in the real object store neither writes nor freshens it (no loose object or pack mtime moves): blobs are written only to the private dir.
+    // Hostile: GIT_ALTERNATE_OBJECT_DIRECTORIES naming the real store, GIT_INDEX_FILE naming the real index and GIT_DIR naming another repo, inherited from the target's environment, change nothing: every command unsets them first.
     w = await world();
     w.repo.commit({ 'r.txt': 'unchanged\n', 's.txt': 's1\n' });
     if (packed) w.repo.git('gc', '-q');
@@ -146,7 +147,14 @@ for (const packed of [false, true]) {
     w.repo.write('s.txt', 's2\n'); // a changed restage beside it
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'cr-ro-tmp-'));
     cleanups.push(() => fs.rmSync(tmp, { recursive: true, force: true }));
-    w.cc.state.execEnv = { TMPDIR: tmp };
+    const other = makeRepo();
+    cleanups.push(() => other.cleanup());
+    other.commit({ 'elsewhere.txt': 'x\n' });
+    w.cc.state.execEnv = { TMPDIR: tmp, ...(hostile ? {
+      GIT_ALTERNATE_OBJECT_DIRECTORIES: path.join(w.repo.dir, '.git', 'objects'),
+      GIT_INDEX_FILE: path.join(w.repo.dir, '.git', 'index'),
+      GIT_DIR: path.join(other.dir, '.git'),
+    } : {}) };
     // Age everything in the object store, so a freshen (utime to now) cannot land on the same timestamp.
     const old = new Date('2020-01-01T00:00:00Z');
     const age = (p) => { for (const e of fs.readdirSync(p, { withFileTypes: true })) { const q = path.join(p, e.name); if (e.isDirectory()) age(q); else fs.utimesSync(q, old, old); } };

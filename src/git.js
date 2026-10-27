@@ -21,6 +21,22 @@ const BASE_ENV = { LC_ALL: 'C', GIT_OPTIONAL_LOCKS: '0' };
 const BASE_ARGS = ['-c', 'core.fsmonitor=false', '-c', 'core.splitIndex=false'];
 const GIT = `git ${BASE_ARGS.join(' ')}`;
 
+// Variables in the target's own environment that move where git reads or writes a repository's data (git's
+// \`rev-parse --local-env-vars\`, plus GIT_NAMESPACE). An inherited one would point a read at another repo, or (an
+// alternate) let a private-index write find, and so freshen, the real store. Most are not inert when empty, so every
+// command unsets them before anything else (\`call\`), and the scripts set only their own.
+const GIT_LOCATION_VARS = ['GIT_ALTERNATE_OBJECT_DIRECTORIES', 'GIT_CONFIG', 'GIT_CONFIG_PARAMETERS', 'GIT_CONFIG_COUNT', 'GIT_OBJECT_DIRECTORY',
+  'GIT_DIR', 'GIT_WORK_TREE', 'GIT_IMPLICIT_WORK_TREE', 'GIT_GRAFT_FILE', 'GIT_INDEX_FILE', 'GIT_NO_REPLACE_OBJECTS', 'GIT_REPLACE_REF_BASE',
+  'GIT_PREFIX', 'GIT_SHALLOW_FILE', 'GIT_COMMON_DIR', 'GIT_NAMESPACE'];
+const CLEAN_ENV = `unset ${GIT_LOCATION_VARS.join(' ')}`;
+
+/** `argv` with the git location variables unset first: scripts get it as their first line, git runs under an sh that unsets them. */
+const cleanArgv = (argv) => {
+  if (argv[0] === 'sh' && argv[1] === '-c') return ['sh', '-c', `${CLEAN_ENV}\n${argv[2]}`, ...argv.slice(3)];
+  if (argv[0] === 'git') return ['sh', '-c', `${CLEAN_ENV}\nexec "$@"`, 'sh', ...argv];
+  return argv;
+};
+
 // Paths per batched script call, well under any ARG_MAX.
 const SIZE_CHUNK = 200;
 /** Path bytes passed to one script call; past this, a list of paths is split (or, for untracked files, handed on). */
@@ -40,10 +56,10 @@ const shq = (s) => `'${s.replace(/'/g, `'\\''`)}'`;
 
 // `bytes`: stdout stays a Buffer (scripts whose output is sliced by byte lengths).
 async function call(place, argv, what, { input, ok = [0], maxBuffer = MAX_DIFF_BYTES, env, readOnly, bytes = false } = {}) {
-  const r = await exec(place, argv, { env: { ...BASE_ENV, ...env }, stdin: input, maxOutputBytes: maxBuffer, readOnly });
+  const r = await exec(place, cleanArgv(argv), { env: { ...BASE_ENV, ...env }, stdin: input, maxOutputBytes: maxBuffer, readOnly });
   const stdout = bytes ? r.stdout : r.stdout.toString('utf8');
-  if (ok.includes(r.code)) return { code: r.code, stdout };
   const stderr = r.stderr.toString('utf8');
+  if (ok.includes(r.code)) return { code: r.code, stdout, stderr };
   throw Object.assign(new Error(`${what} failed: ${stderr.trim() || `exit ${r.code}`}`), { exitCode: r.code, stderr });
 }
 
@@ -68,6 +84,10 @@ const cQuote = (p) => `"${[...Buffer.from(p)].map((b) => {
 // Exit code of a script that finds no checkout path: one sh never uses for its own errors (dash exits 2 on a syntax or
 // arithmetic error, 126/127 on a command it cannot run, 128+ on a signal), so such a failure is never read as "gone".
 const PATH_MISSING = 10;
+// Exit code of a FINISH that succeeded but whose trap could not remove its private dir: the output stands, the leak is warned.
+const DIR_LEFT = 11;
+// What a trap prints on stderr when it cannot remove its private dir.
+const LEFT_MARK = 'code-review: private index dir left behind';
 
 // Every script enters the checkout first; `$1` is its path.
 const CD = 'cd -- "$1" || exit 3; shift';
@@ -104,7 +124,7 @@ ${TEMP_BASE}
 h=$(${GIT} rev-parse --verify --quiet 'HEAD^{commit}') || h=$(${GIT} hash-object -t tree --stdin </dev/null) || exit 4
 d=$t/cr-index-$x
 mkdir -m 700 -- "$d" || exit 5
-trap 'rm -rf -- "$d"' EXIT
+trap 'rm -rf -- "$d" || echo "${LEFT_MARK}" >&2' EXIT
 mkdir -p "$d/objects/info" || exit 6
 if [ -e "$i" ]; then { cp -- "$i" "$d/index" && touch -r "$i" "$d/index"; } || exit 6; fi
 GIT_INDEX_FILE=$d/index; export GIT_INDEX_FILE
@@ -125,7 +145,7 @@ cat -- "$d/tracked" "$d/others"`;
 // prefetch `-` absent, `L` read it lazily, `<bytes>` its content follows.
 // Prints "<meta bytes>\0<tracked>\0<untracked>\0<prefetch>\0", then the four parts.
 const FINISH = `d=$2
-trap 'rm -rf -- "$d"' EXIT
+trap 'e=$?; rm -rf -- "$d" || { echo "${LEFT_MARK}" >&2; [ "$e" -ne 0 ] || exit ${DIR_LEFT}; }' EXIT
 cd -- "$1" || exit 3
 alt=$3 h=$4 max=$5 budget=$6 maxd=$7 cap=$8 n=$9
 shift 9
@@ -244,6 +264,9 @@ function parts(buf, lengths) {
   return out;
 }
 
+// A script's trap could not remove its private dir (LEFT_MARK on stderr): it sits in the target's tmp, never in the tree.
+const warnLeft = (place, dir) => console.warn(`code-review: could not remove the private index dir ${dir} on ${place.system} (the script's cleanup failed)`);
+
 async function removeById(place, id) {
   await sh(place, REMOVE_BY_ID, [id]).catch((e) => {
     console.warn(`code-review: could not remove the private index dir cr-index-${id} on ${place.system}: ${e.message}`);
@@ -272,8 +295,10 @@ export async function scanWorktree(place, { maxDiffBytes }) {
     // 3, 4 and 8 end before the dir exists or with the trap removing it; anything else (the exec failed, an unknown
     // exit) leaves the dir's fate unknown, so it is removed by id.
     if (e instanceof Refusal || ![3, 4, 8].includes(e.exitCode)) await removeById(place, id);
+    else if (e.stderr?.includes(LEFT_MARK)) warnLeft(place, `cr-index-${id}`);
     throw e;
   }
+  if (r.code !== 0 && r.stderr.includes(LEFT_MARK)) warnLeft(place, `cr-index-${id}`);
   if (r.code === PATH_MISSING) throw new Refusal('CHECKOUT_GONE', `${place.path} no longer exists`);
   if (TEMP_TEXT[r.code]) throw new Refusal('TEMP_UNUSABLE', TEMP_TEXT[r.code](place));
   if (r.code === 9) throw new Refusal('DIFF_TOO_LARGE', 'output exceeds the size limit');
@@ -305,8 +330,9 @@ export async function finishWorktree(place, { dir, objects, head, maxFileBytes, 
   const items = prefetch.map(({ side, path }) => `${side === 'old' ? 'o' : 'n'}${path}`);
   const args = [dir, cQuote(objects), head, String(maxFileBytes), String(Math.floor(maxDiffBytes / 3)), String(maxDiffBytes), String(cap),
     String(restage.length), String(untracked.length), ...restage, ...untracked, ...items];
-  const r = await call(place, ['sh', '-c', FINISH, 'sh', place.path, ...args], 'sh script', { ok: [0, 6, 9], maxBuffer: cap, bytes: true });
-  if (r.code !== 0) {
+  const r = await call(place, ['sh', '-c', FINISH, 'sh', place.path, ...args], 'sh script', { ok: [0, 6, 9, DIR_LEFT], maxBuffer: cap, bytes: true });
+  if (r.code === DIR_LEFT) warnLeft(place, dir); // the diff succeeded: it is answered
+  else if (r.code !== 0) {
     if (r.code === 6) throw new Refusal('TEMP_UNUSABLE', TEMP_TEXT[6](place));
     throw new Refusal('DIFF_TOO_LARGE', 'output exceeds the size limit');
   }

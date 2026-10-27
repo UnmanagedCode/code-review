@@ -789,3 +789,46 @@ test('a scan that succeeded but whose output cannot be read leaves no private di
     assert.equal(cc.state.execCalls.filter(isFinish).length, 0);
   }
 });
+
+/** Puts a failing `rm` first on the target's PATH, so a script's trap (and any argv `rm`) cannot remove the private dir. */
+const failingRm = (tmpdir) => {
+  const bin = fs.mkdtempSync(path.join(os.tmpdir(), 'cr-bin-'));
+  repos.push({ cleanup: () => fs.rmSync(bin, { recursive: true, force: true }) });
+  fs.writeFileSync(path.join(bin, 'rm'), '#!/bin/sh\nexit 1\n', { mode: 0o755 });
+  cc.state.execEnv = { TMPDIR: tmpdir, PATH: `${bin}:${process.env.PATH}` };
+};
+
+test('a private dir a script\'s cleanup cannot remove is warned, naming it; a successful snapshot is still answered and a refusal keeps its code', async (t) => {
+  // Invariant: FINISH's trap failing after success exits DIR_LEFT, which warns and keeps the result; SCAN's or FINISH's trap failing after a failure keeps the failure's code; every left dir is warned by name.
+  const tmp = pinTmp();
+  failingRm(tmp);
+  const warn = t.mock.method(console, 'warn', () => {});
+  const ok = repo();
+  ok.commit({ 'a.txt': 'a\n' });
+  ok.write('a.txt', 'b\n');
+  assert.deepEqual(paths((await snapOf(ok, 'uncommitted')).snap), ['a.txt']);
+  const [left] = fs.readdirSync(tmp);
+  assert.match(left, /^cr-index-[0-9a-f]{24}$/);
+  assert.equal(warn.mock.callCount(), 1);
+  assert.ok(warn.mock.calls[0].arguments[0].includes(path.join(tmp, left)), warn.mock.calls[0].arguments[0]);
+
+  // SCAN refuses (its diff is over the limit) and its trap cannot remove the dir: the code stands, the dir is warned by id.
+  const big = repo();
+  big.commit({ 'a.txt': 'a\n' });
+  big.write('a.txt', lines(50));
+  warn.mock.resetCalls();
+  const scanned = await attempt(() => snapOf(big, 'uncommitted', {}, { maxDiffBytes: 100 }));
+  assert.equal(scanned.code, 'DIFF_TOO_LARGE');
+  const id = cc.state.execCalls.filter(isScan).at(-1).argv[5];
+  assert.ok(warn.mock.calls.some((c) => c.arguments[0].includes(`cr-index-${id}`)), 'the scan\'s dir is warned');
+
+  // FINISH refuses (its untracked diff is over the limit) and nothing can remove the dir: the code stands, the dir is warned.
+  const untracked = repo();
+  untracked.commit({ 'a.txt': 'a\n' });
+  untracked.write('u.txt', lines(400));
+  warn.mock.resetCalls();
+  const finished = await attempt(() => snapOf(untracked, 'uncommitted', {}, { maxDiffBytes: 1500, maxFileBytes: 5000 }));
+  assert.equal(finished.code, 'DIFF_TOO_LARGE');
+  const dir = cc.state.execCalls.filter(isFinish).at(-1).argv[5];
+  assert.ok(warn.mock.calls.some((c) => c.arguments[0].includes(dir)), 'the finish\'s dir is warned');
+});

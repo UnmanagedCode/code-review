@@ -24,6 +24,13 @@ afterEach(() => {
 const repo = () => { r = makeRepo(); r.commit({ 'a.txt': 'a\n' }); return localPlace(r.dir); };
 const answer = (status, body) => () => ({ status, body });
 
+// What git itself lists as repository-local (`git rev-parse --local-env-vars`), plus GIT_NAMESPACE: none may leak in from the target.
+const LOCATION_VARS = [...execFileSync('git', ['rev-parse', '--local-env-vars'], { encoding: 'utf8' }).split('\n').filter(Boolean), 'GIT_NAMESPACE'];
+const unsetsLocation = (script) => {
+  const first = script.split('\n')[0].split(' ');
+  return first[0] === 'unset' && LOCATION_VARS.every((v) => first.includes(v));
+};
+
 test('a git call is form B at cwd /, argv form with the fsmonitor, splitIndex and -C prefix, base64, with the base env overlay', async () => {
   const at = repo();
   await git.headOf(at);
@@ -33,7 +40,11 @@ test('a git call is form B at cwd /, argv form with the fsmonitor, splitIndex an
   assert.equal(b.cwd, '/');
   assert.equal(b.encoding, 'base64');
   assert.equal('shell' in b, false);
-  assert.deepEqual(b.argv.slice(0, 7), ['git', '-c', 'core.fsmonitor=false', '-c', 'core.splitIndex=false', '-C', r.dir]);
+  // git runs under an sh that first unsets every git location variable the target's environment might carry.
+  assert.deepEqual([b.argv[0], b.argv[1], b.argv[3]], ['sh', '-c', 'sh']);
+  assert.ok(unsetsLocation(b.argv[2]), b.argv[2]);
+  assert.equal(b.argv[2].split('\n').slice(1).join('\n'), 'exec "$@"');
+  assert.deepEqual(b.argv.slice(4, 11), ['git', '-c', 'core.fsmonitor=false', '-c', 'core.splitIndex=false', '-C', r.dir]);
   assert.deepEqual(b.env, { LC_ALL: 'C', GIT_OPTIONAL_LOCKS: '0' });
   assert.equal(b.maxOutputBytes, git.MAX_DIFF_BYTES);
 });
@@ -51,6 +62,7 @@ test('a script call is sh -c with the checkout as $1 and the base env overlay; s
   assert.ok(scripts.length >= 5);
   for (const b of scripts) {
     assert.deepEqual([b.argv[1], b.argv[3], b.argv[4]], ['-c', 'sh', r.dir]);
+    assert.ok(unsetsLocation(b.argv[2]), `every script unsets the git location variables first: ${b.argv[2].slice(0, 60)}`);
     if (b.argv[2].includes('git ')) assert.ok(b.argv[2].includes('git -c core.fsmonitor=false -c core.splitIndex=false '), 'scripts call git with the same config');
     assert.deepEqual(b.env, { LC_ALL: 'C', GIT_OPTIONAL_LOCKS: '0' });
   }

@@ -1,5 +1,5 @@
 import express from 'express';
-import * as cc from './cc.js';
+import { lookupScope } from './lookups.js';
 import * as store from './store.js';
 import * as reviews from './reviews.js';
 import * as inbox from './inbox.js';
@@ -54,7 +54,7 @@ export function apiRouter() {
   r.use(express.json());
 
   r.get('/projects', route(async () => ({
-    ok: true, projects: (await cc.projects()).map((p) => ({ name: p.name })),
+    ok: true, projects: (await lookupScope().list()).map((p) => ({ name: p.name })),
   })));
   r.get('/checkout', route(withCheckout(async (co) => ({ ok: true, ...(await checkoutInfo(co)) }))));
   r.get('/checkout/commits', route(withCheckout(async (co, req) => ({ ok: true, commits: await checkoutCommits({ ...co, limit: req.query.limit }) }))));

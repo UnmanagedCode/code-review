@@ -1,6 +1,6 @@
 import { attempt, Refusal } from './refusals.js';
 import { viewReview } from './context.js';
-import { fileStates, tally } from './rollup.js';
+import { fileStates, tally, signStates, diffFiles } from './rollup.js';
 import { threadsAt, roundThreadView } from './history.js';
 
 const invalid = (reason) => new Refusal('INVALID_ARGUMENT', reason);
@@ -23,12 +23,18 @@ async function asOf(review, env, raw) {
 
 const noVerdicts = (states) => states.map((s) => ({ ...s, verdicts: null }));
 
+/** The threads placed in one file as of a round (`then` = the review as of it), not outdated by then. */
+export const roundThreadsOn = (then, path) => then.threads.filter((t) => t.status !== 'outdated' && t.anchor.file === path).map(roundThreadView);
+
+// How past-round views render a file: no verdicts, the round's threads.
+const pastView = (then) => ({ hunk: (h) => ({ ...h, verdict: null }), threads: (path) => roundThreadsOn(then, path) });
+
 /** Read-only view of one round of a range review: its files, the counts of its threads, and its outdated threads. */
 export const roundView = (id, raw) => attempt(() => viewReview(id, async (review, env) => {
   const { round, snap, then } = await asOf(review, env, raw);
   return {
     ok: true, readOnly: true, round,
-    files: noVerdicts(fileStates(then, snap.files)),
+    files: signStates(snap, noVerdicts(fileStates(then, snap.files)), snap.files, pastView(then)),
     counts: tally(then.threads),
     outdatedThreads: then.threads.filter((t) => t.status === 'outdated').map(roundThreadView),
   };
@@ -41,10 +47,6 @@ export async function roundDiff(review, env, { file, round: raw }) {
   if (file && !picked.length) throw new Refusal('FILE_NOT_IN_DIFF', `${file} is not in round ${round.n}'s diff`);
   return {
     ok: true, readOnly: true, round,
-    files: noVerdicts(fileStates(then, picked)).map((s, i) => ({
-      ...s,
-      hunks: picked[i].hunks.map((h) => ({ ...h, verdict: null })),
-      threads: then.threads.filter((t) => t.status !== 'outdated' && t.anchor.file === s.path).map(roundThreadView),
-    })),
+    files: await diffFiles(snap, noVerdicts(fileStates(then, picked)), picked, pastView(then)),
   };
 }

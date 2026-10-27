@@ -268,8 +268,8 @@ test('listing the inbox runs no git: zero exec calls', async () => {
   assert.equal(w.cc.state.execCalls.length, before);
 });
 
-test('cc lookups are bounded: one projects call and one worktrees call per project, none without open reviews', async (t) => {
-  // Invariant: per fetch, cc.projects() at most once, cc.worktrees(p) at most once per project with an open worktree review, and no cc call when nothing is open.
+test('cc lookups are bounded: one location call per project and one worktrees call per project with a worktree review, never the project list, none without open reviews', async (t) => {
+  // Invariant: per fetch, cc.location(p) at most once per project with an open review, cc.worktrees(p) at most once per project with an open worktree review, cc.projects() never, and no cc call when nothing is open.
   const lib = addProject();
   t.after(() => lib.cleanup());
   await onFeature();
@@ -279,7 +279,7 @@ test('cc lookups are bounded: one projects call and one worktrees call per proje
   const hits = w.cc.state.hits;
   let from = hits.length;
   assert.equal((await list()).length, 3);
-  assert.deepEqual(hits.slice(from).sort(), ['GET /api/projects', 'GET /api/projects/app/worktrees']);
+  assert.deepEqual(hits.slice(from).sort(), ['GET /api/projects/app/location', 'GET /api/projects/app/worktrees', 'GET /api/projects/lib/location']);
   for (const r of store.list()) ok(await reviews.patchReview(r.id, { status: 'closed' }));
   from = hits.length;
   assert.deepEqual(await list(), []);

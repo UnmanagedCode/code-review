@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { parseCitations } from './citations.js';
 import { currentRound, recipientRole } from './context.js';
 import { anchorView } from './anchor.js';
@@ -87,6 +88,39 @@ export function threadView(t) {
 
 /** Hunk as the API shows it (`verdict` null when verdicts do not apply). */
 export const hunkView = (review, h, withVerdict = true) => ({ ...h, verdict: withVerdict && review.kind !== 'uncommitted' ? verdictOf(review, h.id) : null });
+
+/** The non-outdated threads on one file, as the live diff shows them. */
+export const withThreads = (review, file) => review.threads.filter((t) => t.status !== 'outdated' && t.anchor.file === file).map(threadView);
+
+/** How the live (current-round, writable) views render a file's hunks and threads. */
+export const liveView = (review) => ({ hunk: (h) => hunkView(review, h), threads: (path) => withThreads(review, path) });
+
+/**
+ * A file's `sig`: a hash of its content (`contentHash`), its FileState, its hunks' verdicts and its threads, each as the
+ * view renders them. Equal sigs mean an identical file in that view's diff; anything shown that changes, changes it.
+ */
+export function fileSig(contentHash, state, verdicts, threads) {
+  return createHash('sha256').update(`${contentHash}\0`).update(JSON.stringify([state, verdicts, threads])).digest('hex').slice(0, 20);
+}
+
+const sigOf = (snap, state, f, view) => fileSig(snap.contentHash(state.path), state, f.hunks.map((h) => view.hunk(h).verdict), view.threads(state.path));
+
+/** FileStates (`states`, one per `files` entry of `snap`) with their `sig` in `view` ({hunk(h), threads(path)}). */
+export const signStates = (snap, states, files, view) => states.map((s, i) => ({ ...s, sig: sigOf(snap, s, files[i], view) }));
+
+/** DiffFiles: each FileState with its hunks and threads as `view` renders them, `lineCount` and `sig`. */
+export async function diffFiles(snap, states, files, view) {
+  const counts = await snap.lineCounts(files);
+  return states.map((s, i) => ({
+    ...s, hunks: files[i].hunks.map(view.hunk), threads: view.threads(s.path), lineCount: counts[i], sig: sigOf(snap, s, files[i], view),
+  }));
+}
+
+/** `{path, sig}` of one file of the live diff after a write; `sig` null when the file is not in it or there is no snapshot. */
+export function liveSig(review, snap, path) {
+  const f = snap?.files.find((x) => x.path === path);
+  return { path, sig: f ? signStates(snap, fileStates(review, [f]), [f], liveView(review))[0].sig : null };
+}
 
 /**
  * Whose move a review waits on: 'agent' when the newest submission was delivered and no agent has written or refreshed into a

@@ -1,0 +1,12 @@
+# Latency gotchas
+
+Why a review request costs what it costs, and what keeps it cheap. Budgets are pinned in `tests/latency.test.js` and `tests/diffMeta.test.js`; `harness/bench/requests.mjs` measures them.
+
+- **Round trips, not git, are the cost.** On a docker System each `POST /api/exec` is a `docker exec` through the System's single provider process (tens of ms), and cc's `GET /api/projects` fans out git work per project. So: never ask the project list on a review path (`lookupCheckout` reads the location route), share lookups per request (`lookupScope`), and fold a request's git work into one or two scripts (`PROBE`; `SCAN` + `FINISH`).
+- **Budgets:** committed summary/detail = 1 exec (`PROBE`) + 1 diff on a snapshot-cache miss; uncommitted = 2 (`SCAN`, `FINISH`); `/checkout` = 1; inbox = 0; `diff` adds ≤ 1 (`OLD_LINE_COUNTS`) the first time a base is shown. A new call on these paths needs a reason and a test update.
+- **`PROBE` vouches for the round's shas**, so `buildSnapshot({verified: true})` skips `OBJECTS_EXIST`; a cached committed snapshot then needs nothing else. Past rounds still check their shas.
+- **The sweep's lines come back in `FINISH`** (prefetch of the threads' `(side, file)`). A prefetched file over `MAX_FILE_BYTES` or past the budget comes back `L` and is read lazily, so its errors stay as loud as before.
+- **`new = old + additions − deletions`**: every old line is either kept or deleted, so only the old side's count needs git, and that count is content-addressed (cached by base sha and path). Uncommitted files whose working-tree bytes differ from what git diffs (clean filters, symlinks) get the count of what the diff shows.
+- **`sig` is separate from `fingerprint`.** `fingerprint` hashes `files` and is stored in `rounds[]` (refresh compares it), so per-file content hashes live beside `files`, never in them. `sig` also hashes the FileState: its thread tally and `unread` include outdated threads, which the rendered thread list leaves out, so hashing only the list would let an outdated thread's reply change the response without changing the sig.
+- **`fileSig` must never fail a write:** a committed reply takes `env.cachedSnapshot()` (no exec), an uncommitted one the sweep's snapshot; an unreadable one gives `sig: null`.
+- **The lookup TTL is a trade.** Positive answers are reused (navigation bursts, several tabs); negative ones never are, a missing worktree is re-asked once, and git finding a path missing evicts. What can be stale for one TTL is listed in `docs/architecture.md` (Lookups and concurrency).

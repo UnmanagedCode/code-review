@@ -70,8 +70,7 @@ test('an uncommitted symlink escaping the checkout is unresolved, a normal file 
   const outside = path.join(path.dirname(repo.dir), 'secret.txt'); // in the repo's own temp dir
   fs.writeFileSync(outside, 'secret\n');
   fs.symlinkSync(outside, path.join(repo.dir, 'link.js'));
-  const shas = await resolveTarget(localPlace(repo.dir), 'uncommitted', {});
-  const snap = await buildSnapshot({ kind: 'uncommitted', repo: localPlace(repo.dir), checkout: localPlace(repo.dir), ...shas });
+  const snap = await buildSnapshot({ kind: 'uncommitted', checkout: localPlace(repo.dir) });
   assert.ok((await resolveCitation({ path: 'link.js', startLine: 1, endLine: 1 }, snap)).error);
   assert.equal((await resolveCitation({ path: 'a.js', startLine: 1, endLine: 1 }, snap)).lines[0].text, 'l1');
 });
@@ -111,8 +110,7 @@ test('a citation into a tooLarge file is unresolved', async () => {
   repo = makeRepo();
   repo.commit({ 'a.js': lines(3) });
   repo.write('big.txt', 'plain text that is over the cap\n');
-  const shas = await resolveTarget(localPlace(repo.dir), 'uncommitted', {});
-  const snap = await buildSnapshot({ kind: 'uncommitted', repo: localPlace(repo.dir), checkout: localPlace(repo.dir), ...shas, limits: { maxFileBytes: 5 } });
+  const snap = await buildSnapshot({ kind: 'uncommitted', checkout: localPlace(repo.dir), limits: { maxFileBytes: 5 } });
   assert.equal(snap.files.find((f) => f.path === 'big.txt').tooLarge, true);
   assert.ok((await resolveCitation({ path: 'big.txt', startLine: 1, endLine: 1 }, snap)).error);
 });

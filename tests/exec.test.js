@@ -7,7 +7,7 @@ import { makeRepo, localPlace } from './_git.js';
 import { fakeCc } from './_fakeCc.js';
 import { exec, EXEC_MAX_OUTPUT_BYTES, EXEC_MAX_TIMEOUT_MS, UNREACHABLE, placeKey } from '../src/exec.js';
 import * as git from '../src/git.js';
-import { resolveTarget, buildSnapshot } from '../src/snapshot.js';
+import { buildSnapshot } from '../src/snapshot.js';
 import { attempt, Refusal, HTTP_STATUS } from '../src/refusals.js';
 
 let cc;
@@ -24,6 +24,16 @@ afterEach(() => {
 const repo = () => { r = makeRepo(); r.commit({ 'a.txt': 'a\n' }); return localPlace(r.dir); };
 const answer = (status, body) => () => ({ status, body });
 
+// What git itself lists as repository-local (`git rev-parse --local-env-vars`), plus GIT_NAMESPACE: none may leak in from the target.
+const LOCATION_VARS = [...execFileSync('git', ['rev-parse', '--local-env-vars'], { encoding: 'utf8' }).split('\n').filter(Boolean), 'GIT_NAMESPACE'];
+// git(1)'s documented trace targets: none may make a read write a file.
+const TRACE_VARS = ['GIT_TRACE', 'GIT_TRACE_PACK_ACCESS', 'GIT_TRACE_PACKET', 'GIT_TRACE_PACKFILE', 'GIT_TRACE_PERFORMANCE', 'GIT_TRACE_REFS',
+  'GIT_TRACE_SETUP', 'GIT_TRACE_SHALLOW', 'GIT_TRACE_CURL', 'GIT_TRACE_FSMONITOR', 'GIT_TRACE2', 'GIT_TRACE2_EVENT', 'GIT_TRACE2_PERF'];
+const unsetsLocation = (script) => {
+  const first = script.split('\n')[0].split(' ');
+  return first[0] === 'unset' && [...LOCATION_VARS, ...TRACE_VARS].every((v) => first.includes(v));
+};
+
 test('a git call is form B at cwd /, argv form with the fsmonitor, splitIndex and -C prefix, base64, with the base env overlay', async () => {
   const at = repo();
   await git.headOf(at);
@@ -33,25 +43,56 @@ test('a git call is form B at cwd /, argv form with the fsmonitor, splitIndex an
   assert.equal(b.cwd, '/');
   assert.equal(b.encoding, 'base64');
   assert.equal('shell' in b, false);
-  assert.deepEqual(b.argv.slice(0, 7), ['git', '-c', 'core.fsmonitor=false', '-c', 'core.splitIndex=false', '-C', r.dir]);
+  // git runs under an sh that first unsets every git location variable the target's environment might carry.
+  assert.deepEqual([b.argv[0], b.argv[1], b.argv[3]], ['sh', '-c', 'sh']);
+  assert.ok(unsetsLocation(b.argv[2]), b.argv[2]);
+  assert.deepEqual(b.argv[2].split('\n').slice(1), ['command -v git >/dev/null 2>&1 || exit 12', 'exec "$@"'], 'checks git can run, then runs it');
+  assert.deepEqual(b.argv.slice(4, 11), ['git', '-c', 'core.fsmonitor=false', '-c', 'core.splitIndex=false', '-C', r.dir]);
   assert.deepEqual(b.env, { LC_ALL: 'C', GIT_OPTIONAL_LOCKS: '0' });
   assert.equal(b.maxOutputBytes, git.MAX_DIFF_BYTES);
 });
 
-test('a script call is sh -c with the checkout as $1, the base env overlay merged under the per-call env', async () => {
+test('a script call is sh -c with the checkout as $1 and the base env overlay; scripts call git with the same config', async () => {
   const at = repo();
-  await git.withPrivateIndex(at, async ({ env }) => { await git.untracked(at, { env }); });
+  r.git('rm', '--cached', '-q', 'a.txt');
+  r.write('a.txt', 'edited\n');
+  r.write('u.txt', 'u\n');
+  const snap = await buildSnapshot({ kind: 'uncommitted', checkout: at, prefetch: [{ side: 'new', file: 'a.txt' }] });
+  await snap.lines('new', 'u.txt');
+  await git.sizes(at, ['u.txt']);
+  await git.probe(at, { path: r.dir, status: true });
   const scripts = cc.state.execCalls.filter((b) => b.argv[0] === 'sh');
-  assert.ok(scripts.length >= 2);
+  assert.ok(scripts.length >= 5);
   for (const b of scripts) {
     assert.deepEqual([b.argv[1], b.argv[3], b.argv[4]], ['-c', 'sh', r.dir]);
+    assert.ok(unsetsLocation(b.argv[2]), `every script unsets the git location variables first: ${b.argv[2].slice(0, 60)}`);
     if (b.argv[2].includes('git ')) assert.ok(b.argv[2].includes('git -c core.fsmonitor=false -c core.splitIndex=false '), 'scripts call git with the same config');
-    assert.equal(b.env.LC_ALL, 'C');
-    assert.equal(b.env.GIT_OPTIONAL_LOCKS, '0');
+    assert.deepEqual(b.env, { LC_ALL: 'C', GIT_OPTIONAL_LOCKS: '0' });
   }
-  const lsFiles = cc.state.execCalls.find((b) => b.argv.includes('ls-files'));
-  assert.match(lsFiles.env.GIT_INDEX_FILE, /\/cr-index-[^/]+\/index$/);
-  assert.equal(lsFiles.env.LC_ALL, 'C');
+});
+
+test('a target where git cannot be found refuses GIT_UNAVAILABLE, from argv git calls and git scripts alike; scripts without git still run', async () => {
+  // Invariant: a missing git is GIT_UNAVAILABLE (as cc's EXEC_SPAWN_FAILED is), never a plain Error, REF_UNKNOWN or SNAPSHOT_GONE; a script that runs no git is not refused for it.
+  const at = repo();
+  const sha = r.git('rev-parse', 'HEAD');
+  const bin = fs.mkdtempSync(path.join(path.dirname(r.dir), 'bin-')); // in the repo's own temp dir
+  for (const tool of ['sh', 'ls', 'awk', 'wc', 'cp', 'touch', 'mkdir', 'rm', 'cat', 'realpath', 'readlink']) {
+    fs.symlinkSync(execFileSync('sh', ['-c', `command -v ${tool}`], { encoding: 'utf8' }).trim(), path.join(bin, tool));
+  }
+  cc.state.execEnv = { PATH: bin };
+  try {
+    const refused = async (what, run) => assert.equal((await attempt(run)).code, 'GIT_UNAVAILABLE', what);
+    await refused('headOf', () => git.headOf(at));
+    await refused('resolveCommit', () => git.resolveCommit(at, 'HEAD'));
+    await refused('statusOf', () => git.statusOf(at));
+    await refused('probe', () => git.probe(at, { path: r.dir, status: true, shas: [sha] }));
+    await refused('probe without status', () => git.probe(at, { path: r.dir, shas: [sha] }));
+    await refused('uncommitted snapshot', () => buildSnapshot({ kind: 'uncommitted', checkout: at }));
+    assert.equal(await git.exists(at), true, '[ -e ] needs no git');
+    assert.equal(await git.readWorktreeFile(at, 'a.txt'), 'a\n', 'reading a working-tree file needs no git');
+  } finally {
+    cc.state.execEnv = {};
+  }
 });
 
 test('a remote place sends its system and remoteId; maxOutputBytes and timeoutMs are clamped to cc\'s caps', async () => {
@@ -177,8 +218,7 @@ test('blobs and working-tree files come back byte-exact: invalid UTF-8 and multi
   assert.equal(await git.show(at, sha, 'x.txt'), expected);
   assert.equal(await git.readWorktreeFile(at, 'x.txt'), fs.readFileSync(path.join(r.dir, 'x.txt'), 'utf8'));
   fs.writeFileSync(path.join(r.dir, 'x.txt'), Buffer.concat([bytes, Buffer.from([0xc3])]));
-  const shas = await resolveTarget(at, 'uncommitted', {});
-  const snap = await buildSnapshot({ kind: 'uncommitted', repo: at, checkout: at, ...shas });
+  const snap = await buildSnapshot({ kind: 'uncommitted', checkout: at });
   const live = fs.readFileSync(path.join(r.dir, 'x.txt'), 'utf8');
   assert.deepEqual(await snap.lines('new', 'x.txt'), live.split('\n'));
   assert.deepEqual(await snap.lines('old', 'x.txt'), expected.split('\n').slice(0, -1));

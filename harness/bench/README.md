@@ -22,6 +22,21 @@ node harness/bench/open-review.mjs --tree .
 
 `main`'s `src/reviews.js` needs no `node_modules`.
 
+# requests benchmark
+
+Per-request cc round trips and wall time: the cc GETs by route, the exec calls and the milliseconds of each request a review page makes, against the fake cc of this tree with docker-like latencies (every exec `EXEC_DELAY_MS`, `GET /api/projects` and worktree lists `GET_DELAY_MS`/`WORKTREES_DELAY_MS`, set in the script). Measures any tree's `src/` (`--tree`), so `main` and a branch run on the same fixture. Not part of the test glob.
+
+```bash
+node harness/bench/requests.mjs --tree <code-review checkout> [--runs 3]
+```
+
+- **Fixture:** project `app` with 8 files of 200 lines; worktree `feature` with three commits editing them; a main checkout with a commit, 3 edited files and 5 untracked files. Reviews: range on `feature` (3 rows: 2 closed copies), commit and uncommitted on main (12 rows in all).
+- **Requests:** review and diff of each kind, the 3- and 12-row lists, the inbox, `/checkout` of `feature`.
+- **Cold:** `CODE_REVIEW_LOOKUP_TTL_MS=0`, no lookup reuse. **Warm:** the default TTL, after one request: the median of the remaining runs, with the last run's counts. Committed snapshots are already cached from opening the reviews in both columns.
+- **Output:** one markdown table row per request.
+
+`main`'s `src/` needs no `node_modules`; make its worktree as for open-review above.
+
 # highlight benchmark
 
 Worst-case syntax-highlighting time per bundled language, for choosing `HIGHLIGHT_MAX_SIDE_CHARS_BY_LANG` (`frontend/src/lib/highlight/index.ts`). Loads the grammars `frontend/src/lib/highlight/prism.ts` imports, in its order, and runs stress sides through the real `highlightLines` with every cap applied. Not part of the test glob; needs `npm install` (prismjs) and Node with type stripping (≥ 23.6).

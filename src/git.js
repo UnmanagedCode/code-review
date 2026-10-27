@@ -1,4 +1,5 @@
-import { exec } from './exec.js';
+import { randomBytes } from 'node:crypto';
+import { exec, EXEC_MAX_OUTPUT_BYTES } from './exec.js';
 import { Refusal } from './refusals.js';
 
 export const MAX_DIFF_BYTES = 64 * 1024 * 1024;
@@ -9,7 +10,7 @@ export const MAX_UNTRACKED_FILES = 500;
 export const DIFF_FLAGS = ['diff', '--no-color', '--no-ext-diff', '--no-textconv', '--no-relative', '--full-index', '-M', '--src-prefix=a/', '--dst-prefix=b/', '-U3'];
 
 // GIT_OPTIONAL_LOCKS=0 stops `status` from refreshing .git/index, but `git diff <commit>` still rewrites it;
-// working-tree diffs therefore run against a private index copy (see withPrivateIndex).
+// working-tree diffs therefore run against a private index copy (see SCAN).
 // An overlay on the target's own environment, on every call (scripts included).
 const BASE_ENV = { LC_ALL: 'C', GIT_OPTIONAL_LOCKS: '0' };
 
@@ -20,8 +21,45 @@ const BASE_ENV = { LC_ALL: 'C', GIT_OPTIONAL_LOCKS: '0' };
 const BASE_ARGS = ['-c', 'core.fsmonitor=false', '-c', 'core.splitIndex=false'];
 const GIT = `git ${BASE_ARGS.join(' ')}`;
 
+// Variables in the target's own environment that move where git reads or writes a repository's data (git's
+// \`rev-parse --local-env-vars\`, plus GIT_NAMESPACE). An inherited one would point a read at another repo, or (an
+// alternate) let a private-index write find, and so freshen, the real store. Most are not inert when empty, so every
+// command unsets them before anything else (\`call\`), and the scripts set only their own.
+const GIT_LOCATION_VARS = ['GIT_ALTERNATE_OBJECT_DIRECTORIES', 'GIT_CONFIG', 'GIT_CONFIG_PARAMETERS', 'GIT_CONFIG_COUNT', 'GIT_OBJECT_DIRECTORY',
+  'GIT_DIR', 'GIT_WORK_TREE', 'GIT_IMPLICIT_WORK_TREE', 'GIT_GRAFT_FILE', 'GIT_INDEX_FILE', 'GIT_NO_REPLACE_OBJECTS', 'GIT_REPLACE_REF_BASE',
+  'GIT_PREFIX', 'GIT_SHALLOW_FILE', 'GIT_COMMON_DIR', 'GIT_NAMESPACE'];
+// Variables in the target's own environment that make git write trace output to a file (git's documented
+// GIT_TRACE* and GIT_TRACE2* family): an inherited one would make a read write wherever it points, the tree included.
+const GIT_TRACE_VARS = ['GIT_TRACE', 'GIT_TRACE_BARE', 'GIT_TRACE_CURL', 'GIT_TRACE_CURL_NO_DATA', 'GIT_TRACE_FSMONITOR', 'GIT_TRACE_PACK_ACCESS',
+  'GIT_TRACE_PACKET', 'GIT_TRACE_PACKFILE', 'GIT_TRACE_PERFORMANCE', 'GIT_TRACE_REDACT', 'GIT_TRACE_REFS', 'GIT_TRACE_SETUP', 'GIT_TRACE_SHALLOW',
+  'GIT_TRACE_WORKING_TREE_ENCODING', 'GIT_TRACE2', 'GIT_TRACE2_BRIEF', 'GIT_TRACE2_CONFIG_PARAMS', 'GIT_TRACE2_DST_DEBUG', 'GIT_TRACE2_ENV_VARS',
+  'GIT_TRACE2_EVENT', 'GIT_TRACE2_EVENT_BRIEF', 'GIT_TRACE2_EVENT_NESTING', 'GIT_TRACE2_MAX_FILES', 'GIT_TRACE2_PARENT_NAME', 'GIT_TRACE2_PARENT_SID',
+  'GIT_TRACE2_PERF', 'GIT_TRACE2_PERF_BRIEF', 'GIT_TRACE2_REDACT'];
+const CLEAN_ENV = `unset ${[...GIT_LOCATION_VARS, ...GIT_TRACE_VARS].join(' ')}`;
+
+// Exit code of a command whose git cannot be found on the target: one sh never uses for its own errors, and distinct
+// from a script's other tools going missing (126/127, which stay loud errors). Mapped to GIT_UNAVAILABLE, as cc's
+// EXEC_SPAWN_FAILED is when git is the command itself.
+const GIT_MISSING = 12;
+const NEED_GIT = `command -v git >/dev/null 2>&1 || exit ${GIT_MISSING}`;
+
+/**
+ * `argv` with the git location and trace variables unset first: scripts get it as their first line, git runs under an sh
+ * that unsets them. Anything that runs git checks first that it can (`GIT_MISSING`). Whether it runs git: `{argv, git}`.
+ */
+const cleanArgv = (argv) => {
+  if (argv[0] === 'sh' && argv[1] === '-c') {
+    const git = argv[2].includes(GIT);
+    return { git, argv: ['sh', '-c', `${CLEAN_ENV}\n${git ? `${NEED_GIT}\n` : ''}${argv[2]}`, ...argv.slice(3)] };
+  }
+  if (argv[0] === 'git') return { git: true, argv: ['sh', '-c', `${CLEAN_ENV}\n${NEED_GIT}\nexec "$@"`, 'sh', ...argv] };
+  return { git: false, argv };
+};
+
 // Paths per batched script call, well under any ARG_MAX.
 const SIZE_CHUNK = 200;
+/** Path bytes passed to one script call; past this, a list of paths is split (or, for untracked files, handed on). */
+export const ARGV_BUDGET = 256 * 1024;
 const UNTRACKED_CHUNK = 100;
 
 const REF_RE = /^[A-Za-z0-9._\/@{}^~-]+$/;
@@ -35,11 +73,16 @@ export function checkRef(x) {
 /** Single-quotes `s` for a POSIX sh script. */
 const shq = (s) => `'${s.replace(/'/g, `'\\''`)}'`;
 
-async function call(place, argv, what, { input, ok = [0], maxBuffer = MAX_DIFF_BYTES, env, readOnly } = {}) {
-  const r = await exec(place, argv, { env: { ...BASE_ENV, ...env }, stdin: input, maxOutputBytes: maxBuffer, readOnly });
-  const stdout = r.stdout.toString('utf8');
-  if (ok.includes(r.code)) return { code: r.code, stdout };
+// `bytes`: stdout stays a Buffer (scripts whose output is sliced by byte lengths).
+async function call(place, argv, what, { input, ok = [0], maxBuffer = MAX_DIFF_BYTES, env, readOnly, bytes = false } = {}) {
+  const clean = cleanArgv(argv);
+  const r = await exec(place, clean.argv, { env: { ...BASE_ENV, ...env }, stdin: input, maxOutputBytes: maxBuffer, readOnly });
+  if (clean.git && r.code === GIT_MISSING) {
+    throw new Refusal('GIT_UNAVAILABLE', `git could not start on ${place.system}${place.remoteId ? `/${place.remoteId}` : ''} (not found)`);
+  }
+  const stdout = bytes ? r.stdout : r.stdout.toString('utf8');
   const stderr = r.stderr.toString('utf8');
+  if (ok.includes(r.code)) return { code: r.code, stdout, stderr };
   throw Object.assign(new Error(`${what} failed: ${stderr.trim() || `exit ${r.code}`}`), { exitCode: r.code, stderr });
 }
 
@@ -61,16 +104,22 @@ const cQuote = (p) => `"${[...Buffer.from(p)].map((b) => {
   return b < 0x20 || b >= 0x7f ? `\\${b.toString(8).padStart(3, '0')}` : String.fromCharCode(b);
 }).join('')}"`;
 
+// Exit code of a script that finds no checkout path: one sh never uses for its own errors (dash exits 2 on a syntax or
+// arithmetic error, 126/127 on a command it cannot run, 128+ on a signal), so such a failure is never read as "gone".
+const PATH_MISSING = 10;
+// Exit code of a FINISH that succeeded but whose trap could not remove its private dir: the output stands, the leak is warned.
+const DIR_LEFT = 11;
+// What a trap prints on stderr when it cannot remove its private dir.
+const LEFT_MARK = 'code-review: private index dir left behind';
+
 // Every script enters the checkout first; `$1` is its path.
 const CD = 'cd -- "$1" || exit 3; shift';
 
-// Makes the private index dir on the target: prints "<dir>\0<absolute objects dir>\0". The copy takes the original's
-// times exactly (`touch -r`), so git's racy-clean decisions on it are the original's own; a missing index is not copied.
-// The temp base must be an existing absolute dir, free of line terminators, outside both the checkout and its common
-// git dir (exit 7 otherwise), checked before anything is created; every failure after `mktemp` removes the dir it made.
+// The temp base: `${TMPDIR:-/tmp}` must be absolute, free of line terminators (before and after resolving), exist, and
+// resolve outside both the checkout and its common git dir (exit 7 otherwise), checked before anything is created.
+// Leaves `t` (the resolved base), `r` (the checkout, resolved), `i` and `o` (the absolute index and objects paths).
 const NO_EOL = `case $t in *'\n'*|*'\r'*) exit 7 ;; esac`;
-const CREATE_INDEX = `${CD}
-t=\${TMPDIR:-/tmp}
+const TEMP_BASE = `t=\${TMPDIR:-/tmp}
 case $t in /*) ;; *) exit 7 ;; esac
 ${NO_EOL}
 t=$(cd -- "$t" && pwd -P) || exit 7
@@ -82,50 +131,253 @@ case $t/ in "$r"/*|"$c"/*) exit 7 ;; esac
 i=$(${GIT} rev-parse --git-path index) || exit 4
 o=$(${GIT} rev-parse --git-path objects) || exit 4
 case $i in /*) ;; *) i=$PWD/$i ;; esac
-case $o in /*) ;; *) o=$PWD/$o ;; esac
-d=$(mktemp -d "$t/cr-index-XXXXXX") || exit 5
-case $d in "$t"/cr-index-*) ;; *) [ -z "$d" ] || rm -rf -- "$d"; exit 5 ;; esac
-if ! mkdir -p "$d/objects/info" || { [ -e "$i" ] && ! { cp -- "$i" "$d/index" && touch -r "$i" "$d/index"; }; }; then rm -rf -- "$d"; exit 6; fi
-printf '%s\\0%s\\0' "$d" "$o"`;
+case $o in /*) ;; *) o=$PWD/$o ;; esac`;
 
-// Writes the alternates entry ($2, already C-quoted) into the private objects dir ($1).
-const WRITE_ALTERNATES = `${CD}
-printf '%s\\n' "$2" > "$1/objects/info/alternates"`;
+const DIFF = DIFF_FLAGS.map(shq).join(' ');
+
+// First call of an uncommitted snapshot. $1 the checkout, $2 the private dir id, $3 the diff limit, $4 the output cap.
+// Makes `<base>/cr-index-<id>` with a copy of the index carrying the original's exact times (`touch -r`, so git's
+// racy-clean decisions on it are the original's own; a missing index is not copied), diffs the working tree against
+// HEAD (or the empty tree) on that copy and lists untracked paths. Removes the dir on every failure after creating it.
+// Prints "<dir>\0<objects>\0<head>\0<tracked bytes>\0<others bytes>\0", then the tracked diff and the `ls-files -z` list.
+const SCAN = `[ -e "$1" ] || exit ${PATH_MISSING}
+cd -- "$1" || exit 3
+x=$2 max=$3 cap=$4
+${TEMP_BASE}
+h=$(${GIT} rev-parse --verify --quiet 'HEAD^{commit}') || h=$(${GIT} hash-object -t tree --stdin </dev/null) || exit 4
+d=$t/cr-index-$x
+mkdir -m 700 -- "$d" || exit 5
+trap 'rm -rf -- "$d" || echo "${LEFT_MARK}" >&2' EXIT
+mkdir -p "$d/objects/info" || exit 6
+if [ -e "$i" ]; then { cp -- "$i" "$d/index" && touch -r "$i" "$d/index"; } || exit 6; fi
+GIT_INDEX_FILE=$d/index; export GIT_INDEX_FILE
+${GIT} ${DIFF} "$h" > "$d/tracked" || exit 8
+${GIT} ls-files --others --exclude-standard -z > "$d/others" || exit 8
+a=$(($(wc -c < "$d/tracked"))) && b=$(($(wc -c < "$d/others"))) || exit 8
+[ "$a" -le "$max" ] && [ "$b" -le "$max" ] && [ $((a + b + 65536)) -le "$cap" ] || exit 9
+trap - EXIT
+printf '%s\\0%s\\0%s\\0%s\\0%s\\0' "$d" "$o" "$h" "$a" "$b"
+cat -- "$d/tracked" "$d/others"`;
+
+// Second and last call; removes the private dir however it ends. $1 the checkout, $2 the dir, $3 the C-quoted objects
+// path (alternates entry, written only when restaging), $4 head, $5 the file size cap, $6 the untracked budget, $7 the
+// diff limit, $8 the output cap, $9 the restage count R, then the untracked count U, R restage paths, U untracked paths,
+// and prefetch items (`n<path>` working tree, `o<path>` at head). One meta line per argument, in order:
+// restage `-` vanished, `O` over the cap, `F` git could not stage it, `S` staged (then the tracked diff is redone);
+// untracked `-` vanished, `<size>` over the cap, `<size> D` deferred (once one is, all later ones are), `<size> d` diffed;
+// prefetch `-` absent, `L` read it lazily, `<bytes>` its content follows.
+// Prints "<meta bytes>\0<tracked>\0<untracked>\0<prefetch>\0", then the four parts.
+const FINISH = `d=$2
+trap 'e=$?; rm -rf -- "$d" || { echo "${LEFT_MARK}" >&2; [ "$e" -ne 0 ] || exit ${DIR_LEFT}; }' EXIT
+cd -- "$1" || exit 3
+alt=$3 h=$4 max=$5 budget=$6 maxd=$7 cap=$8 n=$9
+shift 9
+u=$1; shift
+r=$(pwd -P) || exit 3
+GIT_INDEX_FILE=$d/index; export GIT_INDEX_FILE
+: > "$d/meta" && : > "$d/tracked" && : > "$d/untracked" && : > "$d/pre" || exit 6
+size() { l=$(ls -ldn -- "./$1" 2>/dev/null) || return 1; s=$(printf '%s\\n' "$l" | awk 'NR==1{print $5}'); case $s in ''|*[!0-9]*) s=0 ;; esac; }
+# The blob and mode \`update-index --add\` would record for $1 (whose \`ls -ldn\` line size() left in $l): a symlink's target
+# (unfiltered), else the file through its filters; 100755 when the owner may execute it and core.filemode holds. Written
+# with -w while the private object dir has no alternates, so it lands there and the real store is never asked (or freshened).
+blob() {
+  case $l in
+  l*) mode=120000; lt=$(readlink -- "./$1" && echo .) || return 1; lt=\${lt%.}; lt=\${lt%?}
+      sha=$(printf '%s' "$lt" | ${GIT} hash-object -w --stdin 2>/dev/null) ;;
+  -*) mode=100644; [ "$fm" = true ] && case $l in ???[xs]*) mode=100755 ;; esac
+      sha=$(${GIT} hash-object -w -- "$1" 2>/dev/null) ;;
+  *) return 1 ;;
+  esac
+}
+fm=true
+if [ "$n" -gt 0 ]; then
+  GIT_OBJECT_DIRECTORY=$d/objects; export GIT_OBJECT_DIRECTORY
+  fm=$(${GIT} config --bool --get core.filemode) || fm=true
+fi
+: > "$d/stage" || exit 6
+k=0
+for f; do [ "$k" -lt "$n" ] || break; k=$((k + 1))
+  if ! size "$f"; then echo -
+  elif [ "$s" -gt "$max" ]; then echo O
+  elif blob "$f"; then echo "$mode $sha"
+  else echo F; fi >> "$d/stage"
+done
+# Now HEAD's objects must resolve (staging, the redone diff): the real store joins as the alternate.
+[ "$n" -eq 0 ] || printf '%s\\n' "$alt" > "$d/objects/info/alternates" || exit 6
+staged=
+exec 3< "$d/stage"
+while [ "$n" -gt 0 ]; do f=$1; shift; n=$((n - 1)); read -r m sha <&3
+  case $m in
+  -|O|F) echo "$m" ;;
+  *) if ${GIT} update-index --add --cacheinfo "$m" "$sha" "$f" 2>/dev/null; then echo S; staged=1; else echo F; fi ;;
+  esac >> "$d/meta"
+done
+exec 3<&-
+[ -z "$staged" ] || ${GIT} ${DIFF} "$h" > "$d/tracked" || exit 8
+sum=0 defer=
+while [ "$u" -gt 0 ]; do f=$1; shift; u=$((u - 1))
+  if ! size "$f"; then echo -
+  elif [ "$s" -gt "$max" ]; then echo "$s"
+  elif [ -n "$defer" ] || { [ "$sum" -gt 0 ] && [ $((sum + s)) -gt "$budget" ]; }; then defer=1; echo "$s D"
+  else ${GIT} ${DIFF} --no-index -- /dev/null "$f" >> "$d/untracked"; e=$?; [ "$e" -le 1 ] || exit 8; sum=$((sum + s)); echo "$s d"; fi >> "$d/meta"
+done
+pre=0
+for a; do p=\${a#?}
+  case $a in
+  n*) f=$(realpath "./$p" 2>/dev/null && echo .); e=$?
+      if [ "$e" -ge 126 ]; then echo L >> "$d/meta"; continue; fi
+      f=\${f%.}; f=\${f%?}
+      if [ "$e" -ne 0 ] || ! case $f in "$r"/*) true ;; *) false ;; esac || [ ! -f "$f" ]; then echo - >> "$d/meta"; continue; fi
+      cat -- "$f" > "$d/one" || { echo L >> "$d/meta"; continue; } ;;
+  o*) k=$(${GIT} cat-file -t "$h:$p" 2>/dev/null) || { echo - >> "$d/meta"; continue; }
+      [ "$k" = blob ] || { echo L >> "$d/meta"; continue; }
+      ${GIT} cat-file blob "$h:$p" > "$d/one" || { echo L >> "$d/meta"; continue; } ;;
+  esac
+  s=$(($(wc -c < "$d/one")))
+  if [ "$s" -gt "$max" ] || [ $((pre + s)) -gt "$budget" ]; then echo L >> "$d/meta"; continue; fi
+  cat -- "$d/one" >> "$d/pre" && pre=$((pre + s)) && echo "$s" >> "$d/meta" || exit 8
+done
+m=$(($(wc -c < "$d/meta"))) t2=$(($(wc -c < "$d/tracked"))) ud=$(($(wc -c < "$d/untracked")))
+[ "$t2" -le "$maxd" ] && [ "$ud" -le "$maxd" ] && [ $((m + t2 + ud + pre + 256)) -le "$cap" ] || exit 9
+printf '%s\\0%s\\0%s\\0%s\\0' "$m" "$t2" "$ud" "$pre"
+cat -- "$d/meta" "$d/tracked" "$d/untracked" "$d/pre"`;
+
+// Best-effort removal of `<base>/cr-index-<id>` ($2) when a SCAN's outcome is unknown (the exec itself failed).
+const REMOVE_BY_ID = `t=\${TMPDIR:-/tmp}; case $t in /*) ;; *) exit 0 ;; esac
+t=$(cd -- "$t" && pwd -P) || exit 0
+rm -rf -- "$t/cr-index-$2"`;
+
+const ID_RE = /^[0-9a-f]{24}$/;
 
 /** Structurally a private index dir: absolute, no `..` segment, basename `cr-index-*`. Any byte else is allowed. */
 const isTempDir = (d) => typeof d === 'string' && d.startsWith('/') && !d.split('/').includes('..')
   && d.slice(d.lastIndexOf('/') + 1).startsWith('cr-index-') && d.length > d.lastIndexOf('/') + 'cr-index-'.length + 1;
 
-/**
- * Calls `fn({env})` with GIT_INDEX_FILE pointing at a unique temp copy of the checkout's index and GIT_OBJECT_DIRECTORY
- * at a temp dir whose `info/alternates` names the real objects dir, both on the checkout's system and deleted
- * afterwards, so index-refreshing and staging commands never write the project tree.
- */
-export async function withPrivateIndex(place, fn) {
-  const made = await sh(place, CREATE_INDEX, [], { ok: [0, 5, 6, 7] });
-  if (made.code === 7) throw new Refusal('TEMP_UNUSABLE', `TMPDIR on ${place.system} is not an existing absolute directory outside the checkout and its git dir`);
-  if (made.code === 5) throw new Refusal('TEMP_UNUSABLE', `could not create a private index dir in TMPDIR on ${place.system}`);
-  if (made.code === 6) throw new Refusal('TEMP_UNUSABLE', `could not prepare the private index in TMPDIR on ${place.system} (creating its objects dir or copying the index failed)`);
-  const [dir, objects] = made.stdout.split('\0');
-  // Every path the script can print passes (its base is absolute and it made `<base>/cr-index-*`), so a mismatch
-  // means the output names no dir the script made: there is nothing it is safe to remove.
-  if (!isTempDir(dir)) throw new Refusal('TEMP_UNUSABLE', `private index: the create script printed no private index dir (${JSON.stringify(dir)})`);
-  const teardown = () => removeTemp(place, dir).catch((e) => {
-    console.warn(`code-review: could not remove the private index dir ${dir} on ${place.system}: ${e.message}`);
+// What a scan or finish may print, given its diff limit: both diffs, the prefetch budget and headers.
+const outputCap = (maxDiffBytes) => Math.min(2 * maxDiffBytes + 64 * 1024, EXEC_MAX_OUTPUT_BYTES);
+
+const TEMP_TEXT = {
+  5: (place) => `could not create a private index dir in TMPDIR on ${place.system}`,
+  6: (place) => `could not prepare the private index in TMPDIR on ${place.system} (creating its objects dir or copying the index failed)`,
+  7: (place) => `TMPDIR on ${place.system} is not an existing absolute directory outside the checkout and its git dir`,
+};
+
+/** `count` NUL-terminated byte lengths (or fields) off the front of `buf`: [fields, rest]. */
+function header(buf, count) {
+  const fields = [];
+  let at = 0;
+  for (let k = 0; k < count; k++) {
+    const end = buf.indexOf(0, at);
+    if (end < 0) throw new Error(`sh script printed a malformed header (${count} fields expected)`);
+    fields.push(buf.subarray(at, end).toString('utf8'));
+    at = end + 1;
+  }
+  return [fields, buf.subarray(at)];
+}
+
+/** Splits `buf` into parts of the given byte lengths; they must cover it exactly. */
+function parts(buf, lengths) {
+  const out = [];
+  let at = 0;
+  for (const n of lengths.map(Number)) {
+    out.push(buf.subarray(at, at + n));
+    at += n;
+  }
+  if (at !== buf.length) throw new Error(`sh script printed ${buf.length} bytes after its header, ${at} announced`);
+  return out;
+}
+
+// A script's trap could not remove its private dir (LEFT_MARK on stderr): it sits in the target's tmp, never in the tree.
+const warnLeft = (place, dir) => console.warn(`code-review: could not remove the private index dir ${dir} on ${place.system} (the script's cleanup failed)`);
+
+async function removeById(place, id) {
+  await sh(place, REMOVE_BY_ID, [id]).catch((e) => {
+    console.warn(`code-review: could not remove the private index dir cr-index-${id} on ${place.system}: ${e.message}`);
   });
-  let result;
+}
+
+/** Best-effort removal of a private index dir a scan left: a failure is a warning naming it (it sits in the target's tmp, never in the tree). */
+export const discardTemp = (place, dir) => removeTemp(place, dir).catch((e) => {
+  console.warn(`code-review: could not remove the private index dir ${dir} on ${place.system}: ${e.message}`);
+});
+
+/**
+ * First of the two calls of an uncommitted snapshot: the tracked diff on a private index copy and the untracked list.
+ * Resolves {dir, objects, head, tracked (diff text), others (paths)}; the private dir is left for `finishWorktree`.
+ * A missing checkout is CHECKOUT_GONE; a bad TMPDIR TEMP_UNUSABLE; output over the limit DIFF_TOO_LARGE.
+ */
+export async function scanWorktree(place, { maxDiffBytes }) {
+  const id = randomBytes(12).toString('hex');
+  if (!ID_RE.test(id)) throw new Error(`bad private dir id ${id}`);
+  const cap = outputCap(maxDiffBytes);
+  let r;
   try {
-    // A file, not GIT_ALTERNATE_OBJECT_DIRECTORIES: that variable is colon-separated and would split a path containing ':'.
-    // A second call because the quoted entry depends on the first call's output.
-    await sh(place, WRITE_ALTERNATES, [dir, cQuote(objects)]);
-    // Objects written while staging (`update-index --add`) land in the private dir; the real store is read through its alternates file.
-    result = await fn({ env: { GIT_INDEX_FILE: `${dir}/index`, GIT_OBJECT_DIRECTORY: `${dir}/objects` } });
+    r = await call(place, ['sh', '-c', SCAN, 'sh', place.path, id, String(maxDiffBytes), String(cap)], 'sh script',
+      { ok: [0, PATH_MISSING, 5, 6, 7, 9], maxBuffer: cap, bytes: true });
   } catch (e) {
-    await teardown();
+    // 3, 4 and 8 end before the dir exists or with the trap removing it; anything else (the exec failed, an unknown
+    // exit) leaves the dir's fate unknown, so it is removed by id.
+    if (e instanceof Refusal || ![3, 4, 8].includes(e.exitCode)) await removeById(place, id);
+    else if (e.stderr?.includes(LEFT_MARK)) warnLeft(place, `cr-index-${id}`);
     throw e;
   }
-  await teardown(); // a leaked dir sits in the target's tmp, never in the tree: logged, not fatal
-  return result;
+  if (r.code !== 0 && r.stderr.includes(LEFT_MARK)) warnLeft(place, `cr-index-${id}`);
+  if (r.code === PATH_MISSING) throw new Refusal('CHECKOUT_GONE', `${place.path} no longer exists`);
+  if (TEMP_TEXT[r.code]) throw new Refusal('TEMP_UNUSABLE', TEMP_TEXT[r.code](place));
+  if (r.code === 9) throw new Refusal('DIFF_TOO_LARGE', 'output exceeds the size limit');
+  // The script's trap is disarmed once it succeeds: from here the dir is ours, so any failure to read its output removes it.
+  try {
+    const [[dir, objects, head, a, b], rest] = header(r.stdout, 5);
+    // The script prints `<base>/cr-index-<id>`; anything else names no dir it made.
+    if (!isTempDir(dir) || dir.slice(dir.lastIndexOf('/') + 1) !== `cr-index-${id}`) {
+      throw new Refusal('TEMP_UNUSABLE', `private index: the scan script printed no private index dir (${JSON.stringify(dir)})`);
+    }
+    const [tracked, others] = parts(rest, [a, b]);
+    return {
+      dir, objects, head, tracked: tracked.toString('utf8'),
+      others: others.toString('utf8').split('\0').filter((p) => p && !p.endsWith('/')),
+    };
+  } catch (e) {
+    await removeById(place, id);
+    throw e;
+  }
+}
+
+/**
+ * Second call: restages `restage`, diffs `untracked` (in order, within the budget) and reads `prefetch` ([{side, path}]),
+ * then removes the private dir; when it fails, the caller removes it (`discardTemp`). Resolves {restage: [meta], untracked: [meta], prefetch: [null | 'lazy' | content],
+ * tracked (the redone diff, '' when nothing was staged), untrackedDiff}.
+ */
+export async function finishWorktree(place, { dir, objects, head, maxFileBytes, maxDiffBytes, restage, untracked, prefetch }) {
+  const cap = outputCap(maxDiffBytes);
+  const items = prefetch.map(({ side, path }) => `${side === 'old' ? 'o' : 'n'}${path}`);
+  const args = [dir, cQuote(objects), head, String(maxFileBytes), String(Math.floor(maxDiffBytes / 3)), String(maxDiffBytes), String(cap),
+    String(restage.length), String(untracked.length), ...restage, ...untracked, ...items];
+  const r = await call(place, ['sh', '-c', FINISH, 'sh', place.path, ...args], 'sh script', { ok: [0, 6, 9, DIR_LEFT], maxBuffer: cap, bytes: true });
+  if (r.code === DIR_LEFT) warnLeft(place, dir); // the diff succeeded: it is answered
+  else if (r.code !== 0) {
+    if (r.code === 6) throw new Refusal('TEMP_UNUSABLE', TEMP_TEXT[6](place));
+    throw new Refusal('DIFF_TOO_LARGE', 'output exceeds the size limit');
+  }
+  const [lengths, rest] = header(r.stdout, 4);
+  const [meta, tracked, untrackedDiff, pre] = parts(rest, lengths);
+  const lines = meta.toString('utf8').split('\n').slice(0, -1);
+  if (lines.length !== restage.length + untracked.length + items.length) {
+    throw new Error(`sh script answered ${lines.length} meta lines for ${restage.length + untracked.length + items.length} arguments`);
+  }
+  let at = 0;
+  const read = lines.slice(restage.length + untracked.length).map((l) => {
+    if (l === '-') return null;
+    if (l === 'L') return 'lazy';
+    const n = Number(l);
+    const content = pre.subarray(at, at + n).toString('utf8');
+    at += n;
+    return { content };
+  });
+  return {
+    restage: lines.slice(0, restage.length), untracked: lines.slice(restage.length, restage.length + untracked.length),
+    prefetch: read, tracked: tracked.toString('utf8'), untrackedDiff: untrackedDiff.toString('utf8'),
+  };
 }
 
 /** Removes a private index dir; refuses any path not named `cr-index-*`. */
@@ -185,13 +437,14 @@ export async function show(place, sha, path) {
   return r.code === 0 ? r.stdout : null;
 }
 
-/** {head, branch, dirty} from one `git status`: head null on an unborn branch, branch 'HEAD' when detached. */
-export async function statusOf(place) {
-  const r = await read(place, ['status', '--porcelain=v2', '-z', '--branch', '--no-ahead-behind', '--untracked-files=normal']);
+const STATUS_ARGS = ['status', '--porcelain=v2', '-z', '--branch', '--no-ahead-behind', '--untracked-files=normal'];
+
+/** {head, branch, dirty} from `git status --porcelain=v2 -z --branch` output: head null on an unborn branch, branch 'HEAD' when detached. */
+function parseStatus(text) {
   let head = null;
   let branch = 'HEAD';
   let dirty = false;
-  for (const rec of r.stdout.split('\0')) {
+  for (const rec of text.split('\0')) {
     if (rec.startsWith('# branch.oid ')) { const v = rec.slice(13); head = v === '(initial)' ? null : v; }
     else if (rec.startsWith('# branch.head ')) { const v = rec.slice(14); branch = v === '(detached)' ? 'HEAD' : v; }
     else if (rec && !rec.startsWith('# ')) dirty = true;
@@ -199,21 +452,37 @@ export async function statusOf(place) {
   return { head, branch, dirty };
 }
 
+/** {head, branch, dirty} from one `git status`. */
+export const statusOf = async (place) => parseStatus((await read(place, STATUS_ARGS)).stdout);
+
+// Read-only. $1 the checkout, $2 the main checkout (either may be ''), $3 '1' for status, then shas. Enters the first
+// that exists (exit PATH_MISSING: neither), prints "<checkout|main>\0<first sha missing from the object store, or nothing>\0",
+// then, when asked and in the checkout, the status records.
+const PROBE = `if [ -n "$1" ] && [ -e "$1" ]; then w=checkout; cd -- "$1" || exit 3
+elif [ -n "$2" ] && [ -e "$2" ]; then w=main; cd -- "$2" || exit 3
+else exit ${PATH_MISSING}; fi
+st=$3; shift 3
+m=
+for s; do ${GIT} cat-file -e "$s^{tree}" 2>/dev/null || { m=$s; break; }; done
+printf '%s\\0%s\\0' "$w" "$m"
+[ "$st" = 1 ] && [ "$w" = checkout ] || exit 0
+${GIT} ${STATUS_ARGS.join(' ')} || exit 8`;
+
+/**
+ * One call on `place`'s system: where a checkout is (`path`, else `mainPath`; '' = none), the first of `shas` missing
+ * from that repo's object store, and (`status`, in the checkout only) its {head, branch, dirty}.
+ * Resolves {where: 'checkout'|'main'|null, missing: sha|null, status: {head, branch, dirty}|null}.
+ */
+export async function probe(place, { path, mainPath = '', status = false, shas = [] }) {
+  const r = await call(place, ['sh', '-c', PROBE, 'sh', path ?? '', mainPath ?? '', status ? '1' : '0', ...new Set(shas)], 'sh script', { ok: [0, PATH_MISSING], readOnly: true });
+  if (r.code === PATH_MISSING) return { where: null, missing: null, status: null };
+  const [where, missing] = r.stdout.split('\0', 2);
+  const rest = r.stdout.slice(where.length + missing.length + 2);
+  return { where, missing: missing || null, status: status && where === 'checkout' ? parseStatus(rest) : null };
+}
+
 /** Raw unified diff between two trees/commits. */
 export const diffBetween = (place, from, to, opts) => read(place, [...DIFF_FLAGS, from, to], opts).then((r) => r.stdout);
-
-/** Tracked changes (staged + unstaged) against `from`. */
-export const diffWorktree = (place, from, opts) => run(place, [...DIFF_FLAGS, from], opts).then((r) => r.stdout);
-
-/** Stages the working-tree content of `paths` into the index `opts.env` points at (never the real one). */
-export const addToIndex = (place, paths, opts) =>
-  run(place, ['update-index', '--add', '-z', '--stdin'], { ...opts, input: paths.join('\0') + '\0' });
-
-/** Untracked, non-ignored paths (relative); directories (nested repos) are skipped. */
-export async function untracked(place, opts) {
-  const r = await read(place, ['ls-files', '--others', '--exclude-standard', '-z'], opts);
-  return r.stdout.split('\0').filter((p) => p && !p.endsWith('/'));
-}
 
 // One line per argument: its lstat size (`ls -ldn` reports a symlink itself), or `-` when it does not exist.
 // Names are never echoed, so a newline in one cannot shift the lines.
@@ -277,6 +546,30 @@ export async function readWorktreeFile(place, rel) {
     if (e instanceof Refusal || e.exitCode === 126 || e.exitCode === 127) throw e; // a missing tool fails loudly
     return null;
   }
+}
+
+// Line count of each path at $2 (a commit), as `diff --numstat` from the empty tree: `<lines>\t<'-' when binary>\t<path>\0`.
+const OLD_LINE_COUNTS = `${CD}
+e=$(${GIT} hash-object -t tree --stdin </dev/null) || exit 4
+b=$1; shift
+exec ${GIT} diff --numstat -z --no-renames --no-color --no-ext-diff --no-textconv --no-relative "$e" "$b" -- "$@"`;
+
+/** Line counts of `paths` at commit `sha`: Map path -> count (null when git counts it binary); absent paths are left out. */
+export async function lineCountsAt(place, sha, paths) {
+  const counts = new Map();
+  for (let i = 0; i < paths.length;) {
+    const chunk = [];
+    for (let bytes = 0; i < paths.length && (!chunk.length || bytes + Buffer.byteLength(paths[i]) <= ARGV_BUDGET); i++) {
+      bytes += Buffer.byteLength(paths[i]) + 1;
+      chunk.push(paths[i]);
+    }
+    const r = await readSh(place, OLD_LINE_COUNTS, [sha, ...chunk], { env: { GIT_LITERAL_PATHSPECS: '1' } });
+    for (const rec of r.stdout.split('\0')) {
+      const m = rec.match(/^(-|\d+)\t(?:-|\d+)\t([\s\S]*)$/);
+      if (m) counts.set(m[2], m[1] === '-' ? null : Number(m[1]));
+    }
+  }
+  return counts;
 }
 
 /** Rename map for `from..to`: {newPath: oldPath}. */

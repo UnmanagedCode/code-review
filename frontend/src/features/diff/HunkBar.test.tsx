@@ -10,7 +10,7 @@ import { ctxValue, renderInReview } from '@/test/renderCtx';
 import { stubFetch } from '@/test/stubFetch';
 import { HunkBar } from './HunkBar';
 
-const ok = (verdict: string) => ({ hunkId: 'h1', verdict, review: review({ rev: 2 }) });
+const ok = (verdict: string) => ({ hunkId: 'h1', verdict, review: review({ rev: 2 }), fileSig: { path: 'src/a.ts', sig: 's-2' } });
 
 test.each([['Accept', 'accepted'], ['Reject', 'rejected']])('%s issues PUT …/verdict with that verdict, optimistically', async (label, verdict) => {
   const net = stubFetch({ 'PUT api/reviews/r-1/hunks/h1/verdict': ok(verdict) });
@@ -54,7 +54,7 @@ test('the commit-filter view renders no bar at all', () => {
 });
 
 test('Comment on hunk opens the composer anchored by {hunkId}', async () => {
-  const net = stubFetch({ 'POST api/reviews/r-1/threads': { thread: { id: 't-1' } } });
+  const net = stubFetch({ 'POST api/reviews/r-1/threads': { thread: { id: 't-1' }, fileSig: { path: 'src/a.ts', sig: 's-2' } } });
   const user = userEvent.setup();
   renderInReview(<HunkBar hunk={hunk()} commentable />);
   await user.click(screen.getByRole('button', { name: 'Comment on hunk' }));

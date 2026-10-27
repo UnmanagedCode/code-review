@@ -11,15 +11,13 @@ import { ThreadPanel } from './ThreadPanel';
 
 test('the All list refreshes when the review reloads, even with no file open', async () => {
   let threads = [thread({ id: 't-1' })];
-  const net = stubFetch({ 'GET api/reviews/r-1/diff': () => ({ review: review(), files: [diffFile({ threads })] }) });
-  const files = [fileState({ threads: { open: 1, resolved: 0, outdated: 0 } })];
-  const base = ctxValue({ files, fileDiff: { file: undefined, version: 0 } as never });
-  const ui = (version: number) => <ReviewProvider value={{ ...base, version }}><ThreadPanel /></ReviewProvider>;
-  const { rerender } = render(ui(1));
+  const net = stubFetch({ 'GET api/reviews/r-1/diff': () => ({ review: review(), files: [diffFile({ threads, sig: threads.length === 1 ? 's1' : 's2' })] }) });
+  const ui = (files: ReturnType<typeof fileState>[]) => <ReviewProvider value={ctxValue({ files, fileDiff: { file: undefined } as never })}><ThreadPanel /></ReviewProvider>;
+  const { rerender } = render(ui([fileState({ sig: 's1', threads: { open: 1, resolved: 0, outdated: 0 } })]));
   await userEvent.setup().click(screen.getByRole('tab', { name: /^All/ }));
   expect(await screen.findAllByRole('article')).toHaveLength(1);
   threads = [thread({ id: 't-1' }), thread({ id: 't-2' })];
-  rerender(ui(2));
+  rerender(ui([fileState({ sig: 's2', threads: { open: 2, resolved: 0, outdated: 0 } })]));
   await waitFor(() => expect(screen.getAllByRole('article')).toHaveLength(2));
   expect(net.count('GET api/reviews/r-1/diff')).toBe(2);
 });

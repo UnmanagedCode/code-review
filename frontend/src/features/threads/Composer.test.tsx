@@ -14,7 +14,7 @@ const posted = (net: ReturnType<typeof stubFetch>) => net.calls.find((c) => c.me
 const post = () => screen.getByRole('button', { name: 'Post' }) as HTMLButtonElement;
 
 test('posts the exact anchor and kind', async () => {
-  const net = stubFetch({ 'POST api/reviews/r-1/threads': { thread: thread() } });
+  const net = stubFetch({ 'POST api/reviews/r-1/threads': { thread: thread(), fileSig: { path: 'src/a.ts', sig: 's-2' } } });
   const onClose = vi.fn();
   const user = userEvent.setup();
   renderInReview(<Composer anchor={anchor} label="L3–L4 (new)" onClose={onClose} />);
@@ -26,7 +26,7 @@ test('posts the exact anchor and kind', async () => {
 });
 
 test('a finding needs a severity before Post enables, and sends it', async () => {
-  const net = stubFetch({ 'POST api/reviews/r-1/threads': { thread: thread() } });
+  const net = stubFetch({ 'POST api/reviews/r-1/threads': { thread: thread(), fileSig: { path: 'src/a.ts', sig: 's-2' } } });
   const user = userEvent.setup();
   renderInReview(<Composer anchor={anchor} label="x" onClose={() => {}} />);
   await user.selectOptions(screen.getByLabelText('Kind'), 'finding');
@@ -48,7 +48,7 @@ test('a body over the limit disables Post and shows the counter', async () => {
 });
 
 test('a hunk anchor is posted as {hunkId}', async () => {
-  const net = stubFetch({ 'POST api/reviews/r-1/threads': { thread: thread() } });
+  const net = stubFetch({ 'POST api/reviews/r-1/threads': { thread: thread(), fileSig: { path: 'src/a.ts', sig: 's-2' } } });
   const user = userEvent.setup();
   renderInReview(<Composer anchor={{ hunkId: 'h1' }} label="hunk" onClose={() => {}} />);
   await user.type(screen.getByLabelText('Message'), 'whole hunk');
@@ -87,7 +87,7 @@ test('a composer draft survives a remount for its anchor and Cancel discards it'
 
 // Invariant: a posted comment's draft is gone.
 test('posting clears the composer draft', async () => {
-  stubFetch({ 'POST api/reviews/r-1/threads': { thread: thread() } });
+  stubFetch({ 'POST api/reviews/r-1/threads': { thread: thread(), fileSig: { path: 'src/a.ts', sig: 's-2' } } });
   const user = userEvent.setup();
   const onClose = vi.fn();
   const first = renderInReview(<Composer anchor={anchor} label="x" onClose={onClose} />);

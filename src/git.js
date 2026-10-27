@@ -19,6 +19,8 @@ const BASE_ENV = { LC_ALL: 'C', GIT_OPTIONAL_LOCKS: '0' };
 // the real .git; off, git still reads an existing split index and writes the private one whole.
 // (A clean/smudge filter named by the reviewed repo's own .gitattributes still runs on working-tree paths.)
 const BASE_ARGS = ['-c', 'core.fsmonitor=false', '-c', 'core.splitIndex=false'];
+// Every script that runs git spells it `${GIT}`, never a bare `git`: `cleanArgv` recognises a git-running script by
+// this string and only then prepends the `command -v git` guard (`NEED_GIT`), which turns a missing git into GIT_UNAVAILABLE.
 const GIT = `git ${BASE_ARGS.join(' ')}`;
 
 // Variables in the target's own environment that move where git reads or writes a repository's data (git's

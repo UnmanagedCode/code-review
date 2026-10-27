@@ -14,7 +14,7 @@ export const review = (over: Partial<ReviewSummary> = {}): ReviewSummary => ({
 
 export const fileState = (over: Partial<FileState> = {}): FileState => ({
   path: 'src/a.ts', oldPath: null, status: 'modified', binary: false, tooLarge: false, additions: 2, deletions: 1, hunks: 1,
-  verdicts: { pending: 1, accepted: 0, rejected: 0 }, threads: { open: 0, resolved: 0, outdated: 0 }, unread: 0, ...over,
+  verdicts: { pending: 1, accepted: 0, rejected: 0 }, threads: { open: 0, resolved: 0, outdated: 0 }, unread: 0, sig: 's-1', ...over,
 });
 
 export const lines = (spec: string): DiffLine[] => {
@@ -37,7 +37,7 @@ export const hunk = (over: Partial<TextHunk> = {}): TextHunk => ({
 
 export const diffFile = (over: Partial<DiffFile> = {}): DiffFile => {
   const { hunks: _h, threads: _t, ...rest } = fileState();
-  return { ...rest, hunks: [hunk()], threads: [], ...over };
+  return { ...rest, hunks: [hunk()], threads: [], lineCount: { old: 4, new: 4 }, ...over };
 };
 
 export const message = (over: Partial<Message> = {}): Message => ({ id: 1, author: HUMAN, body: 'hello', at: '2026-01-01T00:00:00Z', round: 1, citations: [], ...over });

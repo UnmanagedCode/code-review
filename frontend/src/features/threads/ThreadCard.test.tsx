@@ -21,20 +21,20 @@ test('author, reviewer and conductor badges come from the frozen author.role, wi
 });
 
 test('resolving a finding sends a disposition; a non-finding sends none', async () => {
-  const net = stubFetch({ 'PATCH api/reviews/r-1/threads/t-1': { thread: thread() } });
+  const net = stubFetch({ 'PATCH api/reviews/r-1/threads/t-1': { thread: thread(), fileSig: { path: 'src/a.ts', sig: 's-2' } } });
   const user = userEvent.setup();
   const { unmount } = renderInReview(<ThreadCard thread={thread({ kind: 'finding', severity: 'major' })} />);
   await user.click(screen.getByRole('button', { name: 'Resolve as dismissed' }));
   await waitFor(() => expect(patchBody(net)).toEqual({ status: 'resolved', disposition: 'dismissed' }));
   unmount();
-  const net2 = stubFetch({ 'PATCH api/reviews/r-1/threads/t-1': { thread: thread() } });
+  const net2 = stubFetch({ 'PATCH api/reviews/r-1/threads/t-1': { thread: thread(), fileSig: { path: 'src/a.ts', sig: 's-2' } } });
   renderInReview(<ThreadCard thread={thread()} />);
   await user.click(screen.getByRole('button', { name: 'Resolve' }));
   await waitFor(() => expect(patchBody(net2)).toEqual({ status: 'resolved' }));
 });
 
 test('a resolved thread offers Reopen', async () => {
-  const net = stubFetch({ 'PATCH api/reviews/r-1/threads/t-1': { thread: thread() } });
+  const net = stubFetch({ 'PATCH api/reviews/r-1/threads/t-1': { thread: thread(), fileSig: { path: 'src/a.ts', sig: 's-2' } } });
   renderInReview(<ThreadCard thread={thread({ status: 'resolved' })} />);
   await userEvent.setup().click(screen.getByRole('button', { name: 'Reopen' }));
   await waitFor(() => expect(patchBody(net)).toEqual({ status: 'open' }));
@@ -55,7 +55,7 @@ test('resolveProposed shows a banner and a proposing message is badged', () => {
 
 // Invariant: an unsent reply survives the card remounting (the store is keyed by review and thread), and a sent one is cleared.
 test('a reply draft survives a remount and is cleared once sent', async () => {
-  const net = stubFetch({ 'POST api/reviews/r-1/threads/t-1/messages': { thread: thread() } });
+  const net = stubFetch({ 'POST api/reviews/r-1/threads/t-1/messages': { thread: thread(), fileSig: { path: 'src/a.ts', sig: 's-2' } } });
   const user = userEvent.setup();
   const first = renderInReview(<ThreadCard thread={thread()} />);
   await user.type(screen.getByLabelText('Reply'), 'wip');
@@ -142,7 +142,7 @@ test.each([
 
 // Invariant: a status control inside the reply form never submits it, so a typed draft is neither posted nor cleared.
 test('Resolve inside the reply form does not submit the draft', async () => {
-  const net = stubFetch({ 'PATCH api/reviews/r-1/threads/t-1': { thread: thread() }, 'POST api/reviews/r-1/threads/t-1/messages': { thread: thread() } });
+  const net = stubFetch({ 'PATCH api/reviews/r-1/threads/t-1': { thread: thread(), fileSig: { path: 'src/a.ts', sig: 's-2' } }, 'POST api/reviews/r-1/threads/t-1/messages': { thread: thread(), fileSig: { path: 'src/a.ts', sig: 's-2' } } });
   const user = userEvent.setup();
   renderInReview(<ThreadCard thread={thread()} />);
   await user.type(screen.getByLabelText('Reply'), 'wip');

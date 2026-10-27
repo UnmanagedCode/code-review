@@ -101,7 +101,7 @@ function ReviewThreadPanel() {
   const [status, setStatus] = useState<'open' | 'resolved' | 'all'>('open');
   const [owner, setOwner] = useState<Owner>('all');
   const dropped = useDropped(ctx.id);
-  const index = useThreadIndex(ctx.id, ctx.files, ctx.version, tab === 'all', ctx.round);
+  const index = useThreadIndex(ctx.id, ctx.files, tab === 'all', ctx.round);
   const fileThreads = ctx.fileDiff.file?.threads ?? [];
   const allThreads = index.threads.filter((t) => (status === 'all' || t.status === status) && ownedBy(t, owner));
   const nextUnread = index.threads.find((t) => t.unread > 0);

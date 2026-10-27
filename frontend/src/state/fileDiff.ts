@@ -26,10 +26,8 @@ const combine = (a: Expansions, b: Expansions, pick: (x: number, y: number) => n
 export interface FileDiffOptions {
   reviewId: string;
   path: string | undefined;
-  /** The `sig` of the open file in the view's file list (review detail, or the round view's): the file is refetched when it differs from the cached diff's. */
+  /** The `sig` of the open file in the view's file list (review detail, or the round view's); undefined until that list has loaded. The file is refetched when it differs from the cached diff's. */
   sig?: string;
-  /** The review's load counter: the refetch trigger for a file without a `sig` (backend or response lacking it). */
-  version: number;
   uncommitted: boolean;
   /** Commit-filter view: the file comes from this list and is read-only (no context expansion). */
   commitFiles?: DiffFile[];
@@ -49,33 +47,23 @@ export interface FileDiffOptions {
  * context into the gaps, more open a baseline of each gap edge beside a hunk, and Ignore whitespace merges
  * whitespace-only pairs. `file.hunks` stay git's.
  */
-export function useFileDiff({ reviewId, path, sig, version, uncommitted, commitFiles, round, compare }: FileDiffOptions) {
+export function useFileDiff({ reviewId, path, sig, uncommitted, commitFiles, round, compare }: FileDiffOptions) {
   const prefs = useDiffPrefs();
   const commitMode = !!commitFiles;
   const listed = commitMode || !!compare;
   const key = path && !listed ? diffKey(reviewId, round, path) : null;
-  const versionRef = useRef(version);
-  versionRef.current = version;
-  const fetched = useResource(key, diffSpec(reviewId, round, path ?? '', () => String(versionRef.current)), { keepPrevious: true });
+  const fetched = useResource(key, diffSpec(reviewId, round, path ?? ''), { keepPrevious: true });
   const switching = fetched.placeholder;
-  // Refetch when the cached diff is not the file's current one: its sig differs from the view's, or (a sig missing on either
-  // side) the review's load counter moved past the one the diff was fetched at. That baseline lives on the cache entry
-  // (`dataTag`), so a remount cannot adopt a diff fetched under an unknown one: a missing tag reloads.
+  // Refetch when the cached diff's sig differs from the view's. Compared once per (file, view sig): a local patch
+  // (`patchSig`) moves the cached sig ahead of the view's until the review reloads, and must not read as a stale diff.
   const compared = useRef('');
   useEffect(() => {
-    if (!key || switching || fetched.loading || !fetched.data) return;
-    if (sig !== undefined && fetched.data.sig !== undefined) {
-      // Compared once per (file, view sig): a local patch (`patchSig`) moves the cached sig ahead of the view's until the
-      // review reloads, and must not read as a stale diff.
-      const id = `${key}\0${sig}`;
-      if (compared.current === id) return;
-      compared.current = id;
-      if (fetched.data.sig !== sig) fetched.reload();
-      return;
-    }
-    // A diff fetched before the review ever loaded (tag 0) is as current as the review's first load (version 1).
-    if (fetched.dataTag === undefined || version > Math.max(Number(fetched.dataTag), 1)) fetched.reload();
-  }, [key, sig, version, switching, fetched.loading, fetched.data]);
+    if (!key || sig === undefined || switching || fetched.loading || !fetched.data) return;
+    const id = `${key}\0${sig}`;
+    if (compared.current === id) return;
+    compared.current = id;
+    if (fetched.data.sig !== sig) fetched.reload();
+  }, [key, sig, switching, fetched.loading, fetched.data]);
 
   const file: DiffFile | undefined = commitMode ? commitFiles.find((f) => f.path === path)
     : compare ? compare.files?.find((f) => f.path === path) : fetched.data;
@@ -104,9 +92,9 @@ export function useFileDiff({ reviewId, path, sig, version, uncommitted, commitF
   const hunkSig = file ? file.hunks.map((h) => h.id).join() : '';
   const lineCount = file?.lineCount;
   useEffect(() => {
-    if (!expandable || !path || switching) return;
-    // The response already counted this side of its own round; a comparison reads a round's head instead.
-    if (!compare && lineCount) { setTotal(lineCount[source.side]); return; }
+    if (!expandable || !lineCount || !path || switching) return;
+    // The response counted this side of its own round; a comparison reads a round's head instead.
+    if (!compare) { setTotal(lineCount[source.side]); return; }
     let live = true;
     ep.fileLines(reviewId, path, source.side, 1, 1, source.round).then((r) => { if (live) setTotal(r.total); }, () => {});
     return () => { live = false; };
@@ -212,8 +200,8 @@ export function useFileDiff({ reviewId, path, sig, version, uncommitted, commitF
   }), [patch]);
   const patchVerdict = useCallback((hunkId: string, verdict: Verdict) => patch((f) => ({ ...f, hunks: f.hunks.map((h) => (h.id === hunkId ? { ...h, verdict } : h)) })), [patch]);
   /** The server's new sig for the file a write touched: the patches above made the cached diff match it, so no refetch is due. */
-  const patchSig = useCallback((fs: FileSig | undefined) => {
-    if (fs?.sig && fs.path === path) patch((f) => ({ ...f, sig: fs.sig! }));
+  const patchSig = useCallback((fs: FileSig) => {
+    if (fs.sig && fs.path === path) patch((f) => ({ ...f, sig: fs.sig! }));
   }, [patch, path]);
 
   return {

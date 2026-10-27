@@ -16,22 +16,18 @@ export interface Spec<T> {
   gone?: (e: ReviewEvent, data: T | undefined) => boolean;
   /** Revalidate on mount when older than this. */
   maxAgeMs?: number;
-  /** Read when a fetch starts and kept with the data it returns (`Resource.dataTag`): the baseline a consumer compares later. */
-  tag?: () => string;
 }
 export type Resource<T> = Omit<Fetched<T>, 'reload'> & {
   /** `join`: do nothing if a fetch that started after the last invalidation is already running (a poll or focus kick). */
   reload: (opts?: { join?: boolean }) => void;
   loadedAt: number;
-  /** The `spec.tag` of the fetch that produced `data`. */
-  dataTag?: string;
   /** A `spec.gone` event dropped the entry's data: it was deleted. */
   gone: boolean;
   /** `keepPrevious` is showing the previous key's data while this key loads. */
   placeholder: boolean;
 };
 
-interface Snap<T> { data?: T; error?: unknown; loading: boolean; loadedAt: number; version: number; dataTag?: string; gone: boolean }
+interface Snap<T> { data?: T; error?: unknown; loading: boolean; loadedAt: number; version: number; gone: boolean }
 interface Entry<T> {
   key: string;
   spec: Spec<T>;
@@ -41,7 +37,6 @@ interface Entry<T> {
   loadedAt: number;
   /** Successful loads of this key, across mounts and evictions (`lastLoads`): what `Fetched.version` reports. */
   loads: number;
-  dataTag?: string;
   gone: boolean;
   /** `gen` when the running fetch started. */
   startedGen: number;
@@ -70,7 +65,7 @@ const visible = () => document.visibilityState !== 'hidden';
 const wanted = (e: AnyEntry) => e.listeners.size > 0 && visible();
 
 function publish<T>(e: Entry<T>): void {
-  e.snap = { data: e.data, error: e.error, loading: e.loading, loadedAt: e.loadedAt, version: e.loads, dataTag: e.dataTag, gone: e.gone };
+  e.snap = { data: e.data, error: e.error, loading: e.loading, loadedAt: e.loadedAt, version: e.loads, gone: e.gone };
   e.listeners.forEach((l) => l());
 }
 const invalidate = (e: AnyEntry) => { e.stale = true; e.staleGen = ++gen; };
@@ -79,7 +74,6 @@ const invalidate = (e: AnyEntry) => { e.stale = true; e.staleGen = ++gen; };
 function load<T>(e: Entry<T>): Promise<void> {
   if (e.inflight) return e.inflight;
   const started = gen;
-  const tag = e.spec.tag?.();
   e.startedGen = started;
   e.loading = true;
   publish(e);
@@ -87,7 +81,7 @@ function load<T>(e: Entry<T>): Promise<void> {
     .then(() => e.spec.fetch())
     .then(
       (data) => {
-        e.data = data; e.dataTag = tag; e.error = undefined; e.loadedAt = Date.now(); e.loads++;
+        e.data = data; e.error = undefined; e.loadedAt = Date.now(); e.loads++;
         if (e.staleGen <= started) e.stale = false;
       },
       (error) => { e.error = error; },
@@ -230,7 +224,7 @@ export function useResource<T>(key: string | null, spec: Spec<T>, opts: { keepPr
   const placeholder = !!opts.keepPrevious && pending && last.current !== undefined;
   return {
     data: placeholder ? last.current : snap.data, error: snap.error, loading: snap.loading || pending, version: snap.version,
-    loadedAt: snap.loadedAt, dataTag: snap.dataTag, gone: snap.gone, placeholder, reload, mutate,
+    loadedAt: snap.loadedAt, gone: snap.gone, placeholder, reload, mutate,
   };
 }
 

@@ -429,8 +429,8 @@ test('wide: focusing an unread thread posts exactly one read mark, though two ca
   let read = false;
   const t1 = () => thread({ unread: read ? 0 : 1 });
   const net = stubFetch({
-    'GET api/reviews/r-1': () => ({ review: review(), files: [fileState()], rounds: [], submissions: [], outdatedThreads: [] }),
-    'GET api/reviews/r-1/diff': () => ({ review: review(), files: [diffFile({ threads: [t1()] })] }),
+    'GET api/reviews/r-1': () => ({ review: review(), files: [fileState({ sig: read ? 's2' : 's1' })], rounds: [], submissions: [], outdatedThreads: [] }),
+    'GET api/reviews/r-1/diff': () => ({ review: review(), files: [diffFile({ sig: read ? 's2' : 's1', threads: [t1()] })] }),
     'GET api/reviews/r-1/commits': { commits: [] },
     'POST api/reviews/r-1/read': () => { read = true; return { review: review() }; },
     'GET api/sessions': { sessions: [] },

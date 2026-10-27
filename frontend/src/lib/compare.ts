@@ -21,7 +21,7 @@ export function dedupeCopies<T extends Thread>(threads: T[]): ShownThread<T>[] {
 }
 
 /** A comparison file as the file tree shows it: thread counts over distinct threads, each at its shown copy's status. */
-export function compareFileState(f: { path: string; oldPath: string | null; status: FileState['status']; binary: boolean; tooLarge: boolean; additions: number; deletions: number; hunks: unknown[]; threads: Thread[] }): FileState {
+export function compareFileState(f: { path: string; oldPath: string | null; status: FileState['status']; binary: boolean; tooLarge: boolean; additions: number; deletions: number; hunks: unknown[]; threads: Thread[]; sig: string }): FileState {
   const threads: ThreadCounts = { open: 0, resolved: 0, outdated: 0 };
   for (const { thread } of dedupeCopies(f.threads)) threads[thread.status]++;
   return { ...f, hunks: f.hunks.length, verdicts: null, threads, unread: 0 };

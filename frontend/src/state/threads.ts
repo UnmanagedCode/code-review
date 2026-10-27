@@ -20,7 +20,7 @@ export function useReviewActions() {
       return undefined;
     }
   }
-  const landed = ({ thread, fileSig }: { thread: Thread; fileSig?: FileSig }) => { fileDiff.patchThread(thread); fileDiff.patchSig(fileSig); reload(); return thread; };
+  const landed = ({ thread, fileSig }: { thread: Thread; fileSig: FileSig }) => { fileDiff.patchThread(thread); fileDiff.patchSig(fileSig); reload(); return thread; };
 
   return {
     createThread: (input: { anchor: ThreadAnchorInput; kind: ThreadKind; severity?: Severity; body: string }) =>

@@ -496,6 +496,9 @@ test('annotate: an anchor spec with an unknown kind, a key its kind does not tak
     { kind: 'file', file: 'a.js', hunkId }, { kind: 'file' },
     { kind: 'review', file: 'a.js' }, { kind: 'review', startLine: 2 }, { kind: 'review', side: 'new' }, { kind: 'review', hunkId },
     { kind: 'hunk', hunkId, file: 'a.js' }, { kind: 'hunk', hunkId, startLine: 2 }, { kind: 'hunk' },
+    // keys no kind takes, given values (REST passes the anchor object through)
+    { kind: 'review', round: 2 }, { kind: 'file', file: 'a.js', linesHash: 'x' }, { kind: 'lines', file: 'a.js', startLine: 2, drifted: false },
+    { kind: 'hunk', hunkId, extra: null },
   ];
   for (const anchor of bad) {
     const res = await say(review.id, anchor);
@@ -504,6 +507,26 @@ test('annotate: an anchor spec with an unknown kind, a key its kind does not tak
   }
   const after = store.read(review.id);
   assert.deepEqual([after.seq, after.threads], [before.seq, before.threads]);
+});
+
+test('annotate: a refused anchor that lacks what its kind needs names only what is missing, in domain words', async () => {
+  // Invariant: checkSpec's needs refusal lists exactly the missing fields (file, start line, hunk), never one that was given.
+  const { review } = await rangeReview();
+  const reason = async (anchor) => {
+    const res = await say(review.id, anchor);
+    assert.equal(codeOf(res), 'INVALID_ARGUMENT');
+    return res.reason;
+  };
+  const noStart = await reason({ kind: 'lines', file: 'a.js' });
+  assert.match(noStart, /start line/);
+  assert.doesNotMatch(noStart, /\bfile\b/);
+  const noFile = await reason({ kind: 'lines', startLine: 2 });
+  assert.match(noFile, /\bfile\b/);
+  assert.doesNotMatch(noFile, /start line/);
+  const neither = await reason({ kind: 'lines' });
+  assert.match(neither, /\bfile\b.*start line|start line.*\bfile\b/);
+  assert.match(await reason({ kind: 'file' }), /\bfile\b/);
+  assert.match(await reason({ kind: 'hunk' }), /\bhunk\b/);
 });
 
 test('mergeBlockers counts an open question alike on every anchor kind, on range and uncommitted reviews; findings and comments never', async () => {

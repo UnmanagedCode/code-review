@@ -1,5 +1,5 @@
 import { MessageSquarePlusIcon } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type FocusEvent } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { NativeSelect } from '@/components/ui/native-select';
@@ -15,8 +15,10 @@ import { CompareNote, UnplacedNote } from '@/features/diff/CompareNote';
 import { Composer } from './Composer';
 import { ThreadCard, threadPlace } from './ThreadCard';
 
-// More filter tabs than a narrow pane fits scroll sideways instead of overflowing it.
+// More filter tabs than a narrow pane fits scroll sideways instead of overflowing it; a tab that takes focus (arrow keys)
+// is scrolled into view, which Safari does not do by itself.
 const FILTER_TABS = 'm-3 w-auto justify-start overflow-x-auto';
+const showFocusedTab = (e: FocusEvent<HTMLElement>) => (e.target as HTMLElement).scrollIntoView?.({ inline: 'nearest', block: 'nearest' });
 
 type Owner = 'all' | 'user' | 'agents';
 const ownedBy = (t: Thread, owner: Owner) => owner === 'all' || (t.openedBy.kind === 'human') === (owner === 'user');
@@ -79,7 +81,7 @@ function CompareThreadPanel({ compare }: { compare: NonNullable<ReturnType<typeo
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <Tabs value={tab} onValueChange={setTab} className="min-h-0 flex-1 gap-0">
-        <TabsList aria-label="Thread filter" className={FILTER_TABS}>
+        <TabsList aria-label="Thread filter" className={FILTER_TABS} onFocus={showFocusedTab}>
           <TabsTrigger value="file">This file</TabsTrigger>
           <TabsTrigger value="all">All <Badge variant="secondary">{every.length}</Badge></TabsTrigger>
           <TabsTrigger value="unplaced">Not in diff <Badge variant="secondary">{unplaced.length}</Badge></TabsTrigger>
@@ -123,6 +125,9 @@ function ReviewThreadPanel() {
   const [status, setStatus] = useState<'open' | 'resolved' | 'all'>('open');
   const [owner, setOwner] = useState<Owner>('all');
   const dropped = useDropped(ctx.id);
+  // A past round's review threads are unknown until it loads: no list and no "nothing here" before then.
+  const load = ctx.viewLoad;
+  const reviewGate = load && !load.loaded ? load.error ? <ErrorState error={load.error} onRetry={load.reload} /> : <Loading label="Loading threads" rows={3} /> : null;
   const index = useThreadIndex(ctx.id, ctx.files, tab === 'all', ctx.round);
   const fileThreads = ctx.fileDiff.file?.threads ?? [];
   // The file-bound threads, then the review's own: together what the All badge counts.
@@ -133,7 +138,7 @@ function ReviewThreadPanel() {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <Tabs value={tab} onValueChange={setTab} className="min-h-0 flex-1 gap-0">
-        <TabsList aria-label="Thread filter" className={FILTER_TABS}>
+        <TabsList aria-label="Thread filter" className={FILTER_TABS} onFocus={showFocusedTab}>
           <TabsTrigger value="file">This file</TabsTrigger>
           <TabsTrigger value="all">All <Badge variant="secondary">{counts.open + counts.resolved}</Badge></TabsTrigger>
           <TabsTrigger value="outdated">Outdated <Badge variant="secondary">{ctx.outdatedThreads.length}</Badge></TabsTrigger>
@@ -168,7 +173,7 @@ function ReviewThreadPanel() {
                   : <Button size="sm" variant="outline" onClick={() => setComposing(true)}><MessageSquarePlusIcon />New review thread</Button>}
               </div>
             )}
-            {ctx.reviewThreads.length ? list(ctx.reviewThreads) : <Empty title="No threads on the review">Threads here are about the review as a whole.</Empty>}
+            {reviewGate ?? (ctx.reviewThreads.length ? list(ctx.reviewThreads) : <Empty title="No threads on the review">Threads here are about the review as a whole.</Empty>)}
           </TabsContent>
           <TabsContent value="dropped">{list(dropped, { dropped: true })}</TabsContent>
         </div>

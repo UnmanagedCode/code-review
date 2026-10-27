@@ -98,7 +98,7 @@ export function ReviewView({ id, chrome }: { id: string; chrome?: ReactNode }) {
       ...detail, id, commit: route.commit, readOnly, fileDiff, version: rv.version, sessions: sessions.data?.sessions ?? [],
       files: treeFiles, reload: rv.reload, applyReview: rv.applyReview,
       round, compare: compare && { ...compare, view: compareView.data }, pastView,
-      viewLoad: past && { loading: past.loading && !past.data, error: past.error, reload: past.reload },
+      viewLoad: past && { loading: past.loading && !past.data, error: past.error, loaded: !!past.data, reload: past.reload },
       outdatedThreads: past ? (round !== undefined && roundView.data?.outdatedThreads) || [] : detail.outdatedThreads,
       reviewThreads: past ? past.data?.reviewThreads ?? [] : detail.reviewThreads,
       threadCounts: past ? past.data?.counts ?? NO_THREADS : detail.review.counts.threads,

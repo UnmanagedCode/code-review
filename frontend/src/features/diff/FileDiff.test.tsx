@@ -1,6 +1,6 @@
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { expect, test } from 'vitest';
+import { expect, test, vi } from 'vitest';
 import { diffFile, hunk, message, review, thread, linesAnchor } from '@/test/fixtures';
 import type { Thread } from '@/lib/types';
 import { stubFetch } from '@/test/stubFetch';
@@ -131,4 +131,19 @@ test('a binary file shows its file threads', () => {
   withRoute('img.png');
   renderDiff(<FileDiff />, diffFile({ ...BINARY, threads: [onFile({ anchor: { kind: 'file', file: 'img.png', round: 1 } })] }));
   expect(within(screen.getByRole('region', { name: 'File threads' })).getAllByRole('article')).toHaveLength(1);
+});
+
+// Invariant: opening the file composer from the sticky header brings it into view (the diff may be scrolled far below),
+// and it comes first in the block, before the file's threads.
+test('Comment on file scrolls its composer into view, above the file\'s threads', async () => {
+  withRoute('src/a.ts');
+  const scrolled: Element[] = [];
+  const spy = vi.spyOn(HTMLElement.prototype, 'scrollIntoView').mockImplementation(function (this: HTMLElement) { scrolled.push(this); });
+  renderDiff(<FileDiff />, diffFile({ threads: [onFile()] }));
+  await userEvent.setup().click(screen.getByRole('button', { name: 'Comment on file' }));
+  const form = screen.getByRole('form', { name: 'Comment on This file' });
+  expect(scrolled.some((el) => el === form || el.contains(form))).toBe(true);
+  const block = screen.getByRole('region', { name: 'File threads' });
+  expect(form.compareDocumentPosition(within(block).getByRole('article')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  spy.mockRestore();
 });

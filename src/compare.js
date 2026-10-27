@@ -18,11 +18,11 @@ const outdatedRound = (t) => (t.status === 'outdated' ? anchorChain(t).at(-1).ro
  */
 function placeCopy(c, files) {
   const from = c.placement === 'from';
-  const lines = c.anchor.kind === 'lines';
-  if (lines && c.anchor.side === 'old') return { reason: 'base-side' };
+  const wholeFile = c.anchor.kind === 'file';
+  if (!wholeFile && c.anchor.side === 'old') return { reason: 'base-side' };
   const f = files.find((x) => (from ? (x.oldPath ?? x.path) === c.anchor.file && x.status !== 'added' : x.path === c.anchor.file && x.status !== 'deleted'));
   if (!f) return { reason: 'unchanged-file' };
-  if (!lines) return { path: f.path, copy: { ...c, anchor: { ...c.anchor, file: f.path } } };
+  if (wholeFile) return { path: f.path, copy: { ...c, anchor: { ...c.anchor, file: f.path } } };
   if (f.binary || f.tooLarge) return { reason: 'no-lines' };
   const anchor = { ...c.anchor, file: f.path, side: from ? 'old' : 'new' };
   anchor.hunkId = hunkFor(anchor, f.hunks);

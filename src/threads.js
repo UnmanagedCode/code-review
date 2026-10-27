@@ -42,22 +42,23 @@ const ANCHOR_KINDS = {
   file: { takes: ['file'], needs: ['file'] },
   review: { takes: [], needs: [] },
 };
-// Spec keys in domain words, so one refusal reads the same over REST and MCP.
-const WORDS = { file: 'file', startLine: 'lines', endLine: 'lines', side: 'side', hunkId: 'hunk' };
-const words = (keys) => {
-  const w = [...new Set(keys.map((k) => WORDS[k]))];
-  return w.length > 1 ? `${w.slice(0, -1).join(', ')} or ${w.at(-1)}` : w[0];
-};
+// Spec keys in domain words, so one refusal reads the same over REST and MCP and never names a key.
+const WORDS = { file: 'a file', side: 'a side', startLine: 'a start line', endLine: 'an end line', hunkId: 'a hunk' };
+const list = (w) => (w.length > 1 ? `${w.slice(0, -1).join(', ')} and ${w.at(-1)}` : w[0]);
 
-/** Refuses an anchor spec whose kind is unknown, or that carries what its kind does not take or lacks what it needs. */
+/**
+ * Refuses an anchor spec whose kind is unknown, that carries any key (not `undefined`) besides `kind` and what its kind
+ * takes, or that lacks what its kind needs (naming only what is missing).
+ */
 function checkSpec(spec) {
   if (!spec || typeof spec !== 'object') throw invalid('anchor is required');
   if (typeof spec.kind !== 'string' || !Object.hasOwn(ANCHOR_KINDS, spec.kind)) throw invalid(`anchor kind must be one of ${Object.keys(ANCHOR_KINDS).join(', ')}`);
   const kind = ANCHOR_KINDS[spec.kind];
-  const foreign = Object.keys(WORDS).filter((k) => !kind.takes.includes(k));
-  if (foreign.some((k) => spec[k] !== undefined)) throw invalid(`a ${spec.kind} anchor takes no ${words(foreign)}`);
+  if (Object.keys(spec).some((k) => k !== 'kind' && !kind.takes.includes(k) && spec[k] !== undefined)) {
+    throw invalid(`a ${spec.kind} anchor takes ${kind.takes.length ? `only ${list(kind.takes.map((k) => WORDS[k]))}` : 'nothing besides its kind'}`);
+  }
   const lacking = kind.needs.filter((k) => spec[k] === undefined);
-  if (lacking.length) throw invalid(`a ${spec.kind} anchor needs ${kind.needs.map((k) => WORDS[k]).join(' and ')}`);
+  if (lacking.length) throw invalid(`a ${spec.kind} anchor needs ${list(lacking.map((k) => WORDS[k]))}`);
 }
 
 // A checked spec -> a complete anchor; `snap` (the current snapshot) is null for a review anchor, which reads none.

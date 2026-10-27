@@ -99,7 +99,7 @@ REST under `/api` (JSON), an SSE stream, and the cc MCP endpoint. Behaviour behi
 
 ### Anchor checks
 
-One implementation (`buildAnchor` in `src/threads.js`) serves `POST …/threads` and MCP `annotate`. Each refusal below is `INVALID_ARGUMENT`, worded in domain terms (file, lines, side, hunk), never key names; nothing is written.
+One implementation (`buildAnchor` in `src/threads.js`) serves `POST …/threads` and MCP `annotate`. Each refusal below is `INVALID_ARGUMENT`, worded in domain terms (a file, a side, a start line, an end line, a hunk), never key names; nothing is written.
 
 | `anchor.kind` | Takes (besides `kind`) | Needs | Then |
 |---|---|---|---|
@@ -108,8 +108,8 @@ One implementation (`buildAnchor` in `src/threads.js`) serves `POST …/threads`
 | `file` | `file` | `file` | `FILE_NOT_IN_DIFF`; any file in the diff, binary and too large included |
 | `review` | nothing | nothing | reads no snapshot, so it is written even while the diff is unreadable |
 
-- Refused: no anchor; a `kind` missing or not one of the four; any key the kind does not take (present = not `undefined`); a key it needs missing.
-- MCP passes its `side` through undefined when absent, so `side` on a `file` anchor is refused rather than defaulted.
+- Refused: no anchor; a `kind` missing or not one of the four; any key besides `kind` and what the kind takes, unknown keys included (present = not `undefined`; the refusal says what the kind takes); a key it needs missing (the refusal names only the missing ones).
+- MCP passes its `side` through undefined when absent and the `annotate` schema declares no default for it, so `side` on a `file` anchor is refused rather than defaulted.
 
 ### SSE
 

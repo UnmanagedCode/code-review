@@ -870,6 +870,22 @@ try {
   await withPage(async (page) => {
     const errors = watchErrors(page);
     const shot = shotter(page);
+    // From a diff scrolled to its end, the header's Comment on file brings the composer into view below the sticky header.
+    await page.goto(q({ review: range, file: 'a.js' }));
+    const aGrid = page.getByRole('grid', { name: /a\.js/ });
+    await aGrid.waitFor();
+    await page.locator('[role=row]').last().scrollIntoViewIfNeeded();
+    assert.ok((await aGrid.boundingBox()).y < 0, 'the diff is scrolled past its top');
+    await page.getByRole('button', { name: 'Comment on file' }).click();
+    const aForm = page.getByRole('form', { name: 'Comment on This file' });
+    await aForm.waitFor();
+    await page.waitForTimeout(100); // the scroll runs after the composer mounts
+    const header = await page.getByRole('button', { name: 'Comment on file' }).evaluate((b) => b.closest('.sticky').getBoundingClientRect().bottom);
+    const box = await aForm.boundingBox();
+    assert.ok(box.y >= header - 1 && box.y + box.height <= 800, `the file composer is in view below the header (top ${box.y}, header ${header})`);
+    await shot('19-file-composer-scrolled');
+    await aForm.getByRole('button', { name: 'Cancel' }).click();
+
     await page.goto(q({ review: range, file: 'c.js' }));
     await page.getByRole('grid', { name: /c\.js/ }).waitFor();
     await page.getByRole('button', { name: 'Comment on file' }).click();

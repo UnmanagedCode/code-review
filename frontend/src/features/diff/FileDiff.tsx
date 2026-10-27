@@ -1,5 +1,5 @@
 import { ArrowLeftIcon, ChevronLeftIcon, ChevronRightIcon, MessageSquarePlusIcon } from 'lucide-react';
-import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode, type Ref } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { dedupeCopies, type ShownThread } from '@/lib/compare';
@@ -38,12 +38,12 @@ import { ViewToggle } from './ViewToggle';
 export const CHUNK_ROWS = 1500;
 const byId = (a: Thread, b: Thread) => a.id.localeCompare(b.id, undefined, { numeric: true });
 
-function FileHeader({ file, files, onBack, extra, view, options, onComment }: { file: DiffFile; files: { path: string }[]; onBack?: () => void; extra?: ReactNode; view?: { chosen: DiffView; choose: (v: DiffView) => void }; options: boolean; onComment?: () => void }) {
+function FileHeader({ ref, file, files, onBack, extra, view, options, onComment }: { ref?: Ref<HTMLDivElement>; file: DiffFile; files: { path: string }[]; onBack?: () => void; extra?: ReactNode; view?: { chosen: DiffView; choose: (v: DiffView) => void }; options: boolean; onComment?: () => void }) {
   const { round, compare } = useReviewCtx();
   const i = files.findIndex((f) => f.path === file.path);
   const go = (path: string) => navigate({ file: path, lines: undefined, side: undefined, thread: undefined });
   return (
-    <div className="sticky top-0 z-10 flex flex-wrap items-center gap-2 border-b bg-background px-3 py-2">
+    <div ref={ref} className="sticky top-0 z-10 flex flex-wrap items-center gap-2 border-b bg-background px-3 py-2">
       {onBack && <Button variant="ghost" size="icon-sm" aria-label="Back to files" onClick={onBack}><ArrowLeftIcon /></Button>}
       <div className="min-w-0 flex-1 basis-24">
         <p className="truncate font-mono text-sm font-medium" title={file.path}>{file.path}</p>
@@ -138,6 +138,16 @@ export function FileDiff({ onBack, extra }: { onBack?: () => void; extra?: React
   }, [ownDropped]);
   // The file's composer is open for this path only, so another file never inherits it.
   const [composingOn, setComposingOn] = useState<string | null>(null);
+  // Comment on file is in the sticky header, so the diff may be scrolled far below the block: bring the composer into view,
+  // clear of the header (its height varies as it wraps).
+  const headerRef = useRef<HTMLDivElement>(null);
+  const fileComposerRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = fileComposerRef.current;
+    if (!el) return;
+    el.style.scrollMarginTop = `${headerRef.current?.offsetHeight ?? 0}px`;
+    el.scrollIntoView?.({ block: 'nearest' });
+  }, [composingOn, file?.path]);
 
   // Open context that hides any line of a thread's range, of the cited lines, or (after a Diff options change) of the selection.
   const revealKey = `${file?.path}|${file?.threads.map((t) => t.id).join()}|${route.lines}|${targetSide}|${ctx.fileDiff.total}|${prefs.context}|${prefs.ignoreWhitespace}`;
@@ -258,14 +268,15 @@ export function FileDiff({ onBack, extra }: { onBack?: () => void; extra?: React
   return (
     <div ref={diffView.paneRef} aria-busy={switching || undefined} inert={switching || undefined} className={cn('flex min-w-0 flex-col', switching && 'opacity-60')}>
       <FileHeader
+        ref={headerRef}
         file={file} files={ctx.files} onBack={onBack} extra={extra} view={textFile && diffView.available ? diffView : undefined} options={textFile}
         onComment={enabled ? () => setComposingOn(file.path) : undefined}
       />
       {(fileThreads.length > 0 || fileTombstones.length > 0 || composingFile) && (
         <section aria-label="File threads" className="flex flex-col gap-2 border-b px-3 py-2 text-sm">
+          {composingFile && <div ref={fileComposerRef}><Composer anchor={{ kind: 'file', file: file.path }} label="This file" onClose={() => setComposingOn(null)} /></div>}
           {fileTombstones.map((t) => <p key={t.id} className="text-xs text-muted-foreground">Thread {t.id} dropped: its file left the diff</p>)}
           {fileThreads.map(settledThread)}
-          {composingFile && <Composer anchor={{ kind: 'file', file: file.path }} label="This file" onClose={() => setComposingOn(null)} />}
         </section>
       )}
       {!textFile && (

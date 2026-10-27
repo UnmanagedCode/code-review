@@ -1,6 +1,6 @@
 import manifest from '../conductor.plugin.json' with { type: 'json' };
 
-// Mirrors `parseRoute`'s grammar and `at()` in ThreadCard.tsx; tests/links.test.js round-trips through the real `parseRoute`.
+// Mirrors `parseRoute`'s grammar and `threadPlace` in ThreadCard.tsx; tests/links.test.js round-trips through the real `parseRoute`.
 const PLUGIN_ID = manifest.id;
 // The order of `KEYS` in frontend/src/lib/route.ts.
 const ORDER = ['project', 'worktree', 'review', 'file', 'side', 'lines', 'thread', 'commit', 'round', 'compare', 'view'];

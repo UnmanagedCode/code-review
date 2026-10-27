@@ -113,7 +113,7 @@ test('in a comparison, All lists each thread once and This file dedupes the open
 // Invariant: a failed comparison shows its error with Retry in every tab, never a list or a "nothing here" claim.
 test('in a failed comparison every tab shows the error with Retry, and Retry reloads the comparison', async () => {
   const reload = vi.fn();
-  const viewLoad = { loading: false, error: { code: 'SNAPSHOT_GONE', reason: 'gone' }, reload };
+  const viewLoad = { loading: false, error: { code: 'SNAPSHOT_GONE', reason: 'gone' }, loaded: false, reload };
   render(<ReviewProvider value={comparison({ compare: { from: 1, to: 2 }, viewLoad, fileDiff: { file: undefined } as never })}><ThreadPanel /></ReviewProvider>);
   const user = userEvent.setup();
   for (const tab of [/^This file/, /^All/, /^Not in diff/]) {
@@ -128,7 +128,7 @@ test('in a failed comparison every tab shows the error with Retry, and Retry rel
 
 // Invariant: before the comparison has loaded, every tab says it is loading, never that it is empty.
 test('while a comparison loads every tab shows Loading, not an empty claim', async () => {
-  const viewLoad = { loading: true, error: undefined, reload: vi.fn() };
+  const viewLoad = { loading: true, error: undefined, loaded: false, reload: vi.fn() };
   render(<ReviewProvider value={comparison({ compare: { from: 1, to: 2 }, viewLoad, fileDiff: { file: undefined } as never })}><ThreadPanel /></ReviewProvider>);
   const user = userEvent.setup();
   for (const tab of [/^This file/, /^All/, /^Not in diff/]) {
@@ -141,7 +141,7 @@ test('while a comparison loads every tab shows Loading, not an empty claim', asy
 
 // Invariant: a failed reload keeps the comparison already loaded (useFetch retains its data), so its lists stay.
 test('a loaded comparison whose reload failed still lists its threads in every tab', async () => {
-  const viewLoad = { loading: false, error: { code: 'SYSTEM_UNREACHABLE', reason: 'down' }, reload: vi.fn() };
+  const viewLoad = { loading: false, error: { code: 'SYSTEM_UNREACHABLE', reason: 'down' }, loaded: true, reload: vi.fn() };
   render(<ReviewProvider value={comparison({ viewLoad })}><ThreadPanel /></ReviewProvider>);
   const user = userEvent.setup();
   for (const [tab, n] of [[/^This file/, 2], [/^All/, 3], [/^Not in diff/, 1]] as const) {
@@ -294,4 +294,37 @@ test('in a comparison the Review tab lists the review threads read-only, and All
   await user.click(screen.getByRole('tab', { name: /^All/ }));
   const card = screen.getAllByRole('article').find((a) => within(a).queryByRole('button', { name: 'Review' }))!;
   expect(card.textContent).not.toMatch(/round \d/);
+});
+
+// Invariant: in a past round the Review tab claims nothing until the round has loaded: a load shows Loading, a failed first
+// load its error with Retry; a loaded round wins over a later error (a failed reload keeps the data).
+test('in a past round the Review tab waits for the round, shows its error with Retry, and keeps loaded threads', async () => {
+  const user = userEvent.setup();
+  const reload = vi.fn();
+  const past = (viewLoad: { loading: boolean; error: unknown; loaded: boolean }, reviewThreads: Thread[] = []) =>
+    <ReviewProvider value={ctxValue({ round: 1, readOnly: true, viewLoad: { ...viewLoad, reload }, reviewThreads, fileDiff: { file: undefined } as never })}><ThreadPanel /></ReviewProvider>;
+  const { rerender } = render(past({ loading: true, error: undefined, loaded: false }));
+  await user.click(reviewTab());
+  const panel = () => screen.getByRole('tabpanel', { name: /^Review/ });
+  expect(within(panel()).getByRole('status', { name: 'Loading threads' })).toBeTruthy();
+  expect(within(panel()).queryByText('No threads on the review')).toBeNull();
+  rerender(past({ loading: false, error: { code: 'SNAPSHOT_GONE', reason: 'gone' }, loaded: false }));
+  expect(within(panel()).queryByText('No threads on the review')).toBeNull();
+  await user.click(within(panel()).getByRole('button', { name: 'Retry' }));
+  expect(reload).toHaveBeenCalled();
+  rerender(past({ loading: false, error: { code: 'SNAPSHOT_GONE', reason: 'gone' }, loaded: true }, [onReview()]));
+  expect(within(panel()).getAllByRole('article')).toHaveLength(1);
+});
+
+// Invariant: a filter tab that takes focus is scrolled into view within the sideways-scrolling strip, without scrolling the page.
+test('a focused filter tab is scrolled into view', async () => {
+  const scrolled = vi.fn();
+  const spy = vi.spyOn(HTMLElement.prototype, 'scrollIntoView').mockImplementation(function (this: HTMLElement, arg) { scrolled(this, arg); });
+  render(<ReviewProvider value={ctxValue({ fileDiff: { file: undefined } as never })}><ThreadPanel /></ReviewProvider>);
+  screen.getByRole('tab', { name: /^This file/ }).focus();
+  await userEvent.setup().keyboard('{ArrowRight}');
+  const all = screen.getByRole('tab', { name: /^All/ });
+  expect(document.activeElement).toBe(all);
+  expect(scrolled).toHaveBeenCalledWith(all, { inline: 'nearest', block: 'nearest' });
+  spy.mockRestore();
 });

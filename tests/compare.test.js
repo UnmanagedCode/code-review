@@ -174,6 +174,17 @@ describe('placeThreads', () => {
     assert.deepEqual(res.unplaced.map((c) => [c.id, c.reason]), [['t3', 'unchanged-file']]);
   });
 
+  test('a copy whose anchor is not a file anchor is placed by its lines, even with no kind', () => {
+    // Invariant: placeCopy takes the file path only for kind 'file'; any other anchor gets the lines rules (base-side, no-lines, side and hunk).
+    const bare = (round, startLine, extra = {}) => { const { kind: _k, ...rest } = pos(round, startLine, extra); return rest; };
+    const t = thread('t1', { pastAnchors: [bare(1, 4)], anchor: { ...stored(2, 9), kind: undefined } });
+    const base = thread('t2', { pastAnchors: [bare(1, 5, { side: 'old' })], anchor: { ...stored(2, 5, { side: 'old' }), kind: undefined } });
+    const bin = thread('t3', { pastAnchors: [bare(1, 5, { file: 'bin' })], anchor: { ...stored(2, 5, { file: 'bin' }), kind: undefined } });
+    const res = place([t, base, bin], 1, 2, [file('a.js', { hunks: [hunk('c1', 3, 3, 3, 1), hunk('c2', 8, 1, 6, 4)] }), file('bin', { binary: true })]);
+    assert.deepEqual([copy(res, 'a.js', 't1', 'to').anchor.side, copy(res, 'a.js', 't1', 'to').anchor.hunkId], ['new', 'c2']);
+    assert.deepEqual(res.unplaced.map((c) => [c.id, c.reason]), [['t2', 'base-side'], ['t3', 'no-lines']]);
+  });
+
   test('review threads are never placed, never unplaced and not counted', () => {
     // Invariant: copies() skips review anchors, so the comparison's files, unplaced and counts hold only file-bound threads.
     const r = thread('t1', { anchor: { kind: 'review', round: 1 } });
@@ -406,13 +417,13 @@ test('every anchor the comparison serves is positional only: no stored lines or 
 });
 
 test('a comparison serves the review threads as of round B, apart from the files', async () => {
-  // Invariant: compareRounds.reviewThreads is reviewThreadsAt(B); review threads are in no file's threads and not in unplaced.
-  const { wt, review } = await threeRounds();
+  // Invariant: compareRounds.reviewThreads is reviewThreadsAt(B), not A's nor the current round's: a thread first opened in
+  // round B is listed in A..B, and absent from an earlier comparison while the review's current round holds it.
+  // Review threads are in no file's threads and not in unplaced.
+  const { review } = await threeRounds();
   const r = ok(await threads.annotate(review.id, HUMAN, { anchor: { kind: 'review' }, kind: 'comment', body: 'overall' })).thread;
-  wt.commit({ 'b.js': 'b-edit-4\n' });
-  ok(await reviews.refreshReview(review.id, HUMAN));
   const early = await compare(review.id, 1, 2);
-  const late = await compare(review.id, 3, 4);
+  const late = await compare(review.id, 2, 3);
   assert.deepEqual(early.reviewThreads, []);
   assert.deepEqual(late.reviewThreads.map((t) => t.id), [r.id]);
   for (const res of [early, late]) {

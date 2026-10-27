@@ -211,8 +211,7 @@
                 "old",
                 "new"
               ],
-              "default": "new",
-              "description": "Which side of the diff the lines are on; lines anchors only."
+              "description": "Which side of the diff the lines are on (default new); lines anchors only."
             },
             "startLine": {
               "type": "integer",

@@ -328,3 +328,21 @@ test('a focused filter tab is scrolled into view', async () => {
   expect(scrolled).toHaveBeenCalledWith(all, { inline: 'nearest', block: 'nearest' });
   spy.mockRestore();
 });
+
+// Invariant: until a past round has loaded, no filter tab lists threads or claims there are none: each shows Loading,
+// then the load error with Retry (as the comparison panel does).
+test.each(['This file', 'All', 'Outdated', 'Review'])('in a past round still loading, %s shows Loading, then the error with Retry', async (name) => {
+  const user = userEvent.setup();
+  const reload = vi.fn();
+  const past = (viewLoad: { loading: boolean; error: unknown }) =>
+    <ReviewProvider value={ctxValue({ round: 1, readOnly: true, files: [], viewLoad: { ...viewLoad, loaded: false, reload }, fileDiff: { file: undefined } as never })}><ThreadPanel /></ReviewProvider>;
+  const { rerender } = render(past({ loading: true, error: undefined }));
+  await user.click(screen.getByRole('tab', { name: new RegExp(`^${name}`) }));
+  const panel = () => screen.getByRole('tabpanel', { name: new RegExp(`^${name}`) });
+  expect(within(panel()).getByRole('status', { name: 'Loading threads' })).toBeTruthy();
+  expect(within(panel()).queryByText(/^No /)).toBeNull();
+  rerender(past({ loading: false, error: { code: 'SNAPSHOT_GONE', reason: 'gone' } }));
+  expect(within(panel()).queryByText(/^No /)).toBeNull();
+  await user.click(within(panel()).getByRole('button', { name: 'Retry' }));
+  expect(reload).toHaveBeenCalled();
+});

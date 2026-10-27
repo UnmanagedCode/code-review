@@ -125,9 +125,9 @@ function ReviewThreadPanel() {
   const [status, setStatus] = useState<'open' | 'resolved' | 'all'>('open');
   const [owner, setOwner] = useState<Owner>('all');
   const dropped = useDropped(ctx.id);
-  // A past round's review threads are unknown until it loads: no list and no "nothing here" before then.
+  // A past round's threads are unknown until it loads: no tab lists any, nor claims there are none, before then.
   const load = ctx.viewLoad;
-  const reviewGate = load && !load.loaded ? load.error ? <ErrorState error={load.error} onRetry={load.reload} /> : <Loading label="Loading threads" rows={3} /> : null;
+  const gate = load && !load.loaded ? load.error ? <ErrorState error={load.error} onRetry={load.reload} /> : <Loading label="Loading threads" rows={3} /> : null;
   const index = useThreadIndex(ctx.id, ctx.files, tab === 'all', ctx.round);
   const fileThreads = ctx.fileDiff.file?.threads ?? [];
   // The file-bound threads, then the review's own: together what the All badge counts.
@@ -147,7 +147,7 @@ function ReviewThreadPanel() {
         </TabsList>
         <div className="min-h-0 flex-1 overflow-y-auto">
           <TabsContent value="file">
-            {fileThreads.length ? list(fileThreads) : <Empty title="No threads in this file">Select lines in the gutter to start a thread.</Empty>}
+            {gate ?? (fileThreads.length ? list(fileThreads) : <Empty title="No threads in this file">Select lines in the gutter to start a thread.</Empty>)}
           </TabsContent>
           <TabsContent value="all">
             <div className="flex flex-wrap items-center gap-2 px-3">
@@ -158,12 +158,12 @@ function ReviewThreadPanel() {
               <OwnerSelect value={owner} onChange={setOwner} />
               <Button size="sm" variant="outline" disabled={!nextUnread} onClick={() => nextUnread && navigate(threadPlace(nextUnread))}>Next unread</Button>
             </div>
-            {index.loading && !index.threads.length ? <Loading label="Loading threads" rows={3} />
+            {gate ?? (index.loading && !index.threads.length ? <Loading label="Loading threads" rows={3} />
               : index.error ? <ErrorState error={index.error} />
-                : allThreads.length ? list(allThreads, { showLocation: true }) : <Empty title="No threads" />}
+                : allThreads.length ? list(allThreads, { showLocation: true }) : <Empty title="No threads" />)}
           </TabsContent>
           <TabsContent value="outdated">
-            {ctx.outdatedThreads.length ? list(ctx.outdatedThreads, { showLocation: true }) : <Empty title="No outdated threads" />}
+            {gate ?? (ctx.outdatedThreads.length ? list(ctx.outdatedThreads, { showLocation: true }) : <Empty title="No outdated threads" />)}
           </TabsContent>
           <TabsContent value="review">
             {!ctx.readOnly && (
@@ -173,7 +173,7 @@ function ReviewThreadPanel() {
                   : <Button size="sm" variant="outline" onClick={() => setComposing(true)}><MessageSquarePlusIcon />New review thread</Button>}
               </div>
             )}
-            {reviewGate ?? (ctx.reviewThreads.length ? list(ctx.reviewThreads) : <Empty title="No threads on the review">Threads here are about the review as a whole.</Empty>)}
+            {gate ?? (ctx.reviewThreads.length ? list(ctx.reviewThreads) : <Empty title="No threads on the review">Threads here are about the review as a whole.</Empty>)}
           </TabsContent>
           <TabsContent value="dropped">{list(dropped, { dropped: true })}</TabsContent>
         </div>

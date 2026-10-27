@@ -1,11 +1,13 @@
-import { screen, waitFor, within } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { expect, test, vi } from 'vitest';
 import { diffFile, hunk, message, review, thread, linesAnchor } from '@/test/fixtures';
 import type { Thread } from '@/lib/types';
 import { stubFetch } from '@/test/stubFetch';
 import type { FileDiffState } from '@/state/fileDiff';
-import { renderDiff, renderInReview } from '@/test/renderCtx';
+import { ctxValue, renderDiff, renderInReview } from '@/test/renderCtx';
+import { buildRows } from '@/lib/diffRows';
+import { ReviewProvider } from '@/state/reviewContext';
 import { FileDiff } from './FileDiff';
 
 const withRoute = (file: string) => history.replaceState(null, '', `?file=${encodeURIComponent(file)}`);
@@ -145,5 +147,27 @@ test('Comment on file scrolls its composer into view, above the file\'s threads'
   expect(scrolled.some((el) => el === form || el.contains(form))).toBe(true);
   const block = screen.getByRole('region', { name: 'File threads' });
   expect(form.compareDocumentPosition(within(block).getByRole('article')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  spy.mockRestore();
+});
+
+// Invariant: the scroll follows the composer being shown, not only the click: when writes go off and on again (a past
+// round or comparison, then back) with the composer still open, it reappears scrolled into view with the header's margin.
+test('the file composer is scrolled into view again when it reappears after a read-only view', async () => {
+  withRoute('src/a.ts');
+  const scrolled: Element[] = [];
+  const spy = vi.spyOn(HTMLElement.prototype, 'scrollIntoView').mockImplementation(function (this: HTMLElement) { scrolled.push(this); });
+  const file = diffFile();
+  const fileDiff = { file, rows: buildRows({ hunks: file.hunks, expansions: {}, texts: {}, total: null }), total: null } as unknown as FileDiffState;
+  const ui = (readOnly: boolean) => <ReviewProvider value={ctxValue({ readOnly, fileDiff })}><FileDiff /></ReviewProvider>;
+  const { rerender } = render(ui(false));
+  await userEvent.setup().click(screen.getByRole('button', { name: 'Comment on file' }));
+  rerender(ui(true));
+  expect(screen.queryByRole('form', { name: 'Comment on This file' })).toBeNull();
+  scrolled.length = 0;
+  rerender(ui(false));
+  const form = screen.getByRole('form', { name: 'Comment on This file' });
+  const shown = scrolled.find((el) => el === form || el.contains(form)) as HTMLElement | undefined;
+  expect(shown).toBeDefined();
+  expect(shown!.style.scrollMarginTop).toMatch(/px$/);
   spy.mockRestore();
 });

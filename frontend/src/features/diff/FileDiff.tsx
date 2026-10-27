@@ -140,6 +140,8 @@ export function FileDiff({ onBack, extra }: { onBack?: () => void; extra?: React
   const [composingOn, setComposingOn] = useState<string | null>(null);
   // Comment on file is in the sticky header, so the diff may be scrolled far below the block: bring the composer into view,
   // clear of the header (its height varies as it wraps).
+  // Keyed on the composer being shown, so it also runs when the composer reappears (writes back on after a read-only view).
+  const composingFile = !!file && composingOn === file.path && !ctx.readOnly;
   const headerRef = useRef<HTMLDivElement>(null);
   const fileComposerRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -147,7 +149,7 @@ export function FileDiff({ onBack, extra }: { onBack?: () => void; extra?: React
     if (!el) return;
     el.style.scrollMarginTop = `${headerRef.current?.offsetHeight ?? 0}px`;
     el.scrollIntoView?.({ block: 'nearest' });
-  }, [composingOn, file?.path]);
+  }, [composingFile]);
 
   // Open context that hides any line of a thread's range, of the cited lines, or (after a Diff options change) of the selection.
   const revealKey = `${file?.path}|${file?.threads.map((t) => t.id).join()}|${route.lines}|${targetSide}|${ctx.fileDiff.total}|${prefs.context}|${prefs.ignoreWhitespace}`;
@@ -188,7 +190,6 @@ export function FileDiff({ onBack, extra }: { onBack?: () => void; extra?: React
   }
   const lastGap = [...visible].reverse().find((r) => r.kind === 'gap');
   const enabled = !ctx.readOnly;
-  const composingFile = composingOn === file.path && enabled;
 
   const settledThread = ({ thread: t, other }: ShownThread) => (
     <SettledThread

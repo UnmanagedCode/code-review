@@ -122,7 +122,7 @@ const fileCalls = (net: ReturnType<typeof stubFetch>) => net.calls.filter((c) =>
 // Invariant: a comparison's file comes from the comparison, never from /diff, and waits for it to load.
 test('in a comparison the file comes from the loaded comparison and no /diff is fetched', async () => {
   const net = stubFetch({ 'GET api/reviews/r-1/file': fileLines });
-  const file = diffFile({ hunks: [hunk({ verdict: null })] });
+  const file = diffFile({ hunks: [hunk({ verdict: null })], lineCount: { old: 38, new: 40 } });
   const { result, rerender } = renderHook((p: { files?: ReturnType<typeof diffFile>[] }) =>
     useFileDiff({ reviewId: 'r-1', path: 'src/a.ts', uncommitted: false, compare: { from: 1, to: 3, files: p.files, reload: () => {} } }), { initialProps: {} as { files?: ReturnType<typeof diffFile>[] } });
   expect(result.current.loading).toBe(true);
@@ -131,29 +131,58 @@ test('in a comparison the file comes from the loaded comparison and no /diff is 
   expect(result.current.file).toBe(file);
   await vi.waitFor(() => expect(result.current.total).toBe(40));
   expect(net.count('GET api/reviews/r-1/diff')).toBe(0);
+  expect(net.count('GET api/reviews/r-1/file')).toBe(0);
 });
 
-// Invariant: gap lines are read from a round's head: round B's (new side), and the total too.
-test('in a comparison the total and expanded context are read from round B\'s head', async () => {
+// Invariant: the total is lineCount.new, round B's head count, read with no file call; gap lines are read from round B's head.
+test('in a comparison the total is round B\'s head count with no line read, and expanded context is read from round B\'s head', async () => {
   const net = stubFetch({ 'GET api/reviews/r-1/file': fileLines });
-  const file = diffFile({ hunks: [hunk({ oldStart: 11, newStart: 11, verdict: null })] });
+  const file = diffFile({ hunks: [hunk({ oldStart: 11, newStart: 11, verdict: null })], lineCount: { old: 38, new: 40 } });
   const { result } = renderHook(() => useFileDiff({ reviewId: 'r-1', path: 'src/a.ts', uncommitted: false, compare: { from: 1, to: 3, files: [file], reload: () => {} } }));
   await vi.waitFor(() => expect(result.current.total).toBe(40));
+  expect(fileCalls(net)).toEqual([]);
   await act(async () => { await result.current.expand('pre', 'bottom'); });
-  expect(fileCalls(net).length).toBeGreaterThan(1);
+  expect(fileCalls(net).length).toBeGreaterThan(0);
   expect(fileCalls(net).every(([side, round]) => side === 'new' && round === '3')).toBe(true);
 });
 
-// Invariant: a file deleted in the comparison exists only in round A's head, so its context is read there.
-test('in a comparison a deleted file\'s context is read from round A\'s head', async () => {
+// Invariant: after a round change that reuses a cached, identically-shaped diff, the total is lineCount[side] again, not null.
+test('returning to a cached round view with an identical diff restores the total', async () => {
+  const file = diffFile({ hunks: [hunk({ oldStart: 11, newStart: 11, verdict: null })], lineCount: { old: 38, new: 40 } });
+  const net = stubFetch({ 'GET api/reviews/r-1/diff': { review: review(), files: [file] } });
+  const { result, rerender } = renderHook((p: { round?: number }) => useFileDiff({ reviewId: 'r-1', path: 'src/a.ts', uncommitted: false, round: p.round }), { initialProps: {} as { round?: number } });
+  await vi.waitFor(() => expect(result.current.total).toBe(40));
+  rerender({ round: 1 });
+  await vi.waitFor(() => expect(net.count('GET api/reviews/r-1/diff')).toBe(2));
+  await vi.waitFor(() => expect(result.current.total).toBe(40));
+  rerender({ round: undefined });
+  await vi.waitFor(() => expect(result.current.total).toBe(40));
+  expect(net.count('GET api/reviews/r-1/diff')).toBe(2);
+});
+
+// Invariant: a file deleted in the comparison exists only in round A's head, so its total is lineCount.old and its context is read there.
+test('in a comparison a deleted file\'s total is round A\'s head count with no line read, and its context is read from round A\'s head', async () => {
   const net = stubFetch({ 'GET api/reviews/r-1/file': fileLines });
-  const file = diffFile({ status: 'deleted', hunks: [hunk({ oldStart: 11, oldLines: 4, newStart: 0, newLines: 0, lines: lines('d1 d2 d3 d4').map((l, i) => ({ ...l, old: 11 + i })), verdict: null })] });
+  const file = diffFile({ status: 'deleted', lineCount: { old: 40, new: null }, hunks: [hunk({ oldStart: 11, oldLines: 4, newStart: 0, newLines: 0, lines: lines('d1 d2 d3 d4').map((l, i) => ({ ...l, old: 11 + i })), verdict: null })] });
   const { result } = renderHook(() => useFileDiff({ reviewId: 'r-1', path: 'src/a.ts', uncommitted: false, compare: { from: 1, to: 3, files: [file], reload: () => {} } }));
   await vi.waitFor(() => expect(result.current.total).toBe(40));
+  expect(fileCalls(net)).toEqual([]);
   await act(async () => { await result.current.expand('pre', 'bottom'); });
-  expect(fileCalls(net).length).toBeGreaterThan(1);
+  expect(fileCalls(net).length).toBeGreaterThan(0);
   expect(fileCalls(net).every(([side, round]) => side === 'new' && round === '1')).toBe(true);
   expect(result.current.rows.some((r) => r.kind === 'line' && r.line.old === 10 && r.line.text === 'L10')).toBe(true);
+});
+
+// Invariant: a file added across rounds has only round B's head, so its total is lineCount.new.
+test('in a comparison an added file\'s total is round B\'s head count with no line read', async () => {
+  const net = stubFetch({ 'GET api/reviews/r-1/file': fileLines });
+  const file = diffFile({ status: 'added', lineCount: { old: null, new: 40 }, hunks: [hunk({ oldStart: 0, oldLines: 0, newStart: 11, newLines: 4, lines: lines('a1 a2 a3 a4').map((l, i) => ({ ...l, new: 11 + i })), verdict: null })] });
+  const { result } = renderHook(() => useFileDiff({ reviewId: 'r-1', path: 'src/a.ts', uncommitted: false, compare: { from: 1, to: 3, files: [file], reload: () => {} } }));
+  await vi.waitFor(() => expect(result.current.total).toBe(40));
+  expect(fileCalls(net)).toEqual([]);
+  await act(async () => { await result.current.expand('pre', 'bottom'); });
+  expect(fileCalls(net).length).toBeGreaterThan(0);
+  expect(fileCalls(net).every(([side, round]) => side === 'new' && round === '3')).toBe(true);
 });
 
 // Invariant: a round-A copy (old side) in collapsed context is revealed, its line read from round B's head by offset.
@@ -164,7 +193,7 @@ test('in a comparison an old-side line in a collapsed gap is revealed', async ()
     oldStart: 11, oldLines: 4, newStart: 11, newLines: 3, verdict: null,
     lines: [{ t: 'ctx', old: 11, new: 11, text: 'c' }, { t: 'del', old: 12, new: null, text: 'd' }, { t: 'del', old: 13, new: null, text: 'd' }, { t: 'add', old: null, new: 12, text: 'a' }, { t: 'ctx', old: 14, new: 13, text: 'c' }],
   });
-  const { result } = renderHook(() => useFileDiff({ reviewId: 'r-1', path: 'src/a.ts', uncommitted: false, compare: { from: 1, to: 3, files: [diffFile({ hunks: [h] })], reload: () => {} } }));
+  const { result } = renderHook(() => useFileDiff({ reviewId: 'r-1', path: 'src/a.ts', uncommitted: false, compare: { from: 1, to: 3, files: [diffFile({ hunks: [h], lineCount: { old: 41, new: 40 } })], reload: () => {} } }));
   await vi.waitFor(() => expect(result.current.total).toBe(40));
   act(() => result.current.reveal([{ side: 'old', start: 30, end: 30 }]));
   await vi.waitFor(() => expect(result.current.rows.some((r) => r.kind === 'line' && r.line.old === 30 && r.line.new === 29 && r.line.text === 'L29')).toBe(true));

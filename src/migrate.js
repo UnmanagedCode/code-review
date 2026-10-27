@@ -21,6 +21,18 @@ function backfill(review) {
   if (review.agentSeq === undefined) review.agentSeq = lastAgentSeq(review);
 }
 
+/** Gives every anchor (current and past) with no `kind` the `lines` kind. */
+function anchorKinds(review) {
+  for (const a of review.threads.flatMap((t) => [t.anchor, ...(t.pastAnchors ?? [])])) {
+    if (a && a.kind === undefined) a.kind = 'lines';
+  }
+}
+
+const upgrade = (review) => {
+  backfill(review);
+  anchorKinds(review);
+};
+
 /**
  * Upgrades every stored review to the current shape, once, at startup. Each step self-checks, so a second run writes nothing.
  * A file that cannot be read is logged and left untouched; an unconfigured store is a no-op (the API answers 503 anyway).
@@ -35,7 +47,7 @@ export async function migrateStore() {
   }
   for (const id of ids) {
     try {
-      await store.mutate(id, backfill);
+      await store.mutate(id, upgrade);
     } catch (e) {
       store.logSkipped(id, 'not migrated', e);
     }

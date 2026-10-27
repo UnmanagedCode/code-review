@@ -14,7 +14,7 @@ const route = (link) => {
   return parseRoute(link.slice(PREFIX.length));
 };
 const rv = { id: 'r-1', project: 'app', worktree: 'feature' };
-const thread = (status, anchor) => ({ id: 't-7', status, anchor: { file: 'a.js', side: 'new', startLine: 3, endLine: 3, round: 2, ...anchor } });
+const thread = (status, anchor) => ({ id: 't-7', status, anchor: { kind: 'lines', file: 'a.js', side: 'new', startLine: 3, endLine: 3, round: 2, ...anchor } });
 
 test('a review link opens that review in its checkout', () => {
   // Invariant: project, worktree and review survive parseRoute; a main checkout has no worktree key.
@@ -46,6 +46,28 @@ test('an outdated old-side thread opens round view R', () => {
   // Invariant: outdated + old side → round=R, side=old, lines, and no compare.
   const r = route(threadLink(rv, thread('outdated', { side: 'old', endLine: 4 })));
   assert.deepEqual(r, { project: 'app', worktree: 'feature', review: 'r-1', file: 'a.js', side: 'old', lines: '3-4', thread: 't-7', round: '2' });
+});
+
+test('a live file thread opens its file at the thread, with no side', () => {
+  // Invariant: a file anchor routes to file/thread only, as ThreadCard's Focus does for it.
+  for (const status of ['open', 'resolved']) {
+    assert.deepEqual(route(threadLink(rv, { id: 't-7', status, anchor: { kind: 'file', file: 'a.js', round: 2 } })),
+      { project: 'app', worktree: 'feature', review: 'r-1', file: 'a.js', thread: 't-7' });
+  }
+});
+
+test('an outdated file thread opens round view R at its file', () => {
+  // Invariant: outdated + file anchor → round=R (anchor.round), file, thread; no side, lines or compare.
+  assert.deepEqual(route(threadLink(rv, { id: 't-7', status: 'outdated', anchor: { kind: 'file', file: 'a.js', round: 2 } })),
+    { project: 'app', worktree: 'feature', review: 'r-1', file: 'a.js', thread: 't-7', round: '2' });
+});
+
+test('a review thread opens the Threads pane at the thread, with no file', () => {
+  // Invariant: a review anchor routes to view=threads and thread only, whatever its status.
+  for (const status of ['open', 'resolved']) {
+    assert.deepEqual(route(threadLink(rv, { id: 't-7', status, anchor: { kind: 'review', round: 1 } })),
+      { project: 'app', worktree: 'feature', review: 'r-1', thread: 't-7', view: 'threads' });
+  }
 });
 
 test('every value is URL-encoded and survives the round-trip', () => {

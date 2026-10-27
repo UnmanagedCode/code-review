@@ -3,7 +3,7 @@ import { beforeEach, expect, test } from 'vitest';
 import { WIDE_QUERY } from '@/lib/useMediaQuery';
 import { installMedia } from '@/test/fakeMedia';
 import { installResizeObserver } from '@/test/fakeResizeObserver';
-import { diffFile, hunk, thread } from '@/test/fixtures';
+import { diffFile, hunk, thread, linesAnchor } from '@/test/fixtures';
 import { renderDiff } from '@/test/renderCtx';
 import { FileDiff } from './FileDiff';
 import { SPLIT_EXIT_SLACK_PX, SPLIT_MIN_PX } from './useDiffView';
@@ -142,7 +142,7 @@ test.each([[false], [true]])('split offers the same selectable gutter cells as i
 test.each(['inline', 'split'])('threads follow the row holding their end line (%s)', (view) => {
   localStorage.setItem('code-review:diffView', view);
   const at = (id: string, kind: 'comment' | 'question' | 'suggestion' | 'finding', side: 'old' | 'new', n: number) =>
-    thread({ id, kind, anchor: { ...thread().anchor, side, startLine: n, endLine: n } });
+    thread({ id, kind, anchor: linesAnchor({ side, startLine: n, endLine: n }) });
   const threads = [at('t-1', 'comment', 'old', 3), at('t-2', 'question', 'new', 3), at('t-3', 'suggestion', 'new', 4), at('t-4', 'finding', 'old', 2)];
   show(undefined, diffFile({ threads }));
   expect(isSplit()).toBe(view === 'split');

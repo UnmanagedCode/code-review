@@ -1862,6 +1862,7 @@
    {
     "id": "t1",
     "anchor": {
+     "kind": "lines",
      "file": "a.js",
      "side": "new",
      "startLine": 12,
@@ -1886,6 +1887,7 @@
    {
     "id": "t2",
     "anchor": {
+     "kind": "lines",
      "file": "a.js",
      "side": "old",
      "startLine": 4,
@@ -1910,6 +1912,7 @@
    {
     "id": "t3",
     "anchor": {
+     "kind": "lines",
      "file": "r2.txt",
      "side": "new",
      "startLine": 9,
@@ -1935,6 +1938,7 @@
    {
     "id": "t5",
     "anchor": {
+     "kind": "lines",
      "file": "u\nnl.txt",
      "side": "new",
      "startLine": 3,
@@ -2083,6 +2087,7 @@
      [
       "t1",
       {
+       "kind": "lines",
        "file": "a.js",
        "side": "new",
        "startLine": 12,
@@ -2096,6 +2101,7 @@
      [
       "t2",
       {
+       "kind": "lines",
        "file": "a.js",
        "side": "old",
        "startLine": 4,
@@ -2176,6 +2182,7 @@
      [
       "t3",
       {
+       "kind": "lines",
        "file": "r2.txt",
        "side": "new",
        "startLine": 9,
@@ -2232,6 +2239,7 @@
      [
       "t5",
       {
+       "kind": "lines",
        "file": "u\nnl.txt",
        "side": "new",
        "startLine": 3,

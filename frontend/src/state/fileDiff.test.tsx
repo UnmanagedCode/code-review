@@ -17,7 +17,7 @@ function setup(threadsNow: () => ReturnType<typeof thread>[], kind: 'uncommitted
   // Each review load reports a new sig, as a changed uncommitted file would.
   let loads = 0;
   const net = stubFetch({
-    'GET api/reviews/r-1': () => ({ review: review({ kind }), files: [fileState({ sig: `s${++loads}` })], rounds: [], submissions: [], outdatedThreads: [] }),
+    'GET api/reviews/r-1': () => ({ review: review({ kind }), files: [fileState({ sig: `s${++loads}` })], rounds: [], submissions: [], outdatedThreads: [], reviewThreads: [] }),
     'GET api/reviews/r-1/diff': () => ({ review: review({ kind }), files: [diffFile({ sig: `s${loads}`, threads: threadsNow() })] }),
   });
   const hook = renderHook(() => {
@@ -283,7 +283,7 @@ function sigWorld(opts: { hunkAt?: number; gate?: Record<string, Promise<void>>;
     'GET api/reviews/r-1': async () => {
       await opts.reviewGate;
       return {
-        review: review({ kind: 'uncommitted' }), rounds: [], submissions: [], outdatedThreads: [],
+        review: review({ kind: 'uncommitted' }), rounds: [], submissions: [], outdatedThreads: [], reviewThreads: [],
         files: PATHS.map((path) => fileState({ path, sig: sigs[path] })),
       };
     },
@@ -424,4 +424,16 @@ test('a diff fetched before the review loads is not refetched by its first load 
   await vi.waitFor(() => expect(w.hook.result.current.r.version).toBe(1));
   await w.settle();
   expect(w.diffs()).toBe(1);
+});
+
+// Invariant: a review thread's write touches no file: it is not patched into the open diff, its null fileSig patches
+// nothing, and the review reload that follows refetches no diff.
+test('a review-thread write with a null fileSig refetches no file diff and only reloads the review', async () => {
+  const w = sigWorld();
+  await vi.waitFor(() => expect(w.hook.result.current.f.file).toBeDefined());
+  await w.settle();
+  act(() => { w.hook.result.current.f.patchThread(thread({ id: 't-r', anchor: { kind: 'review', round: 1 } })); w.hook.result.current.f.patchSig(null); });
+  await w.reload(); await w.settle();
+  expect([w.reviews(), w.diffs()]).toEqual([2, 1]);
+  expect(w.hook.result.current.f.file?.threads).toEqual([]);
 });

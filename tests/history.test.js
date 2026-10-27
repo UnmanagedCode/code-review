@@ -4,7 +4,7 @@ import { threadsAt, roundThreadView, anchorChain } from '../src/history.js';
 
 // Stored-shape fixtures: an anchor per round, a thread with messages stamped by round.
 const pos = (round, startLine, extra = {}) => ({
-  file: 'a.js', side: 'new', startLine, endLine: startLine, hunkId: `h${round}`, round, linesHash: `x${startLine}`, drifted: false, ...extra,
+  kind: 'lines', file: 'a.js', side: 'new', startLine, endLine: startLine, hunkId: `h${round}`, round, linesHash: `x${startLine}`, drifted: false, ...extra,
 });
 const stored = (round, startLine, extra) => ({ ...pos(round, startLine, extra), lines: ['x'], ctxBefore: { hash: 'b', n: 1 }, ctxAfter: { hash: 'a', n: 1 } });
 let seq = 0;

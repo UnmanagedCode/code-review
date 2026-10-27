@@ -105,7 +105,7 @@ export function makeEnv(review, scope = lookupScope()) {
           if (review.kind === 'uncommitted') {
             if (!c.place) throw gone();
             // The threads' lines are read in the same call, so the sweep reads nothing more.
-            const prefetch = review.threads.filter((t) => t.status !== 'outdated').map((t) => ({ side: t.anchor.side, file: t.anchor.file }));
+            const prefetch = review.threads.filter((t) => t.status !== 'outdated' && t.anchor.kind === 'lines').map((t) => ({ side: t.anchor.side, file: t.anchor.file }));
             return buildSnapshot({ kind: 'uncommitted', checkout: c.place, prefetch }).catch((e) => {
               if (e.code === 'CHECKOUT_GONE') scope.evict(review.project);
               throw e;

@@ -1,10 +1,10 @@
 import { expect, test } from 'vitest';
-import { thread } from '@/test/fixtures';
+import { thread, linesAnchor } from '@/test/fixtures';
 import { lineSpan, MAX_LANES, markNote, rangeLabel, rangeMarks } from './ranges';
 import type { Side, Thread, ThreadKind } from './types';
 
 const at = (id: string, side: Side, startLine: number, endLine: number, over: Partial<Thread> = {}) =>
-  thread({ id, ...over, anchor: { ...thread().anchor, side, startLine, endLine } });
+  thread({ id, ...over, anchor: linesAnchor({ side, startLine, endLine }) });
 const lanesOf = (look: ReturnType<typeof rangeMarks>, side: Side, lines: number[]) =>
   Object.fromEntries(lines.flatMap((n) => look(side, n).map((m) => [`${m.threadId}@${n}`, m.lane])));
 

@@ -142,6 +142,7 @@ export const getReview = (id) => attempt(() => viewReview(id, async (review, env
   return {
     ok: true, review: summary, files, rounds: review.rounds, submissions: review.submissions,
     outdatedThreads: review.threads.filter((t) => t.status === 'outdated').map(threadView),
+    reviewThreads: review.threads.filter((t) => t.anchor.kind === 'review').map(threadView),
   };
 }));
 

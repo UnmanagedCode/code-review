@@ -864,6 +864,70 @@ try {
     assert.deepEqual(errors, []);
   }, { headless: true, viewport: { width: 1400, height: 900 } });
 
+  // 19: threads on a whole file and on the review. Comment on file in the header opens a composer in the file-threads block
+  // above the diff; the posted finding sits there and resolves with a disposition into a summary. The Threads pane's Review
+  // tab starts a review thread, listed there and in All; its Focus keeps the open file.
+  await withPage(async (page) => {
+    const errors = watchErrors(page);
+    const shot = shotter(page);
+    // From a diff scrolled to its end, the header's Comment on file brings the composer into view below the sticky header.
+    await page.goto(q({ review: range, file: 'a.js' }));
+    const aGrid = page.getByRole('grid', { name: /a\.js/ });
+    await aGrid.waitFor();
+    await page.locator('[role=row]').last().scrollIntoViewIfNeeded();
+    assert.ok((await aGrid.boundingBox()).y < 0, 'the diff is scrolled past its top');
+    await page.getByRole('button', { name: 'Comment on file' }).click();
+    const aForm = page.getByRole('form', { name: 'Comment on This file' });
+    await aForm.waitFor();
+    await page.waitForTimeout(100); // the scroll runs after the composer mounts
+    const header = await page.getByRole('button', { name: 'Comment on file' }).evaluate((b) => b.closest('.sticky').getBoundingClientRect().bottom);
+    const box = await aForm.boundingBox();
+    assert.ok(box.y >= header - 1 && box.y + box.height <= 800, `the file composer is in view below the header (top ${box.y}, header ${header})`);
+    await shot('19-file-composer-scrolled');
+    await aForm.getByRole('button', { name: 'Cancel' }).click();
+
+    await page.goto(q({ review: range, file: 'c.js' }));
+    await page.getByRole('grid', { name: /c\.js/ }).waitFor();
+    await page.getByRole('button', { name: 'Comment on file' }).click();
+    const block = page.getByRole('region', { name: 'File threads' });
+    const form = block.getByRole('form', { name: 'Comment on This file' });
+    await form.getByLabel('Kind').selectOption('finding');
+    await form.getByLabel('Severity').selectOption('minor');
+    await form.getByLabel('Message').fill('This file needs a header comment.');
+    await shot('19-file-composer');
+    await form.getByRole('button', { name: 'Post' }).click();
+    const card = block.getByRole('article', { name: 'finding thread' });
+    await card.getByText('Whole file').waitFor();
+    assert.ok(await block.evaluate((b) => !!(b.compareDocumentPosition(document.querySelector('[role=grid]')) & Node.DOCUMENT_POSITION_FOLLOWING)), 'the block sits above the diff');
+    assert.equal(await page.getByRole('grid').getByRole('article').count(), 0, 'no row holds the file thread');
+    await shot('19-file-thread');
+    await card.getByRole('button', { name: 'Resolve as fixed' }).click();
+    const summary = block.getByRole('button', { name: /needs a header comment.*resolved.*fixed/ });
+    await summary.waitFor();
+    assert.equal(await summary.getAttribute('aria-expanded'), 'false', 'the resolved file finding collapses');
+    await shot('19-file-finding-resolved');
+
+    await page.getByRole('tablist', { name: 'Review pane' }).getByRole('tab', { name: /^Threads/ }).click();
+    const panel = page.getByRole('tabpanel', { name: /^Threads/ });
+    await panel.getByRole('tab', { name: /^Review/ }).click();
+    await panel.getByRole('button', { name: 'New review thread' }).click();
+    const rform = panel.getByRole('form', { name: 'Comment on This review' });
+    await rform.getByLabel('Kind').selectOption('question');
+    await rform.getByLabel('Message').fill('Is the split into c.js right?');
+    await rform.getByRole('button', { name: 'Post' }).click();
+    const rcard = panel.getByRole('article', { name: 'question thread' }).filter({ hasText: 'Is the split into c.js right?' });
+    await rcard.waitFor();
+    await shot('19-review-thread');
+    await panel.getByRole('tab', { name: /^All/ }).click();
+    await panel.getByRole('article').filter({ hasText: 'Is the split into c.js right?' }).waitFor();
+    await panel.getByRole('tab', { name: /^Review/ }).click();
+    await rcard.getByRole('button', { name: 'Focus' }).click();
+    await page.waitForURL(/thread=/);
+    assert.equal(params(page).file, 'c.js', 'Focus on a review thread keeps the open file');
+    assert.equal(params(page).view, 'threads');
+    assert.deepEqual(errors, []);
+  }, { headless: true, viewport: { width: 1280, height: 800 } });
+
   // 17: the inbox, with a stub cc bridge. From an open review, Inbox → the main checkout's row opens that review in its own
   // checkout; a session switch while it is open leaves it open; Back returns to the inbox. A destroyed worktree's row says
   // "checkout gone", and its Close closes the review. Runs last: it removes a worktree.

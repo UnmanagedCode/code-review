@@ -1,6 +1,6 @@
 import { renderHook } from '@testing-library/react';
 import { expect, test, vi } from 'vitest';
-import { diffFile, fileState, review, thread } from '@/test/fixtures';
+import { diffFile, fileState, review, thread, linesAnchor } from '@/test/fixtures';
 import { stubFetch } from '@/test/stubFetch';
 import { diffKey, diffSpec } from './diffResource';
 import { ensure } from './resource';
@@ -13,7 +13,7 @@ const world = () => {
   const net = stubFetch({
     'GET api/reviews/r-1/diff': (u: URL) => {
       const path = u.searchParams.get('file')!;
-      return { review: review(), files: [diffFile({ path, sig: sigs[path], threads: [thread({ id: `t-${path}`, anchor: { ...thread().anchor, file: path } })] })] };
+      return { review: review(), files: [diffFile({ path, sig: sigs[path], threads: [thread({ id: `t-${path}`, anchor: linesAnchor({ file: path }) })] })] };
     },
   });
   const files = (sigOf: (p: string) => string) => ['a', 'b', 'c'].map((p) => file(p, sigOf(p)));

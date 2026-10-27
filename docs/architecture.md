@@ -24,8 +24,8 @@ Services return a plain object or a refusal `{ok:false, code, reason}`. Low-leve
 | `text.js` | `clean()`: strips control characters from header fields (prompt and MCP text); `oneLine`/`errorLine`: single-line log text; `stackFrames`: an error's frame lines without its message |
 | `diff.js` | parse unified diff into files/hunks; hunk ids; file-level hunks (pure) |
 | `snapshot.js` | `resolveTarget` (range/commit → `{headSha, baseSha}`), `buildSnapshot` (`{files, fingerprint, baseSha, headSha, lines(side, path), lineCounts(files), contentHash(path)}`; uncommitted in two exec calls), `cachedSnapshot` (no exec), `snapshotGone` |
-| `anchor.js` | `linesHash`, `makeAnchor`, `anchorView` (positional fields), `locate`, `hunkFor` (pure) |
-| `follow.js` | moves threads to where their lines now are (refresh and the uncommitted sweep), keeping each earlier round's anchor in `pastAnchors` (range reviews) |
+| `anchor.js` | `linesHash`, `makeAnchor`, `anchorView` (positional fields, per `kind`), `anchorLabel` (the one text formatter of a thread's place, for MCP text and the prompt), `locate`, `hunkFor` (pure) |
+| `follow.js` | moves threads to where their lines (or, for file anchors, their file) now are (refresh and the uncommitted sweep), keeping each earlier round's anchor in `pastAnchors` (range reviews); review anchors are skipped |
 | `history.js` | `threadsAt(review, n)`: threads as of round n (pure); `anchorChain`, `roundThreadView` |
 | `rounds.js` | past-round views of range reviews: `pickRound`, `roundView`, `roundDiff` (`reviews.diff` delegates `?round=`), `roundThreadsOn` |
 | `compare.js` | round comparison of range reviews: `compareRounds` (diff of round A's head against round B's, filtered to the reviewed paths), `placeThreads` (copies from `threadsAt` placed in that diff; pure) |
@@ -33,7 +33,7 @@ Services return a plain object or a refusal `{ok:false, code, reason}`. Low-leve
 | `reviews.js` | open, list, get, patch, delete, verdict, accept-file, refresh, diff, commits, file lines, hunks; `bump`/`touch` (the activity stamps) |
 | `inbox.js` | `listInbox`: every open review, latest activity first, with `checkoutGone` from cc's project locations and worktree lists (one lookup scope, `ROW_CONCURRENCY` at a time); store and cc only, no git |
 | `migrate.js` | `migrateStore`: the startup migrations of stored reviews (see [Migrations](#migrations)) |
-| `threads.js` | annotate, reply, thread status, mark read, list |
+| `threads.js` | annotate (`buildAnchor`: the anchor checks for REST and MCP alike), reply, thread status, mark read, list |
 | `links.js` | plugin-view hash links for MCP results; mirrors `frontend/src/lib/route.ts` |
 | `rollup.js` | counts, `mergeBlockers`, unread, `ReviewSummary`, `turnOf`, `inboxItem` (InboxItem), thread/hunk views, `withThreads`, `liveView`, `fileSig`, `signStates`, `diffFiles` (DiffFiles with `lineCount` and `sig`), `liveSig` (a write's `fileSig`) |
 | `citations.js` | parse and resolve `path#L…` |
@@ -62,7 +62,7 @@ Services return a plain object or a refusal `{ok:false, code, reason}`. Low-leve
 - Each step self-checks: it fills only fields that are missing, so a second run, or a review already in the current shape, writes nothing.
 - Any per-review failure (a file `mutate` cannot read, a write error) is logged (`logSkipped`, `not migrated`) and skipped; an unreadable file stays byte-identical. Only a failure to list the store (`store.ids()`) stops the start, and an unconfigured store (`STORE_UNCONFIGURED`) is a no-op.
 - So an open review can still lack the current fields (a skipped file, or one copied into `reviews/` while the server runs). `listInbox` guards against it: such a review is logged (`logSkipped`, `left out of the inbox`) and dropped from the inbox, with no fallback value; every other row still shows.
-- Current steps: `lastActivityAt` = the latest of `createdAt`, message `at`s, verdict `at`s, round `createdAt`s, submission `composedAt`s and `deliveredAt`s; `agentSeq` = the highest `seq` of a non-human message, else 0. Rounds carry no actor, so agent refreshes stored before `agentSeq` existed are not counted.
+- Current steps: `anchorKinds` sets `kind: 'lines'` on every `thread.anchor` and `pastAnchors[]` entry without a `kind`; `lastActivityAt` = the latest of `createdAt`, message `at`s, verdict `at`s, round `createdAt`s, submission `composedAt`s and `deliveredAt`s; `agentSeq` = the highest `seq` of a non-human message, else 0. Rounds carry no actor, so agent refreshes stored before `agentSeq` existed are not counted.
 - Application code reads the current shape only; a new format change adds a step here.
 
 ## Places and host exec
@@ -138,14 +138,15 @@ Counted by the fake cc (`execCalls`; pinned in `tests/latency.test.js` and `test
 - `lineCount` (`snap.lineCounts`): `added` → `{old: null, new: additions}`, `deleted` → `{old: deletions, new: null}`, binary/`tooLarge` → both null; modified and renamed: `old` = the count of `oldPath ?? path` at the snapshot's base (`OLD_LINE_COUNTS`, cached by `${baseSha}\0${path}`: content-addressed, so valid across places), `new = old + additions − deletions` (every old line is kept or deleted, and a "No newline" marker counts no line, as `splitLines` counts).
 - `contentHash(path)`: `sha256(baseSha \0 headSha \0 JSON(file entry))`, built beside `files` (never inside, so `fingerprint`, which is stored in `rounds[]` and compared by uncommitted refresh, is unchanged).
 - `sig` = `fileSig(contentHash, FileState, hunk verdicts, threads)` (`src/rollup.js`), each as the view renders it, from the same helpers that build the response (`liveView`, the past-round view with `roundThreadsOn`, compare's placed copies, `[]` for the commit filter), so equal sigs mean an identical file response by construction. CPU only.
-- `fileSig` on writes: annotate and verdicts use the snapshot they already built; reply and status use the sweep's (uncommitted) or `env.cachedSnapshot()` (committed: no exec), else read it; any failure gives `sig: null` and never fails the write.
+- `fileSig` on writes: annotate and verdicts use the snapshot they already built; reply and status use the sweep's (uncommitted) or `env.cachedSnapshot()` (committed: no exec), else read it; any failure gives `sig: null` and never fails the write. A review thread's writes return `fileSig: null` and build no snapshot for it.
 
 ## Hunk ids and anchors
 
 - Hunk id: `sha256(path \0 changedLines \0 occurrence)`, first 12 hex; `changedLines` is the `+`/`-` lines with prefixes, `occurrence` the index among identical blocks in the file. Line numbers and context are excluded.
 - File-level hunk id: hash of path, status, oldPath, blob ids and modes.
 - `linesHash`: sha256 (first 16 hex) of the lines with trailing `[ \t\r]` stripped, indentation kept.
-- Anchor: `round` (the snapshot its `lines`/`linesHash` were read from; `followThreads` sets it to the new round on every re-anchor), selected `lines`, `ctxBefore`/`ctxAfter` (hash and count of up to `CONTEXT_LINES` neighbours), `hunkId` from `hunkFor` (the hunk containing `endLine`, else the last one overlapped, else null), `drifted`.
+- Anchor kinds (`kind`): `lines`, `file` (`{kind, file, round}`) and `review` (`{kind, round}`); a hunk anchor is built as `lines`. Only `lines` anchors carry the fields below; code that reads lines, sides or hashes checks `kind === 'lines'` first (the uncommitted `prefetch` list in `context.js` included).
+- Lines anchor: `round` (the snapshot its `lines`/`linesHash` were read from; `followThreads` sets it to the new round on every re-anchor), selected `lines`, `ctxBefore`/`ctxAfter` (hash and count of up to `CONTEXT_LINES` neighbours), `hunkId` from `hunkFor` (the hunk containing `endLine`, else the last one overlapped, else null), `drifted`.
 - `pastAnchors`: on range reviews, the thread's anchor in each round before `anchor.round` that it was re-anchored out of, oldest first, positional fields only (`anchorView`). `followThreads` appends the old anchor on every range refresh that relocates the thread. Uncommitted reviews never append (they have no past-round views); their threads keep `[]`. Outdated threads are never followed, so their last chain entry is the last round they were located in.
 - Derived, not stored: a thread's creation round (`messages[0].round`); the round it went outdated (its last chain entry's round + 1); its status just before (`resolution` set → `resolved`, else `open`: going outdated changes only `status`).
 - Not derivable: open/resolved as of an earlier round. Only the latest status change is stored (`statusSeq`, `resolution`), and rounds carry no `seq`, so past-round views show the current status (see the [protocol](protocol.md#shapes)).

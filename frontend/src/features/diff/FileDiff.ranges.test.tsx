@@ -5,7 +5,7 @@ import type { ComparedThread, DiffFile, Side, Thread, ThreadKind } from '@/lib/t
 import { WIDE_QUERY } from '@/lib/useMediaQuery';
 import { installMedia } from '@/test/fakeMedia';
 import { installResizeObserver } from '@/test/fakeResizeObserver';
-import { diffFile, hunk, thread } from '@/test/fixtures';
+import { diffFile, hunk, thread, linesAnchor } from '@/test/fixtures';
 import { renderDiff } from '@/test/renderCtx';
 import { FileDiff } from './FileDiff';
 
@@ -18,7 +18,7 @@ beforeEach(() => {
 });
 
 const at = (id: string, side: Side, startLine: number, endLine: number, over: Partial<Thread> = {}) =>
-  thread({ id, ...over, anchor: { ...thread().anchor, side, startLine, endLine } });
+  thread({ id, ...over, anchor: linesAnchor({ side, startLine, endLine }) });
 const show = (view: 'inline' | 'split', file: DiffFile, over = {}) => {
   localStorage.setItem('code-review:diffView', view);
   const r = renderDiff(<FileDiff />, file, over);

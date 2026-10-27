@@ -119,7 +119,7 @@ test('sig: stable, equal in detail and diff (and in a round view and its diff), 
   const afterVerdict = await diff();
   assert.notEqual(afterVerdict['a.js'], first['a.js'], 'a verdict changes its file');
   assert.equal(afterVerdict['b.js'], first['b.js'], 'and only its file');
-  const t = ok(await threads.annotate(review.id, HUMAN, { anchor: { file: 'b.js', side: 'new', startLine: 3 }, kind: 'comment', body: 'hm' })).thread;
+  const t = ok(await threads.annotate(review.id, HUMAN, { anchor: { kind: 'lines', file: 'b.js', side: 'new', startLine: 3 }, kind: 'comment', body: 'hm' })).thread;
   const afterThread = await diff();
   assert.notEqual(afterThread['b.js'], afterVerdict['b.js']);
   ok(await threads.reply(review.id, agent('s-agent'), t.id, { body: 'from another tab' }));
@@ -153,7 +153,7 @@ test('sig changes on an uncommitted edit that keeps the line counts, and on acti
   const wt = w.addWorktree();
   wt.commit({ 'a.js': editLines({ 2: 'two', 15: 'fifteen' }) });
   const range = ok(await reviews.openReview({ project: 'app', worktree: 'feature' }, HUMAN)).review;
-  const t = ok(await threads.annotate(range.id, HUMAN, { anchor: { file: 'a.js', side: 'new', startLine: 2 }, kind: 'comment', body: 'x' })).thread;
+  const t = ok(await threads.annotate(range.id, HUMAN, { anchor: { kind: 'lines', file: 'a.js', side: 'new', startLine: 2 }, kind: 'comment', body: 'x' })).thread;
   wt.commit({ 'a.js': editLines({ 2: 'gone-two', 15: 'fifteen' }) });
   ok(await reviews.refreshReview(range.id, HUMAN));
   const outdated = sigs(ok(await reviews.diff(range.id, {})).files)['a.js'];
@@ -176,7 +176,7 @@ test('each write\'s fileSig equals the sig the next diff of that file shows; a r
     assert.equal(res.fileSig.sig, await next(id, res.fileSig.path), JSON.stringify(res.fileSig));
   };
   for (const [id, file, line] of [[range.id, 'a.js', 2], [unc.id, 'b.js', 4]]) {
-    const made = await threads.annotate(id, HUMAN, { anchor: { file, side: 'new', startLine: line }, kind: 'question', body: 'q' });
+    const made = await threads.annotate(id, HUMAN, { anchor: { kind: 'lines', file, side: 'new', startLine: line }, kind: 'question', body: 'q' });
     await check(id, made);
     await check(id, await threads.reply(id, HUMAN, made.thread.id, { body: 'r' }));
     await check(id, await threads.reply(id, agent('s-agent'), made.thread.id, { body: 'a' }));
@@ -198,7 +198,7 @@ test('a write whose file sig cannot be read still succeeds, with sig null', asyn
   w = await world();
   w.repo.write('a.js', editLines({ 4: 'live' }));
   const unc = ok(await reviews.openReview({ project: 'app', kind: 'uncommitted' }, HUMAN)).review;
-  const t = ok(await threads.annotate(unc.id, HUMAN, { anchor: { file: 'a.js', side: 'new', startLine: 4 }, kind: 'comment', body: 'x' })).thread;
+  const t = ok(await threads.annotate(unc.id, HUMAN, { anchor: { kind: 'lines', file: 'a.js', side: 'new', startLine: 4 }, kind: 'comment', body: 'x' })).thread;
   w.cc.state.execHook = () => ({ status: 502, body: { error: 'down', code: 'SYSTEM_UNREACHABLE' } });
   const res = ok(await threads.reply(unc.id, HUMAN, t.id, { body: 'while down' }));
   assert.deepEqual(res.fileSig, { path: 'a.js', sig: null });

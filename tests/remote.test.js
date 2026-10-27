@@ -52,7 +52,7 @@ for (const where of ['main', 'worktree']) {
       assert.equal(got.review.snapshotError, undefined);
       const [h] = ok(await reviews.getHunks(review.id, { file: 'a.js', line: 3 })).hunks;
       assert.ok(h.hunk.lines.some((l) => l.t === 'add' && l.text === 'changed-3'));
-      const t = ok(await threads.annotate(review.id, HUMAN, { anchor: { file: 'a.js', side: 'new', startLine: 3 }, kind: 'comment', body: 'see new.js#L1-L2' })).thread;
+      const t = ok(await threads.annotate(review.id, HUMAN, { anchor: { kind: 'lines', file: 'a.js', side: 'new', startLine: 3 }, kind: 'comment', body: 'see new.js#L1-L2' })).thread;
       const listed = ok(await threads.listThreads(review.id, {})).threads;
       assert.deepEqual(listed.map((x) => x.id), [t.id]);
       assert.deepEqual(listed[0].messages[0].excerpts[0].lines.map((l) => l.text), ['n1', 'n2'], 'a citation is read on the system');
@@ -77,7 +77,7 @@ test('on a system, a refresh follows a thread across a line shift and a rename; 
   const wt = w.addWorktree();
   wt.commit({ 'a.js': editLines({ 2: 'top-edit', 18: 'bottom-edit' }) });
   const { review } = ok(await reviews.openReview({ project: 'app', worktree: 'feature' }, HUMAN));
-  const t = ok(await threads.annotate(review.id, HUMAN, { anchor: { file: 'a.js', side: 'new', startLine: 18 }, kind: 'comment', body: 'hm' })).thread;
+  const t = ok(await threads.annotate(review.id, HUMAN, { anchor: { kind: 'lines', file: 'a.js', side: 'new', startLine: 18 }, kind: 'comment', body: 'hm' })).thread;
   wt.git('mv', 'a.js', 'c.js');
   wt.commit({ 'c.js': ['ins1', 'ins2', ...editLines({ 2: 'top-edit', 18: 'bottom-edit' }).split('\n')].join('\n') });
   const res = ok(await reviews.refreshReview(review.id, HUMAN));
@@ -112,7 +112,7 @@ for (const [ccStatus, ccCode, code] of [[502, 'SYSTEM_UNREACHABLE', 'SYSTEM_UNRE
     const range = ok(await reviews.openReview({ project: 'app', worktree: 'feature' }, HUMAN)).review;
     w.repo.write('a.js', editLines({ 5: 'live' }));
     const unc = ok(await reviews.openReview({ project: 'app', worktree: null, kind: 'uncommitted' }, HUMAN)).review;
-    const t = ok(await threads.annotate(unc.id, HUMAN, { anchor: { file: 'a.js', side: 'new', startLine: 5 }, kind: 'comment', body: 'x' })).thread;
+    const t = ok(await threads.annotate(unc.id, HUMAN, { anchor: { kind: 'lines', file: 'a.js', side: 'new', startLine: 5 }, kind: 'comment', body: 'x' })).thread;
     w.cc.state.execHook = () => ({ status: ccStatus, body: { error: 'down', code: ccCode } });
 
     const listed = ok(await reviews.listReviews({ project: 'app' })).reviews;
@@ -138,7 +138,7 @@ for (const [ccStatus, ccCode, code] of [[502, 'SYSTEM_UNREACHABLE', 'SYSTEM_UNRE
     const range = ok(await reviews.openReview({ project: 'app', worktree: 'feature' }, HUMAN)).review;
     w.repo.write('a.js', editLines({ 5: 'live' }));
     const unc = ok(await reviews.openReview({ project: 'app', worktree: null, kind: 'uncommitted' }, HUMAN)).review;
-    const t = ok(await threads.annotate(unc.id, HUMAN, { anchor: { file: 'a.js', side: 'new', startLine: 5 }, kind: 'comment', body: 'x' })).thread;
+    const t = ok(await threads.annotate(unc.id, HUMAN, { anchor: { kind: 'lines', file: 'a.js', side: 'new', startLine: 5 }, kind: 'comment', body: 'x' })).thread;
     const probe = (b) => b.argv[0] === 'sh' && b.argv[2].includes('w=checkout'); // PROBE: existence, objects and status
     w.cc.state.execHook = (b) => (probe(b) ? null : { status: ccStatus, body: { error: 'down', code: ccCode } });
     w.cc.state.execCalls = [];

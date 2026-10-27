@@ -38,14 +38,24 @@ REST under `/api` (JSON), an SSE stream, and the cc MCP endpoint. Behaviour behi
   - `sig`: an opaque 20-hex string. Within one view (live, a past round, a comparison, a commit filter), equal `sig`s mean the file's whole response is identical: content (hunk texts, blob ids, the round's shas), its FileState fields, its hunks' verdicts and its threads as that view renders them, replies, `unread` and status included. A FileState's `sig` equals the same file's DiffFile `sig` in the matching diff (`GET /reviews/:id` ↔ `diff`, `rounds/:n` ↔ `diff?round=n`).
 - **DiffFile** (`diff`, `diff?round=`, `diff?commit=`, `compare`): FileState + `hunks:[Hunk], threads:[Thread], lineCount:{old, new}, sig`.
   - `lineCount.old` / `.new`: each side's `total` as `GET /reviews/:id/file` reports it in that response's round (compare: old = round A's head, new = round B's head); `null` for a side the file lacks (`added` → old, `deleted` → new) and both `null` for binary or `tooLarge` files. An empty side is `0` (which `GET …/file` cannot window). Exception: an uncommitted file whose working-tree bytes differ from what git diffs (a clean filter such as git-lfs, a symlink) gets the count of the content the diff shows.
-- **fileSig** (on `POST …/threads`, `POST …/messages`, `PATCH …/threads/:tid`, `PUT …/verdict`, `POST …/accept-file`, and MCP `annotate`/`reply` results): `{path, sig}`, the `sig` the live `diff?file=<path>` shows after the write; `sig` is `null` when the path is not in the current diff or the snapshot is unreadable (the write itself still succeeds).
+- **fileSig** (on `POST …/threads`, `POST …/messages`, `PATCH …/threads/:tid`, `PUT …/verdict`, `POST …/accept-file`, and MCP `annotate`/`reply` results): `{path, sig}`, the `sig` the live `diff?file=<path>` shows after the write; `sig` is `null` when the path is not in the current diff or the snapshot is unreadable (the write itself still succeeds). A thread write on a review-anchored thread returns `fileSig: null` (it touches no file).
 - **Hunk:** text `{id, kind:'text', header, oldStart, oldLines, newStart, newLines, lines:[{t:'ctx'|'add'|'del', old, new, text, noEol?}], verdict}`; file-level `{id, kind:'file', lines:[], verdict}`. `verdict` is `null` for uncommitted reviews, in the commit filter view, in past-round views and in round comparisons.
-- **Thread:** `id, kind, severity, status (open|resolved|outdated), disposition, resolveProposed, anchor:{file, side, startLine, endLine, hunkId, round, linesHash, drifted}, openedBy, unread, messages:[{id, author, body, at, round, proposeResolve, citations:[{raw,path,startLine,endLine}]}]`.
-- **`anchor.round`:** the round whose snapshot the anchor's `lines` and `linesHash` come from: the round the thread was created in, advanced to the new round whenever a refresh re-anchors it. On a range review the anchor it had in each earlier round is kept and past-round views show it. A message's own `round` never changes.
+- **Thread:** `id, kind, severity, status (open|resolved|outdated), disposition, resolveProposed, anchor, openedBy, unread, messages:[{id, author, body, at, round, proposeResolve, citations:[{raw,path,startLine,endLine}]}]`.
+- **`anchor`**, by `anchor.kind`:
+
+  | `kind` | Fields | On |
+  |---|---|---|
+  | `lines` | `kind, file, side, startLine, endLine, hunkId, round, linesHash, drifted` | lines of one side (a thread started on a hunk is a `lines` anchor over the hunk, with its `hunkId`) |
+  | `file` | `kind, file, round` | the whole file `file` (the snapshot's new path); binary and too-large files included |
+  | `review` | `kind, round` | the review itself; `round` is the creation round and never advances |
+
+  Per-file lists (`DiffFile.threads`, FileState counts, `fileSig`, `list_threads file=`) match on `anchor.file`, so they hold `lines` and `file` threads, never `review` ones. `counts.threads`, `unread` and `mergeBlockers` count every thread whatever its anchor.
+- **`anchor.round`:** the round whose snapshot the anchor's `lines` and `linesHash` come from (a file anchor: the round its file was last found in): the round the thread was created in, advanced to the new round whenever a refresh re-anchors it; a review anchor's never advances. On a range review the anchor it had in each earlier round is kept and past-round views show it. A message's own `round` never changes.
 - **Thread in a past-round view** (`GET /reviews/:id/rounds/:n`, `diff?round=`): the same shape as of round n, plus `laterMessages` (messages written after round n, not included). `messages` stop at round n; `unread` is 0; `resolveProposed` is false; `status` is its current one, except that a thread outdated after round n shows `resolved` if it carries a resolution, else `open`. Past rounds are views of range reviews only.
 - **Thread in a round comparison** (`GET /reviews/:id/compare`): a copy of a thread, in the past-round Thread shape, plus `placement` and `outdatedIn`. A thread live in round A (`from`) gets a `placement:'from'` copy as of A; one live in round B (`to`) a `placement:'to'` copy as of B; a thread live in both gets both. `outdatedIn` (from-copies only, else `null`): the round it went outdated in when that is ≤ B. Threads outdated by A, or opened after B, are absent.
-  - **Coordinates:** the comparison's old side is round A's head and its new side round B's head. A placed copy's anchor has `file` = the comparison file's path, `side` = `old` (from) or `new` (to), its round's `startLine`/`endLine` unchanged, and `hunkId` = the comparison hunk holding it (`null` on context); `round`, `linesHash` and `drifted` stay its round's.
-  - **Unplaced copy:** `+ reason`, anchor unchanged. `base-side` (a `side:'old'` anchor has no place between two heads), `unchanged-file` (no comparison file holds it: from-copies match `oldPath ?? path` and skip `added` files, to-copies match `path` and skip `deleted` ones), `no-lines` (binary or too large).
+  - **Coordinates:** the comparison's old side is round A's head and its new side round B's head. A placed copy's anchor has `file` = the comparison file's path, `side` = `old` (from) or `new` (to), its round's `startLine`/`endLine` unchanged, and `hunkId` = the comparison hunk holding it (`null` on context); `round`, `linesHash` and `drifted` stay its round's. A `file` anchor's copy is placed on its comparison file by the same file match (binary or too large included) and keeps `{kind, file: <comparison path>, round}`.
+  - **Unplaced copy:** `+ reason`, anchor unchanged. `base-side` (a `side:'old'` anchor has no place between two heads), `unchanged-file` (no comparison file holds it: from-copies match `oldPath ?? path` and skip `added` files, to-copies match `path` and skip `deleted` ones), `no-lines` (a `lines` anchor on a binary or too-large file).
+  - Review threads are not compared: they are in neither the files, `unplaced` nor `counts`, only in the response's `reviewThreads`.
 - **`anchor.drifted`:** true only if the latest re-anchoring found the thread by surrounding context; finding the exact lines again clears it.
 - **Author:** `{kind:'human'}` or `{kind:'session', sessionId, role: author|reviewer|conductor}`.
 - **Session:** `sessionId, project, worktree, label, status, live, conductor, conducted, attached`. `label` is cc's `displayLabel`, else its `title`, else `null`; the UI then shows the session id.
@@ -65,19 +75,19 @@ REST under `/api` (JSON), an SSE stream, and the cc MCP endpoint. Behaviour behi
 | `GET /reviews` | `?project&worktree&status` (`open`, `closed` or `all`; `all` or no `status` = every status); no `worktree` = every checkout, empty `worktree=` = main | `{reviews:[ReviewSummary]}` newest first | |
 | `GET /inbox` | | `{reviews:[InboxItem]}`: every open review of every project and checkout, `lastActivityAt` descending, then `id` descending. Reads the store and asks cc each project's location (once per project with an open review) and worktree list (once per project with an open worktree review); runs no git. A failed cc lookup gives `checkoutGone:null`, never a refusal | |
 | `POST /reviews` | `{project, worktree|null, kind?, base?, sha?, recipient?, title?}` (`author` is refused `INVALID_ARGUMENT`: the human path takes none) | `{review, reused}` | `INVALID_ARGUMENT` `BAD_REF` `REF_UNKNOWN` `BASE_REQUIRED` `NO_COMMON_ANCESTOR` `UNBORN_HEAD` `PROJECT_*` `CHECKOUT_*` `RECIPIENT_UNKNOWN` |
-| `GET /reviews/:id` | | `{review, files:[FileState], rounds, submissions, outdatedThreads:[Thread]}` | `REVIEW_UNKNOWN` |
+| `GET /reviews/:id` | | `{review, files:[FileState], rounds, submissions, outdatedThreads:[Thread], reviewThreads:[Thread]}` (`reviewThreads`: every review-anchored thread; they never go outdated) | `REVIEW_UNKNOWN` |
 | `PATCH /reviews/:id` | `{recipient? (null clears), title?, status?: open|closed}` | `{review}` | `RECIPIENT_UNKNOWN` |
 | `DELETE /reviews/:id` | | `{ok}` | `REVIEW_UNKNOWN` |
 | `GET /reviews/:id/diff` | `?file` optional | `{review, files:[DiffFile]}`; threads are the non-outdated ones on that file | `FILE_NOT_IN_DIFF` `SNAPSHOT_GONE` `CHECKOUT_GONE` `DIFF_TOO_LARGE` |
 | `GET /reviews/:id/diff?commit=<sha>` | range reviews; sha or ≥7-char prefix | `{readOnly:true, commit:{sha,subject}, files:[DiffFile]}` (hunk verdicts `null`, no threads) | `COMMIT_NOT_IN_RANGE`, `INVALID_ARGUMENT` for other kinds |
 | `GET /reviews/:id/diff?round=<n>` | range reviews; `n` a stored round (the current one included); `file` optional | `{readOnly:true, round:Round, files:[DiffFile]}` as of round n: hunk and file verdicts `null`; threads are those placed in that file then and not outdated by then (past-round Thread shape) | `ROUND_UNKNOWN` `FILE_NOT_IN_DIFF` (not in that round) `SNAPSHOT_GONE` `CHECKOUT_GONE`; `INVALID_ARGUMENT` for other kinds, a non-positive-integer `n`, or with `commit` |
-| `GET /reviews/:id/rounds/:n` | range reviews; `n` as above | `{readOnly:true, round:Round, files:[FileState] (verdicts null, thread counts and unread as of then), counts:{open,resolved,outdated}, outdatedThreads:[Thread]}` | `ROUND_UNKNOWN` `SNAPSHOT_GONE` `CHECKOUT_GONE` `REVIEW_UNKNOWN`; `INVALID_ARGUMENT` as above |
-| `GET /reviews/:id/compare` | `?from&to`: range reviews; two stored rounds, `from` < `to` (the current one included) | `{readOnly:true, from:Round, to:Round, files:[DiffFile with compared Threads], counts:{open,resolved,outdated}, unplaced:[unplaced Thread]}`: `git diff <from head> <to head>`, keeping a file iff its `path` is in round B's diff or its `oldPath ?? path` in round A's; hunk and file verdicts `null`, `unread` 0. `counts`: the compared threads as of B. Per-file `threads` and `unplaced` are in thread-number order; `unplaced` holds each thread with no placed copy once (its to-copy if it has one) | `INVALID_ARGUMENT` (other kinds, a non-positive-integer round, `from` ≥ `to`) `ROUND_UNKNOWN` `SNAPSHOT_GONE` `CHECKOUT_GONE` `DIFF_TOO_LARGE` `REVIEW_UNKNOWN` |
+| `GET /reviews/:id/rounds/:n` | range reviews; `n` as above | `{readOnly:true, round:Round, files:[FileState] (verdicts null, thread counts and unread as of then), counts:{open,resolved,outdated}, outdatedThreads:[Thread], reviewThreads:[Thread] (as of round n)}` | `ROUND_UNKNOWN` `SNAPSHOT_GONE` `CHECKOUT_GONE` `REVIEW_UNKNOWN`; `INVALID_ARGUMENT` as above |
+| `GET /reviews/:id/compare` | `?from&to`: range reviews; two stored rounds, `from` < `to` (the current one included) | `{readOnly:true, from:Round, to:Round, files:[DiffFile with compared Threads], counts:{open,resolved,outdated}, unplaced:[unplaced Thread], reviewThreads:[Thread] (as of round B)}`: `git diff <from head> <to head>`, keeping a file iff its `path` is in round B's diff or its `oldPath ?? path` in round A's; hunk and file verdicts `null`, `unread` 0. `counts`: the compared threads as of B. Per-file `threads` and `unplaced` are in thread-number order; `unplaced` holds each thread with no placed copy once (its to-copy if it has one) | `INVALID_ARGUMENT` (other kinds, a non-positive-integer round, `from` ≥ `to`) `ROUND_UNKNOWN` `SNAPSHOT_GONE` `CHECKOUT_GONE` `DIFF_TOO_LARGE` `REVIEW_UNKNOWN` |
 | `GET /reviews/:id/commits` | | `{commits}` of the current round (range: `baseSha..headSha`; commit: that one; uncommitted: none) | |
 | `GET /reviews/:id/file` | `?path&side=old|new&start&end&round` (`round`: range reviews, read that round instead of the current one; refusals as for `diff?round`) | `{path, side, total, lines:[{n,text}]}` | `LINE_OUT_OF_RANGE` `FILE_NOT_IN_DIFF` (path absent on that side) `BINARY_FILE` (the snapshot's binary flag, so `-diff` attributes count) |
 | `PUT /reviews/:id/hunks/:hunkId/verdict` | `{verdict: pending|accepted|rejected}` (`pending` clears) | `{hunkId, verdict, fileSig, review}` | `NO_VERDICTS` `HUNK_UNKNOWN` `REVIEW_CLOSED` `INVALID_ARGUMENT` |
 | `POST /reviews/:id/accept-file` | `{file, hunkIds:[id]}` (ids of that file's hunks, as shown pending) | `{file, accepted:[hunkId], fileSig, review}` (`accepted` = ids that changed; ids with a verdict are skipped) | `NO_VERDICTS` `FILE_NOT_IN_DIFF` `HUNK_UNKNOWN` (any id not in that file this round; nothing written) `REVIEW_CLOSED` `INVALID_ARGUMENT` |
-| `POST /reviews/:id/threads` | `{anchor:{file,side?,startLine,endLine?}|{hunkId}, kind, severity?, body}` | `{thread, fileSig}` (human-authored) | `LINE_OUT_OF_RANGE` `FILE_NOT_IN_DIFF` `BINARY_FILE` `HUNK_UNKNOWN` `SEVERITY_REQUIRED` `INVALID_ARGUMENT` `REVIEW_CLOSED` |
+| `POST /reviews/:id/threads` | `{anchor, kind, severity?, body}`; `anchor` is `{kind:'lines', file, side?, startLine, endLine?}`, `{kind:'hunk', hunkId}`, `{kind:'file', file}` or `{kind:'review'}` | `{thread, fileSig}` (human-authored; `fileSig` null for a review anchor) | `LINE_OUT_OF_RANGE` `FILE_NOT_IN_DIFF` `BINARY_FILE` (lines and hunk anchors only) `HUNK_UNKNOWN` `SEVERITY_REQUIRED` `INVALID_ARGUMENT` (anchor checks below) `REVIEW_CLOSED` |
 | `POST /reviews/:id/threads/:tid/messages` | `{body}` | `{thread, fileSig}` | `THREAD_UNKNOWN` `THREAD_DROPPED` `REVIEW_CLOSED` |
 | `PATCH /reviews/:id/threads/:tid` | `{status: resolved|open, disposition?: fixed|dismissed}` | `{thread, fileSig}` | `INVALID_ARGUMENT` (finding without disposition, outdated thread) `THREAD_*` |
 | `POST /reviews/:id/refresh` | | `{unchanged, round, hunks:{kept,reset,new}, threads:{moved,drifted,outdated,dropped}}`; `unchanged:true` carries only `round` | `IMMUTABLE_TARGET` `CHECKOUT_GONE` `REVIEW_CLOSED` `REF_UNKNOWN` `NO_COMMON_ANCESTOR` |
@@ -86,6 +96,20 @@ REST under `/api` (JSON), an SSE stream, and the cc MCP endpoint. Behaviour behi
 | `POST /reviews/:id/read` | `{threadId?}` (none = whole review) | `{review}` | `THREAD_UNKNOWN` |
 | `GET /events` | | SSE | |
 | `POST /mcp` | cc envelope | see [MCP](#mcp) | |
+
+### Anchor checks
+
+One implementation (`buildAnchor` in `src/threads.js`) serves `POST …/threads` and MCP `annotate`. Each refusal below is `INVALID_ARGUMENT`, worded in domain terms (a file, a side, a start line, an end line, a hunk), never key names; nothing is written.
+
+| `anchor.kind` | Takes (besides `kind`) | Needs | Then |
+|---|---|---|---|
+| `lines` | `file side startLine endLine` | `file startLine` | `side` defaults to `new`, `endLine` to `startLine`; `FILE_NOT_IN_DIFF` `BINARY_FILE` `LINE_OUT_OF_RANGE` |
+| `hunk` | `hunkId` | `hunkId` | stored as `lines` over the hunk; `HUNK_UNKNOWN` `BINARY_FILE` |
+| `file` | `file` | `file` | `FILE_NOT_IN_DIFF`; any file in the diff, binary and too large included |
+| `review` | nothing | nothing | reads no snapshot, so it is written even while the diff is unreadable |
+
+- Refused: no anchor; a `kind` missing or not one of the four; any key besides `kind` and what the kind takes, unknown keys included (present = not `undefined`; the refusal says what the kind takes); a key it needs missing (the refusal names only the missing ones).
+- MCP passes its `side` through undefined when absent and the `annotate` schema declares no default for it, so `side` on a `file` anchor is refused rather than defaulted.
 
 ### SSE
 
@@ -111,9 +135,9 @@ REST under `/api` (JSON), an SSE stream, and the cc MCP endpoint. Behaviour behi
 |---|---|---|
 | `open_review` | | `{result:{ok, review:ReviewSummary & {link}, reused}}`. Checkout: `project`+`worktree`; without `project`, `worktree` must be absent and the checkout is the caller's (`CHECKOUT_UNKNOWN` if cc does not know the caller); a conductor caller must name `project` (`INVALID_ARGUMENT`). Recipient: the caller. `author`: conductor callers only, range/commit only (else `INVALID_ARGUMENT`); `AUTHOR_UNKNOWN` if cc does not know the session. A reused review is returned unchanged. The creator is the caller; `seenByHuman:false`. |
 | `get_review` | `review` | `{text: per-file table, meta: ReviewSummary & {link}}` |
-| `list_threads` | `review` | `{text, meta:{review, count, counts, threads:[{id, link}]}}` (`threads` in the text's order); `status` default `open`; `owner` (`user` = human-opened, `agents` = agent-opened; absent = both; else `INVALID_ARGUMENT`); `counts` is the whole review's; cited code inlined as `path#L… @<short sha | working tree>`, ≤ 80 lines then `… (truncated)`, unresolvable ones `(unresolved: …)` |
+| `list_threads` | `review` | `{text, meta:{review, count, counts, threads:[{id, anchor, link}]}}` (`threads` in the text's order; `anchor` = the thread's `anchor.kind`); a file thread's header names `<path> (whole file)` and a review thread's `the review`, with no code fence; `status` default `open`; `owner` (`user` = human-opened, `agents` = agent-opened; absent = both; else `INVALID_ARGUMENT`); `counts` is the whole review's; cited code inlined as `path#L… @<short sha | working tree>`, ≤ 80 lines then `… (truncated)`, unresolvable ones `(unresolved: …)` |
 | `get_hunk` | `review` + `hunk` or `file` | `{text: hunk with old/new line gutters, meta:{file, hunks:[{id, verdict, threadIds}]}}`; `file`+`line` picks the hunk covering that new-side line |
-| `annotate` | `review kind body` | `{result:{ok, thread, fileSig}}`; needs `file`+`startLine` or `hunk`; `severity` required for a finding |
+| `annotate` | `review anchor kind body` | `{result:{ok, thread, fileSig}}`; `anchor`: `lines` (`file`+`startLine`[+`endLine`, `side`]), `hunk` (`hunk`), `file` (`file`), `review` (nothing else); the anchor checks below; `severity` required for a finding |
 | `reply` | `review thread body` | `{result:{ok, thread, fileSig}}`; with `resolve:true`: `thread.resolveProposed:true` = proposed, `false` = closed (a resolved, outdated or user-opened thread never closes from an agent); a reply without `resolve` leaves the status alone. `disposition` only with `resolve` on a finding the caller opened, or any finding for a conductor (`INVALID_ARGUMENT` otherwise, and when a reply that closes a finding has none); nothing is posted on a refusal |
 | `refresh_review` | `review` | `{result:{ok, round, unchanged, hunks, threads}}` |
 
@@ -178,13 +202,16 @@ The page keeps its state in the query string (`?…`, never the hash) and writes
 **Links.** MCP results carry origin-relative links (never absolute: cc supplies the host) that open the review or a thread in the plugin view; built by `src/links.js`.
 - Format: `#plugin/<manifest id>/?<route>`; values are encoded as `URLSearchParams` does, keys follow the route serialiser's order.
 - Review: `project`, `worktree` (when set), `review`. `project` is always present so a fresh load does not follow the session's checkout instead.
-- Thread: the review keys plus the route `ThreadCard`'s Focus uses.
+- Thread: the review keys plus the route `ThreadCard`'s Focus uses (`threadPlace`).
 
-| Thread status | Extra keys |
-|---|---|
-| open, resolved | `file`, `side`, `thread` (no `lines`) |
-| outdated, anchor on the new side | `compare=R..R+1`, `file`, `side=old`, `lines`, `thread` (R = `anchor.round`) |
-| outdated, anchor on the old side | `round=R`, `file`, `side=old`, `lines`, `thread` |
+| Anchor | Thread status | Extra keys |
+|---|---|---|
+| `lines` | open, resolved | `file`, `side`, `thread` (no `lines`) |
+| `lines` | outdated, anchor on the new side | `compare=R..R+1`, `file`, `side=old`, `lines`, `thread` (R = `anchor.round`) |
+| `lines` | outdated, anchor on the old side | `round=R`, `file`, `side=old`, `lines`, `thread` |
+| `file` | open, resolved | `file`, `thread` |
+| `file` | outdated | `round=R`, `file`, `thread` (the round view it last sat in) |
+| `review` | any | `view=threads`, `thread` |
 
 **New review links.** A link opens the New review dialog prefilled; the human still picks the recipient and clicks Open review (nothing is created from a link, and no URL key sets the recipient).
 - Format: `#plugin/code-review/?project=<P>[&worktree=<W>]&view=new&range=<BASE>...<HEAD>` (`..` means the same) or `…&view=new&sha=<COMMIT>`. `project` is required; values are encoded as `URLSearchParams` does, keys in the route serialiser's order (`project, worktree, …, view, range, sha`).

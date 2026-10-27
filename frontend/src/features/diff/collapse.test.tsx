@@ -8,7 +8,7 @@ import type { FileDiffState } from '@/state/fileDiff';
 import { ReviewProvider } from '@/state/reviewContext';
 import { installMedia } from '@/test/fakeMedia';
 import { installResizeObserver } from '@/test/fakeResizeObserver';
-import { diffFile, fileState, hunk, message, thread } from '@/test/fixtures';
+import { diffFile, fileState, hunk, message, thread, linesAnchor } from '@/test/fixtures';
 import { ctxValue, renderDiff, renderInReview } from '@/test/renderCtx';
 import { stubFetch } from '@/test/stubFetch';
 import { FileDiff } from './FileDiff';
@@ -203,7 +203,7 @@ describe.each(['inline', 'split'])('%s view', (view) => {
 // Invariant: a collapsed resolved thread still names the lines it spans, as its live card does.
 test('a resolved summary names its range', () => {
   localStorage.setItem('code-review:diffView', 'inline');
-  mount(diffFile({ threads: [resolved({ anchor: { ...thread().anchor, startLine: 2, endLine: 3 } })] }));
+  mount(diffFile({ threads: [resolved({ anchor: linesAnchor({ startLine: 2, endLine: 3 }) })] }));
   expect(within(screen.getByRole('button', { name: /first line.*resolved/ })).getByText('L2–L3 (new)')).toBeTruthy();
 });
 

@@ -65,7 +65,7 @@ test('each write passes its response\'s fileSig on to patchSig', async () => {
   const { value, result } = actions();
   const patchSig = value.fileDiff.patchSig as ReturnType<typeof vi.fn>;
   const writes: [string, () => Promise<unknown>][] = [
-    ['createThread', () => result.current.createThread({ anchor: { hunkId: 'h1' }, kind: 'comment', body: 'x' })],
+    ['createThread', () => result.current.createThread({ anchor: { kind: 'hunk', hunkId: 'h1' }, kind: 'comment', body: 'x' })],
     ['reply', () => result.current.reply('t-1', 'x')],
     ['setStatus', () => result.current.setStatus('t-1', 'resolved', 'fixed')],
     ['setVerdict', () => result.current.setVerdict('h1', 'accepted', null)],
@@ -76,4 +76,15 @@ test('each write passes its response\'s fileSig on to patchSig', async () => {
     await act(async () => { await write(); });
     expect(patchSig, name).toHaveBeenCalledWith(fileSig);
   }
+});
+
+// Invariant: a review thread's write (fileSig null) still lands: the thread is patched in, the null sig passed through, the review reloaded.
+test('a review-thread write with a null fileSig reloads the review', async () => {
+  const t = thread({ id: 't-r', anchor: { kind: 'review', round: 1 } });
+  const net = stubFetch({ 'POST api/reviews/r-1/threads': { thread: t, fileSig: null } });
+  const { value, result } = actions();
+  await act(async () => { await result.current.createThread({ anchor: { kind: 'review' }, kind: 'comment', body: 'x' }); });
+  expect(value.reload).toHaveBeenCalled();
+  expect(value.fileDiff.patchThread).toHaveBeenCalledWith(t);
+  expect(net.calls.filter((c) => c.method === 'GET')).toEqual([]);
 });

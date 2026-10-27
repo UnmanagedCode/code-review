@@ -4,7 +4,7 @@ import type { ComparedThread, ThreadKind } from '@/lib/types';
 import { WIDE_QUERY } from '@/lib/useMediaQuery';
 import { installMedia } from '@/test/fakeMedia';
 import { installResizeObserver } from '@/test/fakeResizeObserver';
-import { diffFile, hunk, thread } from '@/test/fixtures';
+import { diffFile, hunk, thread, linesAnchor } from '@/test/fixtures';
 import { renderDiff } from '@/test/renderCtx';
 import { FileDiff } from './FileDiff';
 
@@ -17,7 +17,7 @@ beforeEach(() => {
 });
 
 const copy = (id: string, kind: ThreadKind, placement: 'from' | 'to', n: number, outdatedIn: number | null = null): ComparedThread => ({
-  ...thread({ id, kind, anchor: { ...thread().anchor, side: placement === 'from' ? 'old' : 'new', startLine: n, endLine: n, round: placement === 'from' ? 1 : 2 } }),
+  ...thread({ id, kind, anchor: linesAnchor({ side: placement === 'from' ? 'old' : 'new', startLine: n, endLine: n, round: placement === 'from' ? 1 : 2 }) }),
   placement, outdatedIn,
 });
 // t-1: round-1 L3 (the deleted line) and round-2 L3 (the added line). t-2: round-1 L1, round-2 L4.
@@ -85,4 +85,16 @@ test('no verdict group, gutter selection or reply box in a comparison', () => {
   expect(screen.queryByRole('group', { name: 'Hunk verdict' })).toBeNull();
   expect(document.querySelector('[data-cell]')).toBeNull();
   expect(screen.queryByLabelText('Reply')).toBeNull();
+});
+
+// Invariant: a file thread's two copies show once, in the file-threads block, noting both rounds.
+test('a file thread with both copies renders once, in the file-threads block', () => {
+  const fileCopy = (placement: 'from' | 'to', round: number): ComparedThread => ({
+    ...thread({ id: 't-9', anchor: { kind: 'file', file: 'src/a.ts', round } }), placement, outdatedIn: null,
+  });
+  renderDiff(<FileDiff />, diffFile({ hunks: [hunk({ verdict: null })], threads: [fileCopy('from', 1), fileCopy('to', 2)] }), { compare: { from: 1, to: 2 }, readOnly: true });
+  const block = screen.getByRole('region', { name: 'File threads' });
+  expect(within(block).getAllByRole('article')).toHaveLength(1);
+  expect(within(block).getByText('round 1 · round 2')).toBeTruthy();
+  expect(within(screen.getByRole('grid')).queryAllByRole('article')).toHaveLength(0);
 });

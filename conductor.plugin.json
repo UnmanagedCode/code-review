@@ -87,7 +87,7 @@
       },
       {
         "name": "list_threads",
-        "description": "Threads with their anchored lines and messages; cited code is inlined.",
+        "description": "Threads with their anchored lines and messages; cited code is inlined. A thread can also sit on a whole file or on the review itself.",
         "inputSchema": {
           "type": "object",
           "properties": {
@@ -157,7 +157,7 @@
       },
       {
         "name": "annotate",
-        "description": "Start a thread on lines (`file`+`startLine`[+`endLine`]) or on a whole `hunk`. A finding needs `severity`. Cite code as path#L10-L20.",
+        "description": "Start a thread on lines, a hunk, a whole file, or the review (`anchor`). A finding needs `severity`. Cite code as path#L10-L20.",
         "inputSchema": {
           "type": "object",
           "properties": {
@@ -165,6 +165,16 @@
               "type": "string",
               "minLength": 1,
               "description": "Review id (r-\u2026)."
+            },
+            "anchor": {
+              "type": "string",
+              "enum": [
+                "lines",
+                "hunk",
+                "file",
+                "review"
+              ],
+              "description": "What the thread is on: `lines` (file+startLine[+endLine, side]), `hunk` (hunk), `file` (file: the whole file), `review` (the review itself; no file, lines or hunk)."
             },
             "kind": {
               "type": "string",
@@ -201,26 +211,26 @@
                 "old",
                 "new"
               ],
-              "default": "new",
-              "description": "Which side of the diff the lines are on."
+              "description": "Which side of the diff the lines are on (default new); lines anchors only."
             },
             "startLine": {
               "type": "integer",
               "minimum": 1,
-              "description": "First line."
+              "description": "First line; lines anchors only."
             },
             "endLine": {
               "type": "integer",
               "minimum": 1,
-              "description": "Last line; defaults to startLine."
+              "description": "Last line, defaulting to startLine; lines anchors only."
             },
             "hunk": {
               "type": "string",
-              "description": "Hunk id, instead of file and lines."
+              "description": "Hunk id; hunk anchors only."
             }
           },
           "required": [
             "review",
+            "anchor",
             "kind",
             "body"
           ]

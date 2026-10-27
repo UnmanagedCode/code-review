@@ -33,8 +33,8 @@ test('the Threads panel holds the "Thread filter" tablist, apart from the pane\'
   show();
   await userEvent.setup().click(screen.getByRole('tab', { name: 'Threads' }));
   const filter = within(screen.getByRole('tabpanel', { name: 'Threads' })).getByRole('tablist', { name: 'Thread filter' });
-  expect(within(filter).getAllByRole('tab').map(text)).toEqual(['This file', 'All 0', 'Outdated 0']);
-  expect(paneTabs().some((t) => /This file|All|Outdated/.test(t.textContent!))).toBe(false);
+  expect(within(filter).getAllByRole('tab').map(text)).toEqual(['This file', 'All 0', 'Outdated 0', 'Review 0']);
+  expect(paneTabs().some((t) => /This file|All|Outdated|Review/.test(t.textContent!))).toBe(false);
 });
 
 // Invariant: the Threads tab carries the unread count, except in a past view.

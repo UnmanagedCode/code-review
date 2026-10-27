@@ -14,11 +14,13 @@ const q = (params: Record<string, string | number | null | undefined>): string =
 const json = (method: string, body?: unknown): RequestInit => ({ method, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
 const r = (id: string) => `api/reviews/${encodeURIComponent(id)}`;
 
-export interface ReviewDetail { review: ReviewSummary; files: FileState[]; rounds: Round[]; submissions: Submission[]; outdatedThreads: Thread[] }
-/** A past round of a range review, read-only: its files, the counts of its threads, and its outdated threads. */
-export interface RoundView { readOnly: true; round: Round; files: FileState[]; counts: ThreadCounts; outdatedThreads: Thread[] }
+export interface ReviewDetail { review: ReviewSummary; files: FileState[]; rounds: Round[]; submissions: Submission[]; outdatedThreads: Thread[]; reviewThreads: Thread[] }
+/** A past round of a range review, read-only: its files, the counts of its threads, its outdated and its review threads. */
+export interface RoundView { readOnly: true; round: Round; files: FileState[]; counts: ThreadCounts; outdatedThreads: Thread[]; reviewThreads: Thread[] }
+/** `reviewThreads` are round B's; `counts` covers only the compared (file-bound) threads. */
 export interface CompareView {
   readOnly: true; from: Round; to: Round; files: (DiffFile & { threads: ComparedThread[] })[]; counts: ThreadCounts; unplaced: UnplacedThread[];
+  reviewThreads: Thread[];
 }
 export interface FileLines { path: string; side: 'old' | 'new'; total: number; lines: { n: number; text: string }[] }
 
@@ -66,11 +68,11 @@ export const setVerdict = (id: string, hunkId: string, verdict: Verdict) =>
 export const acceptFile = (id: string, file: string, hunkIds: string[]) =>
   api<{ file: string; accepted: string[]; review: ReviewSummary; fileSig: FileSig }>(`${r(id)}/accept-file`, json('POST', { file, hunkIds }));
 export const createThread = (id: string, input: { anchor: ThreadAnchorInput; kind: ThreadKind; severity?: Severity; body: string }) =>
-  api<{ thread: Thread; fileSig: FileSig }>(`${r(id)}/threads`, json('POST', input));
+  api<{ thread: Thread; fileSig: FileSig | null }>(`${r(id)}/threads`, json('POST', input));
 export const replyThread = (id: string, tid: string, body: string) =>
-  api<{ thread: Thread; fileSig: FileSig }>(`${r(id)}/threads/${encodeURIComponent(tid)}/messages`, json('POST', { body }));
+  api<{ thread: Thread; fileSig: FileSig | null }>(`${r(id)}/threads/${encodeURIComponent(tid)}/messages`, json('POST', { body }));
 export const setThreadStatus = (id: string, tid: string, status: 'open' | 'resolved', disposition?: 'fixed' | 'dismissed') =>
-  api<{ thread: Thread; fileSig: FileSig }>(`${r(id)}/threads/${encodeURIComponent(tid)}`, json('PATCH', { status, ...(disposition ? { disposition } : {}) }));
+  api<{ thread: Thread; fileSig: FileSig | null }>(`${r(id)}/threads/${encodeURIComponent(tid)}`, json('PATCH', { status, ...(disposition ? { disposition } : {}) }));
 export const refresh = (id: string) => api<RefreshReport>(`${r(id)}/refresh`, json('POST'));
 export const compose = (id: string) => api<{ submission: Submission }>(`${r(id)}/submissions`, json('POST'));
 export const submissionResult = (id: string, sid: string | number, result: { ok: boolean; code?: string }) =>

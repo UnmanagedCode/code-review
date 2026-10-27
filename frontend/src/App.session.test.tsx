@@ -18,7 +18,7 @@ const world = () => stubFetch([
   [/^GET api\/sessions/, { sessions: [] }],
   [/^GET api\/reviews\?/, { reviews: [] }],
   [/^GET api\/inbox$/, { reviews: [] }],
-  [/^GET api\/reviews\/r-1$/, { review: review({ title: 'Open review' }), files: [fileState({ path: 'a.js' })], rounds: [{ n: 1, headSha: 'a'.repeat(40), baseSha: 'b'.repeat(40), createdAt: '', submittedAt: null }], submissions: [], outdatedThreads: [] }],
+  [/^GET api\/reviews\/r-1$/, { review: review({ title: 'Open review' }), files: [fileState({ path: 'a.js' })], rounds: [{ n: 1, headSha: 'a'.repeat(40), baseSha: 'b'.repeat(40), createdAt: '', submittedAt: null }], submissions: [], outdatedThreads: [], reviewThreads: [] }],
   [/^GET api\/reviews\/r-1\/diff/, { review: review({ title: 'Open review' }), files: [diffFile({ path: 'a.js' })] }],
   [/^GET api\/reviews\/r-1\/commits/, { commits: [] }],
 ]);

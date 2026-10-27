@@ -5,7 +5,7 @@ import type { DiffFile, DiffLine } from '@/lib/types';
 import { WIDE_QUERY } from '@/lib/useMediaQuery';
 import { installMedia } from '@/test/fakeMedia';
 import { installResizeObserver } from '@/test/fakeResizeObserver';
-import { diffFile, hunk, thread } from '@/test/fixtures';
+import { diffFile, hunk, thread, linesAnchor } from '@/test/fixtures';
 import { renderDiff } from '@/test/renderCtx';
 import { stubFetch } from '@/test/stubFetch';
 import { FileDiff } from './FileDiff';
@@ -64,7 +64,7 @@ describe.each(['inline', 'split'] as const)('%s', (view) => {
   // Invariant: highlighting changes only the text cell: range rails, thread placement and the composer anchor are as on a plain row.
   test('on highlighted rows the rail, the thread card under its end line and the composer anchor are unchanged', async () => {
     const net = stubFetch({ 'POST api/reviews/r-1/threads': { thread: thread(), fileSig: { path: 'src/a.ts', sig: 's-2' } } });
-    const t = thread({ anchor: { ...thread().anchor, side: 'new', startLine: 2, endLine: 3 } });
+    const t = thread({ anchor: linesAnchor({ side: 'new', startLine: 2, endLine: 3 }) });
     show(code({ threads: [t] }), view);
     await highlighted();
     for (const n of [2, 3]) expect(document.querySelector(`[data-cell="new:${n}"] [data-rails]`)).not.toBeNull();
@@ -82,6 +82,6 @@ describe.each(['inline', 'split'] as const)('%s', (view) => {
     const user = userEvent.setup();
     await user.type(screen.getByLabelText('Message'), 'note');
     await user.click(screen.getByRole('button', { name: 'Post' }));
-    await waitFor(() => expect(net.calls[0].body).toMatchObject({ anchor: { file: 'src/a.ts', side: 'new', startLine: 1, endLine: 2 } }));
+    await waitFor(() => expect(net.calls[0].body).toMatchObject({ anchor: { kind: 'lines', file: 'src/a.ts', side: 'new', startLine: 1, endLine: 2 } }));
   });
 });

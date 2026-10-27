@@ -1,7 +1,7 @@
 import { test, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { world, HUMAN, agent, editLines } from './_world.js';
-import { gitDirSig } from './_git.js';
+import { gitDirSig, lines } from './_git.js';
 import * as reviews from '../src/reviews.js';
 import * as rounds from '../src/rounds.js';
 import * as threads from '../src/threads.js';
@@ -15,7 +15,7 @@ const ok = (res) => { assert.equal(res.ok, true, JSON.stringify(res)); return re
 const codeOf = (res) => { assert.equal(res.ok, false, 'expected a refusal'); return res.code; };
 const open = async (args = {}) => ok(await reviews.openReview({ project: 'app', worktree: 'feature', ...args }, HUMAN)).review;
 const say = async (id, startLine, body = 'x', actor = HUMAN) =>
-  ok(await threads.annotate(id, actor, { anchor: { file: 'a.js', side: 'new', startLine, endLine: startLine }, kind: 'comment', body })).thread;
+  ok(await threads.annotate(id, actor, { anchor: { kind: 'lines', file: 'a.js', side: 'new', startLine, endLine: startLine }, kind: 'comment', body })).thread;
 const withTop = (top, edits) => [...top, ...editLines(edits).split('\n')].join('\n');
 const fileAt = async (id, round, file = 'a.js') => ok(await reviews.diff(id, { round, file })).files[0];
 const where = (file) => Object.fromEntries(file.threads.map((t) => [t.id, t.anchor.startLine]));
@@ -202,7 +202,7 @@ test('reading a past round of a linked worktree leaves the common git dir, its w
   assert.deepEqual(gitDirSig(w.repo.dir), before);
 });
 
-const POSITIONAL = ['drifted', 'endLine', 'file', 'hunkId', 'linesHash', 'round', 'side', 'startLine'];
+const POSITIONAL = ['drifted', 'endLine', 'file', 'hunkId', 'kind', 'linesHash', 'round', 'side', 'startLine'];
 
 test('every served thread anchor is positional only: no stored lines or context hashes leak to the API', async () => {
   const { review, t1 } = await threeRounds();
@@ -211,8 +211,42 @@ test('every served thread anchor is positional only: no stored lines or context 
     ...ok(await reviews.getReview(review.id)).outdatedThreads,
     ...(await fileAt(review.id, 1)).threads,
     ...ok(await rounds.roundView(review.id, '3')).outdatedThreads,
-    ok(await threads.annotate(review.id, HUMAN, { anchor: { file: 'a.js', side: 'new', startLine: 21 }, kind: 'comment', body: 'y' })).thread,
+    ok(await threads.annotate(review.id, HUMAN, { anchor: { kind: 'lines', file: 'a.js', side: 'new', startLine: 21 }, kind: 'comment', body: 'y' })).thread,
   ];
   assert.ok(served.length >= 6);
   for (const t of served) assert.deepEqual(Object.keys(t.anchor).sort(), POSITIONAL, t.id);
+});
+
+// ---- file and review threads as of a round ----
+
+const note = async (id, anchor) => ok(await threads.annotate(id, HUMAN, { anchor, kind: 'comment', body: 'x' })).thread;
+
+test('a round view lists the review threads opened by then: none before the thread\'s round, the thread from it on', async () => {
+  // Invariant: rounds/:n reviewThreads is threadsAt(n) filtered to review anchors, so a thread first appears in its own round.
+  const wt = w.addWorktree();
+  wt.commit({ 'a.js': editLines({ 2: 'top-edit' }) });
+  const review = await open();
+  wt.commit({ 'a.js': editLines({ 2: 'top-edit', 18: 'bottom-edit' }) });
+  ok(await reviews.refreshReview(review.id, HUMAN));
+  const r = await note(review.id, { kind: 'review' });
+  await note(review.id, { kind: 'file', file: 'a.js' });
+  wt.commit({ 'b.js': 'other\n' });
+  ok(await reviews.refreshReview(review.id, HUMAN));
+  const ids = async (n) => ok(await rounds.roundView(review.id, n)).reviewThreads.map((t) => [t.id, t.anchor.kind]);
+  assert.deepEqual(await ids(1), []);
+  assert.deepEqual(await ids(2), [[r.id, 'review']]);
+  assert.deepEqual(await ids(3), [[r.id, 'review']]);
+});
+
+test('a past round\'s diff places a file thread on that round\'s path: the pre-rename path before the rename', async () => {
+  // Invariant: roundThreadsOn reads the file anchor of round n from pastAnchors, so the thread sits on the path it had then.
+  const wt = w.addWorktree();
+  wt.commit({ 'b.js': lines(10, 'b').replace('b1\n', 'b1-edit\n') });
+  const review = await open();
+  const t = await note(review.id, { kind: 'file', file: 'b.js' });
+  wt.git('mv', 'b.js', 'c.js');
+  wt.commit({});
+  ok(await reviews.refreshReview(review.id, HUMAN));
+  assert.deepEqual((await fileAt(review.id, 1, 'b.js')).threads.map((x) => [x.id, x.anchor]), [[t.id, { kind: 'file', file: 'b.js', round: 1 }]]);
+  assert.deepEqual((await fileAt(review.id, 2, 'c.js')).threads.map((x) => [x.id, x.anchor]), [[t.id, { kind: 'file', file: 'c.js', round: 2 }]]);
 });

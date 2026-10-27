@@ -126,11 +126,11 @@ test('golden uncommitted review: stored fingerprints and where the threads sit a
   w.repo.write('u\nnl.txt', 'one\ntwo\nthree\n');
   const { review } = await reviews.openReview({ project: 'app', kind: 'uncommitted' }, HUMAN);
   const note = async (anchor) => (await threads.annotate(review.id, HUMAN, { anchor, kind: 'comment', body: 'x' })).thread.id;
-  await note({ file: 'a.js', side: 'new', startLine: 10 });
-  await note({ file: 'a.js', side: 'old', startLine: 4 });
-  await note({ file: 'r2.txt', side: 'new', startLine: 9, endLine: 10 });
-  await note({ file: 'gone.txt', side: 'new', startLine: 2 });
-  await note({ file: 'u\nnl.txt', side: 'new', startLine: 2 });
+  await note({ kind: 'lines', file: 'a.js', side: 'new', startLine: 10 });
+  await note({ kind: 'lines', file: 'a.js', side: 'old', startLine: 4 });
+  await note({ kind: 'lines', file: 'r2.txt', side: 'new', startLine: 9, endLine: 10 });
+  await note({ kind: 'lines', file: 'gone.txt', side: 'new', startLine: 2 });
+  await note({ kind: 'lines', file: 'u\nnl.txt', side: 'new', startLine: 2 });
   // Shift a.js down, drop gone.txt's edit (its thread is dropped), move the untracked file's line.
   w.repo.write('a.js', ['ins-1', 'ins-2', ...editLines({ 4: 'four', 10: 'ten' }).split('\n')].join('\n'));
   w.repo.git('checkout', '--', 'gone.txt');

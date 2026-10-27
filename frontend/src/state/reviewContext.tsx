@@ -15,8 +15,11 @@ export interface ReviewCtx extends Omit<ReviewDetail, 'review'> {
   compare: { from: number; to: number; view?: CompareView } | undefined;
   /** A past-round view or a comparison: no verdict UI and no review-level writes, since those act on the current round. */
   pastView: boolean;
-  /** The past round's or the comparison's loading state (undefined outside both): its error replaces the file tree. */
-  viewLoad: { loading: boolean; error: unknown; reload: () => void } | undefined;
+  /**
+   * The past round's or the comparison's loading state (undefined outside both): its error replaces the file tree.
+   * `loaded`: its data is there (a failed reload keeps it).
+   */
+  viewLoad: { loading: boolean; error: unknown; loaded: boolean; reload: () => void } | undefined;
   /** Thread counts of what is shown: the viewed round's or the comparison's threads, else the review's. */
   threadCounts: ThreadCounts;
   /** True when writes are off: closed review, commit-filter view, past-round view or comparison. */

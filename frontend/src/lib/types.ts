@@ -11,10 +11,14 @@ export type Author = { kind: 'human' } | { kind: 'session'; sessionId: string; r
 export interface Citation { raw: string; path: string; startLine: number; endLine: number }
 export interface Message { id: number | string; author: Author; body: string; at: string; round: number; proposeResolve?: boolean; citations: Citation[] }
 
-export interface Anchor {
-  file: string; side: Side; startLine: number; endLine: number;
+/** Where a thread sits (`kind`): on lines (a hunk anchor is stored as lines), on a whole file, or on the review itself. */
+export interface LinesAnchor {
+  kind: 'lines'; file: string; side: Side; startLine: number; endLine: number;
   hunkId: string | null; round: number; linesHash?: string; drifted: boolean;
 }
+export interface FileAnchor { kind: 'file'; file: string; round: number }
+export interface ReviewAnchor { kind: 'review'; round: number }
+export type Anchor = LinesAnchor | FileAnchor | ReviewAnchor;
 export interface Thread {
   id: string; kind: ThreadKind; severity: Severity | null; status: 'open' | 'resolved' | 'outdated';
   disposition: 'fixed' | 'dismissed' | null; resolveProposed: boolean; anchor: Anchor;
@@ -89,4 +93,8 @@ export interface RefreshReport {
   threads?: { moved: number; drifted: number; outdated: number; dropped: number };
 }
 
-export type ThreadAnchorInput = { file: string; side?: Side; startLine: number; endLine?: number } | { hunkId: string };
+export type ThreadAnchorInput =
+  | { kind: 'lines'; file: string; side?: Side; startLine: number; endLine?: number }
+  | { kind: 'hunk'; hunkId: string }
+  | { kind: 'file'; file: string }
+  | { kind: 'review' };

@@ -46,7 +46,7 @@ export function HunkBar({ hunk, commentable }: { hunk: Hunk; commentable: boolea
         <Button size="sm" variant="ghost" onClick={() => setComposing(true)}><MessageSquarePlusIcon />Comment on hunk</Button>
       )}
       {composing && (
-        <div className="basis-full"><Composer anchor={{ hunkId: hunk.id }} label="This hunk" onClose={() => setComposing(false)} /></div>
+        <div className="basis-full"><Composer anchor={{ kind: 'hunk', hunkId: hunk.id }} label="This hunk" onClose={() => setComposing(false)} /></div>
       )}
     </div>
   );

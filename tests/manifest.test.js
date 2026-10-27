@@ -45,6 +45,19 @@ test('every tool except open_review requires `review`', () => {
   }
 });
 
+test('annotate requires `anchor`, one of lines, hunk, file and review', () => {
+  // Invariant: the schema makes agents name the anchor kind, from exactly the kinds buildAnchor takes.
+  const schema = manifest.mcp.tools.find((t) => t.name === 'annotate').inputSchema;
+  assert.ok(schema.required.includes('anchor'));
+  assert.deepEqual(schema.properties.anchor.enum, ['lines', 'hunk', 'file', 'review']);
+});
+
+test('annotate declares no default for side, so no client adds one to a file or review anchor', () => {
+  // Invariant: the server owns the lines-only side default; a schema default applied client-side would refuse every file and review annotate.
+  const schema = manifest.mcp.tools.find((t) => t.name === 'annotate').inputSchema;
+  for (const [prop, def] of Object.entries(schema.properties)) assert.equal('default' in def, false, `annotate.${prop}`);
+});
+
 test('the conductor-scope convention declares an existing file; a missing one would make the plugin invalid', () => {
   const conv = manifest.conventions.find((c) => c.scope === 'conductor');
   assert.ok(conv, 'a conductor-scope convention exists');

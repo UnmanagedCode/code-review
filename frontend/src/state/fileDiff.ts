@@ -194,13 +194,16 @@ export function useFileDiff({ reviewId, path, sig, uncommitted, commitFiles, rou
   const patch = fetched.mutate;
   const patchThread = useCallback((t: Thread) => patch((f) => {
     const rest = f.threads.filter((x) => x.id !== t.id);
-    const belongs = t.anchor.file === f.path && t.status !== 'outdated';
+    const belongs = t.anchor.kind !== 'review' && t.anchor.file === f.path && t.status !== 'outdated';
     return { ...f, threads: belongs ? [...rest, t].sort((a, b) => a.id.localeCompare(b.id, undefined, { numeric: true })) : rest };
   }), [patch]);
   const patchVerdict = useCallback((hunkId: string, verdict: Verdict) => patch((f) => ({ ...f, hunks: f.hunks.map((h) => (h.id === hunkId ? { ...h, verdict } : h)) })), [patch]);
-  /** The server's new sig for the file a write touched: the patches above made the cached diff match it, so no refetch is due. */
-  const patchSig = useCallback((fs: FileSig) => {
-    if (fs.sig && fs.path === path) patch((f) => ({ ...f, sig: fs.sig! }));
+  /**
+   * The server's new sig for the file a write touched: the patches above made the cached diff match it, so no refetch is due.
+   * A review thread's write touched no file (null).
+   */
+  const patchSig = useCallback((fs: FileSig | null) => {
+    if (fs?.sig && fs.path === path) patch((f) => ({ ...f, sig: fs.sig! }));
   }, [patch, path]);
 
   return {

@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { expect, test } from 'vitest';
 import { installBridge } from '@/test/fakeBridge';
 import { installFakeEventSource } from '@/test/fakeEventSource';
-import { diffFile, fileState, review, thread } from '@/test/fixtures';
+import { diffFile, fileState, review, thread, linesAnchor } from '@/test/fixtures';
 import { stubFetch } from '@/test/stubFetch';
 import { App } from './App';
 
@@ -13,20 +13,20 @@ const rounds = (n: number) => Array.from({ length: n }, (_, i) => ({ n: i + 1, h
 function world() {
   const r1 = review({ id: 'r-1', title: 'First review', round: 1, counts: { ...review().counts, threads: { open: 0, resolved: 0, outdated: 0 } } });
   const r2 = review({ id: 'r-2', title: 'Second review', round: 2, counts: { ...review().counts, threads: { open: 1, resolved: 1, outdated: 0 } } });
-  const open = thread({ id: 't-7', anchor: { ...thread().anchor, file: 'a.js' } });
-  const done = thread({ id: 't-8', status: 'resolved', anchor: { ...thread().anchor, file: 'a.js', startLine: 4, endLine: 4 } });
+  const open = thread({ id: 't-7', anchor: linesAnchor({ file: 'a.js' }) });
+  const done = thread({ id: 't-8', status: 'resolved', anchor: linesAnchor({ file: 'a.js', startLine: 4, endLine: 4 }) });
   const aFile = diffFile({ path: 'a.js', threads: [open, done] });
   const files2 = [fileState({ path: 'a.js', threads: { open: 1, resolved: 1, outdated: 0 } })];
   const compared = (from: number, to: number) => ({
-    readOnly: true, from: rounds(2)[from - 1], to: rounds(2)[to - 1], files: [{ ...aFile, threads: [] }], counts: { open: 0, resolved: 0, outdated: 0 }, unplaced: [],
+    readOnly: true, from: rounds(2)[from - 1], to: rounds(2)[to - 1], files: [{ ...aFile, threads: [] }], counts: { open: 0, resolved: 0, outdated: 0 }, unplaced: [], reviewThreads: [],
   });
   return stubFetch([
     [/^GET api\/projects$/, { projects: [{ name: 'app' }, { name: 'other' }] }],
     [/^GET api\/checkout\?/, { checkout: { project: 'app', worktree: null, path: '/x', branch: 'main', headSha: 'h', dirty: false, exists: true }, forkPoints: [], worktrees: [] }],
     [/^GET api\/sessions/, { sessions: [] }],
     [/^GET api\/reviews\?/, { reviews: [r1, r2] }],
-    [/^GET api\/reviews\/r-1$/, { review: r1, files: [fileState({ path: 'a.js' })], rounds: rounds(1), submissions: [], outdatedThreads: [] }],
-    [/^GET api\/reviews\/r-2$/, { review: r2, files: files2, rounds: rounds(2), submissions: [], outdatedThreads: [] }],
+    [/^GET api\/reviews\/r-1$/, { review: r1, files: [fileState({ path: 'a.js' })], rounds: rounds(1), submissions: [], outdatedThreads: [], reviewThreads: [] }],
+    [/^GET api\/reviews\/r-2$/, { review: r2, files: files2, rounds: rounds(2), submissions: [], outdatedThreads: [], reviewThreads: [] }],
     [/^GET api\/reviews\/r-1\/diff/, { review: r1, files: [diffFile({ path: 'a.js' })] }],
     [/^GET api\/reviews\/r-2\/diff/, { review: r2, files: [aFile] }],
     [/^GET api\/reviews\/r-2\/compare/, (u: URL) => compared(Number(u.searchParams.get('from')), Number(u.searchParams.get('to')))],

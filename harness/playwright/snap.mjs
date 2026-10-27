@@ -18,6 +18,10 @@ const VIEWPORTS = { desktop: { width: 1280, height: 800 }, phone: { width: 390, 
 const world = await seed();
 const { range, uncommitted, conducted, syntax } = world.ids;
 const q = (o) => `${world.url}/?${new URLSearchParams({ project: 'app', worktree: 'feature', ...o })}`;
+// Threads on a whole file (a text one and the binary one) and on the review itself; snap only, so golden's counts stay seed.mjs's.
+await world.call('POST', `reviews/${range}/threads`, { anchor: { kind: 'file', file: 'c.js' }, kind: 'finding', severity: 'minor', body: 'This file needs a header comment explaining **why** the extra lines exist.' });
+await world.call('POST', `reviews/${range}/threads`, { anchor: { kind: 'file', file: 'logo.bin' }, kind: 'question', body: 'Is this logo final?' });
+await world.call('POST', `reviews/${range}/threads`, { anchor: { kind: 'review' }, kind: 'question', body: 'Is the overall split into a.js and c.js right?' });
 try {
   await withPage(async (page) => {
     const errors = [];
@@ -95,6 +99,12 @@ try {
         await page.getByRole('tab', { name: /Outdated/ }).click();
         await page.getByText(/outdated · was/).first().waitFor();
         await shot('threads-outdated');
+        await page.getByRole('tab', { name: /^Review/ }).click();
+        await page.getByRole('tabpanel').getByRole('article').first().waitFor();
+        await shot('threads-review');
+
+        await open(q({ review: range, file: 'c.js' }), page.getByRole('region', { name: 'File threads' }).getByRole('article'));
+        await shot('file-threads');
 
         // History: the rounds newest first, the current round's commits under it.
         await open(q({ review: range, view: 'history' }), page.getByRole('navigation', { name: 'History' }).getByRole('link', { name: /^[0-9a-f]{7} / }));

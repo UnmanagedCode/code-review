@@ -1,8 +1,13 @@
-import { screen, within } from '@testing-library/react';
-import { expect, test } from 'vitest';
-import { diffFile, hunk, message, thread } from '@/test/fixtures';
+import { render, screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { expect, test, vi } from 'vitest';
+import { diffFile, hunk, message, review, thread, linesAnchor } from '@/test/fixtures';
+import type { Thread } from '@/lib/types';
+import { stubFetch } from '@/test/stubFetch';
 import type { FileDiffState } from '@/state/fileDiff';
-import { renderDiff, renderInReview } from '@/test/renderCtx';
+import { ctxValue, renderDiff, renderInReview } from '@/test/renderCtx';
+import { buildRows } from '@/lib/diffRows';
+import { ReviewProvider } from '@/state/reviewContext';
 import { FileDiff } from './FileDiff';
 
 const withRoute = (file: string) => history.replaceState(null, '', `?file=${encodeURIComponent(file)}`);
@@ -28,7 +33,7 @@ test.each([[{ binary: true }, 'Binary file changed'], [{ tooLarge: true }, 'Too 
 
 test('threads render under the row of their end line', () => {
   withRoute('src/a.ts');
-  const t = thread({ anchor: { ...thread().anchor, side: 'new', startLine: 3, endLine: 3 } });
+  const t = thread({ anchor: linesAnchor({ side: 'new', startLine: 3, endLine: 3 }) });
   renderDiff(<FileDiff />, diffFile({ threads: [t] }));
   const rows = screen.getAllByRole('row');
   const idx = rows.findIndex((r) => within(r).queryByText('a3'));
@@ -69,4 +74,100 @@ test('a file switch keeps the previous file visible, busy and inert; a cold load
   unmount();
   renderInReview(<FileDiff />, { fileDiff: { file: undefined, rows: [], total: null, loading: true, switching: false } as unknown as FileDiffState });
   expect(screen.getByLabelText('Loading diff')).toBeTruthy();
+});
+
+// ---- file threads ----
+
+const onFile = (over: Partial<Thread> = {}) => thread({ id: 't-f', anchor: { kind: 'file', file: 'src/a.ts', round: 1 }, ...over });
+const BINARY = { path: 'img.png', binary: true, hunks: [{ id: 'f1', kind: 'file' as const, lines: [] as [], verdict: 'pending' as const }] };
+
+// Invariant: the live, writable view offers Comment on file on every file, a binary one included.
+test('Comment on file is offered in the live view, on a text file and on a binary file', () => {
+  withRoute('src/a.ts');
+  const { unmount } = renderDiff(<FileDiff />, diffFile());
+  expect(screen.getByRole('button', { name: 'Comment on file' })).toBeTruthy();
+  unmount();
+  withRoute('img.png');
+  renderDiff(<FileDiff />, diffFile(BINARY));
+  expect(screen.getByRole('button', { name: 'Comment on file' })).toBeTruthy();
+});
+
+// Invariant: where writes are off (closed review, past round, comparison, commit filter) there is no Comment on file.
+test.each([
+  ['a closed review', { review: review({ status: 'closed' }), readOnly: true }],
+  ['a past round', { round: 1, readOnly: true }],
+  ['a comparison', { compare: { from: 1, to: 2 }, readOnly: true }],
+  ['the commit filter', { commit: 'abc1234', readOnly: true }],
+] as const)('no Comment on file in %s', (_, over) => {
+  withRoute('src/a.ts');
+  renderDiff(<FileDiff />, diffFile(), over);
+  expect(screen.queryByRole('button', { name: 'Comment on file' })).toBeNull();
+});
+
+// Invariant: the file composer posts a file anchor naming the open file, with no side or lines.
+test('Comment on file opens a composer in the file-threads block that posts {kind: file, file}', async () => {
+  withRoute('src/a.ts');
+  const net = stubFetch({ 'POST api/reviews/r-1/threads': { thread: onFile(), fileSig: { path: 'src/a.ts', sig: 's-2' } } });
+  const user = userEvent.setup();
+  renderDiff(<FileDiff />, diffFile());
+  await user.click(screen.getByRole('button', { name: 'Comment on file' }));
+  const block = screen.getByRole('region', { name: 'File threads' });
+  await user.type(within(block).getByLabelText('Message'), 'whole thing');
+  await user.click(within(block).getByRole('button', { name: 'Post' }));
+  await waitFor(() => expect(net.calls.find((c) => c.method === 'POST')?.body).toEqual({ anchor: { kind: 'file', file: 'src/a.ts' }, kind: 'comment', body: 'whole thing' }));
+});
+
+// Invariant: a file thread is shown in the block above the grid, never under a row; a line thread stays under its row.
+test('a file thread renders in the file-threads block, not under a row', () => {
+  withRoute('src/a.ts');
+  renderDiff(<FileDiff />, diffFile({ threads: [onFile(), thread({ id: 't-l' })] }));
+  const block = screen.getByRole('region', { name: 'File threads' });
+  expect(within(block).getAllByRole('article')).toHaveLength(1);
+  expect(within(block).getByText('Whole file')).toBeTruthy();
+  expect(within(screen.getByRole('grid')).getAllByRole('article')).toHaveLength(1);
+  expect(block.compareDocumentPosition(screen.getByRole('grid')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+});
+
+// Invariant: a binary file has no rows, but its file threads still show.
+test('a binary file shows its file threads', () => {
+  withRoute('img.png');
+  renderDiff(<FileDiff />, diffFile({ ...BINARY, threads: [onFile({ anchor: { kind: 'file', file: 'img.png', round: 1 } })] }));
+  expect(within(screen.getByRole('region', { name: 'File threads' })).getAllByRole('article')).toHaveLength(1);
+});
+
+// Invariant: opening the file composer from the sticky header brings it into view (the diff may be scrolled far below),
+// and it comes first in the block, before the file's threads.
+test('Comment on file scrolls its composer into view, above the file\'s threads', async () => {
+  withRoute('src/a.ts');
+  const scrolled: Element[] = [];
+  const spy = vi.spyOn(HTMLElement.prototype, 'scrollIntoView').mockImplementation(function (this: HTMLElement) { scrolled.push(this); });
+  renderDiff(<FileDiff />, diffFile({ threads: [onFile()] }));
+  await userEvent.setup().click(screen.getByRole('button', { name: 'Comment on file' }));
+  const form = screen.getByRole('form', { name: 'Comment on This file' });
+  expect(scrolled.some((el) => el === form || el.contains(form))).toBe(true);
+  const block = screen.getByRole('region', { name: 'File threads' });
+  expect(form.compareDocumentPosition(within(block).getByRole('article')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  spy.mockRestore();
+});
+
+// Invariant: the scroll follows the composer being shown, not only the click: when writes go off and on again (a past
+// round or comparison, then back) with the composer still open, it reappears scrolled into view with the header's margin.
+test('the file composer is scrolled into view again when it reappears after a read-only view', async () => {
+  withRoute('src/a.ts');
+  const scrolled: Element[] = [];
+  const spy = vi.spyOn(HTMLElement.prototype, 'scrollIntoView').mockImplementation(function (this: HTMLElement) { scrolled.push(this); });
+  const file = diffFile();
+  const fileDiff = { file, rows: buildRows({ hunks: file.hunks, expansions: {}, texts: {}, total: null }), total: null } as unknown as FileDiffState;
+  const ui = (readOnly: boolean) => <ReviewProvider value={ctxValue({ readOnly, fileDiff })}><FileDiff /></ReviewProvider>;
+  const { rerender } = render(ui(false));
+  await userEvent.setup().click(screen.getByRole('button', { name: 'Comment on file' }));
+  rerender(ui(true));
+  expect(screen.queryByRole('form', { name: 'Comment on This file' })).toBeNull();
+  scrolled.length = 0;
+  rerender(ui(false));
+  const form = screen.getByRole('form', { name: 'Comment on This file' });
+  const shown = scrolled.find((el) => el === form || el.contains(form)) as HTMLElement | undefined;
+  expect(shown).toBeDefined();
+  expect(shown!.style.scrollMarginTop).toMatch(/px$/);
+  spy.mockRestore();
 });

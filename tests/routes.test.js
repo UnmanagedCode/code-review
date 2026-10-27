@@ -73,7 +73,7 @@ test('review lifecycle over HTTP: open, reuse, get, diff, file, commits, patch, 
   const id = opened.review.id;
   assert.equal((await openReview()).reused, true);
   const detail = (await req('GET', `/reviews/${id}`)).body;
-  assert.deepEqual(Object.keys(detail).sort(), ['files', 'ok', 'outdatedThreads', 'review', 'rounds', 'submissions']);
+  assert.deepEqual(Object.keys(detail).sort(), ['files', 'ok', 'outdatedThreads', 'review', 'reviewThreads', 'rounds', 'submissions']);
   const diff = (await req('GET', `/reviews/${id}/diff`)).body;
   assert.equal(diff.files[0].hunks.length, 2);
   assert.equal(diff.files[0].hunks[0].verdict, 'pending');
@@ -90,12 +90,12 @@ test('review lifecycle over HTTP: open, reuse, get, diff, file, commits, patch, 
 
 test('GET /reviews/:id/rounds/:n is a past round\'s view; diff and file take ?round=; an unknown round is 404 ROUND_UNKNOWN', async () => {
   const id = (await openReview()).review.id;
-  const t = (await req('POST', `/reviews/${id}/threads`, { anchor: { file: 'a.js', side: 'new', startLine: 18 }, kind: 'comment', body: 'x' })).body.thread;
+  const t = (await req('POST', `/reviews/${id}/threads`, { anchor: { kind: 'lines', file: 'a.js', side: 'new', startLine: 18 }, kind: 'comment', body: 'x' })).body.thread;
   bindRepo(w.cc.state.worktrees.app[0].worktreePath).commit({ 'a.js': ['ins1', ...editLines({ 2: 'top-edit', 18: 'bottom-edit' }).split('\n')].join('\n') });
   assert.equal((await req('POST', `/reviews/${id}/refresh`)).body.round, 2);
   const view = await req('GET', `/reviews/${id}/rounds/1`);
   assert.equal(view.status, 200);
-  assert.deepEqual(Object.keys(view.body).sort(), ['counts', 'files', 'ok', 'outdatedThreads', 'readOnly', 'round']);
+  assert.deepEqual(Object.keys(view.body).sort(), ['counts', 'files', 'ok', 'outdatedThreads', 'readOnly', 'reviewThreads', 'round']);
   assert.equal(view.body.round.n, 1);
   const diff = (await req('GET', `/reviews/${id}/diff?file=a.js&round=1`)).body;
   assert.deepEqual([diff.readOnly, diff.round.n, diff.files[0].threads.map((x) => [x.id, x.anchor.startLine])], [true, 1, [[t.id, 18]]]);
@@ -114,7 +114,7 @@ test('GET /reviews/:id/compare compares two rounds read-only; from not before to
   assert.equal((await req('POST', `/reviews/${id}/refresh`)).body.round, 2);
   const cmp = await req('GET', `/reviews/${id}/compare?from=1&to=2`);
   assert.equal(cmp.status, 200);
-  assert.deepEqual(Object.keys(cmp.body).sort(), ['counts', 'files', 'from', 'ok', 'readOnly', 'to', 'unplaced']);
+  assert.deepEqual(Object.keys(cmp.body).sort(), ['counts', 'files', 'from', 'ok', 'readOnly', 'reviewThreads', 'to', 'unplaced']);
   assert.deepEqual([cmp.body.readOnly, cmp.body.from.n, cmp.body.to.n, cmp.body.files.map((f) => f.path)], [true, 1, 2, ['a.js']]);
   const back = await req('GET', `/reviews/${id}/compare?from=2&to=1`);
   assert.deepEqual([back.status, back.body.code], [400, 'INVALID_ARGUMENT']);
@@ -169,7 +169,7 @@ test('verdicts, threads, messages, status, read, refresh, submissions each retur
   const verdict = (await req('PUT', `/reviews/${id}/hunks/${hunkId}/verdict`, { verdict: 'rejected' })).body;
   assert.deepEqual([verdict.hunkId, verdict.verdict, verdict.review.mergeBlockers], [hunkId, 'rejected', 1]);
 
-  const thread = (await req('POST', `/reviews/${id}/threads`, { anchor: { file: 'a.js', side: 'new', startLine: 2, endLine: 2 }, kind: 'finding', severity: 'minor', body: 'see a.js#L18' })).body.thread;
+  const thread = (await req('POST', `/reviews/${id}/threads`, { anchor: { kind: 'lines', file: 'a.js', side: 'new', startLine: 2, endLine: 2 }, kind: 'finding', severity: 'minor', body: 'see a.js#L18' })).body.thread;
   assert.equal(thread.messages[0].citations[0].path, 'a.js');
   const replied = (await req('POST', `/reviews/${id}/threads/${thread.id}/messages`, { body: 'more' })).body.thread;
   assert.equal(replied.messages.length, 2);
@@ -202,9 +202,9 @@ test('refusals map to their HTTP status', async () => {
     [await req('GET', '/reviews/r-0000000000'), 'REVIEW_UNKNOWN'],
     [await req('POST', '/reviews', { project: 'nope' }), 'PROJECT_UNKNOWN'],
     [await req('POST', '/reviews', { project: 'app', kind: 'range' }), 'BASE_REQUIRED'],
-    [await req('POST', `/reviews/${id}/threads`, { anchor: { file: 'a.js', startLine: 99 }, kind: 'comment', body: 'x' }), 'LINE_OUT_OF_RANGE'],
-    [await req('POST', `/reviews/${id}/threads`, { anchor: { file: 'zzz.js', startLine: 1 }, kind: 'comment', body: 'x' }), 'FILE_NOT_IN_DIFF'],
-    [await req('POST', `/reviews/${id}/threads`, { anchor: { file: 'a.js', startLine: 1 }, kind: 'finding', body: 'x' }), 'SEVERITY_REQUIRED'],
+    [await req('POST', `/reviews/${id}/threads`, { anchor: { kind: 'lines', file: 'a.js', startLine: 99 }, kind: 'comment', body: 'x' }), 'LINE_OUT_OF_RANGE'],
+    [await req('POST', `/reviews/${id}/threads`, { anchor: { kind: 'lines', file: 'zzz.js', startLine: 1 }, kind: 'comment', body: 'x' }), 'FILE_NOT_IN_DIFF'],
+    [await req('POST', `/reviews/${id}/threads`, { anchor: { kind: 'lines', file: 'a.js', startLine: 1 }, kind: 'finding', body: 'x' }), 'SEVERITY_REQUIRED'],
     [await req('POST', `/reviews/${id}/threads/t9/messages`, { body: 'x' }), 'THREAD_UNKNOWN'],
     [await req('POST', `/reviews/${id}/submissions/s9/result`, { ok: true }), 'SUBMISSION_UNKNOWN'],
   ];
@@ -293,7 +293,7 @@ test('mutating routes refuse a non-JSON content type with 415 and change nothing
 test('POST /reviews/:id/refresh acts as the human: a new round keeps the turn with the agent', async () => {
   // Invariant: the REST refresh passes HUMAN, so it never advances agentSeq.
   const { id } = (await openReview()).review;
-  await req('POST', `/reviews/${id}/threads`, { anchor: { file: 'a.js', side: 'new', startLine: 2, endLine: 2 }, kind: 'question', body: 'why?' });
+  await req('POST', `/reviews/${id}/threads`, { anchor: { kind: 'lines', file: 'a.js', side: 'new', startLine: 2, endLine: 2 }, kind: 'question', body: 'why?' });
   const sub = (await req('POST', `/reviews/${id}/submissions`)).body.submission;
   await req('POST', `/reviews/${id}/submissions/${sub.id}/result`, { ok: true });
   const turn = async () => (await req('GET', '/inbox')).body.reviews.find((r) => r.id === id).turn;

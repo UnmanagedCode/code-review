@@ -22,7 +22,7 @@ import { ReviewPane, UnreadBadge } from './ReviewPane';
 const CLEAR = { review: undefined, ...REVIEW_SCOPED };
 const NO_THREADS = { open: 0, resolved: 0, outdated: 0 };
 
-const asFileState = (f: { path: string; oldPath: string | null; status: FileState['status']; binary: boolean; tooLarge: boolean; additions: number; deletions: number; hunks: unknown[] }): FileState => ({
+const asFileState = (f: { path: string; oldPath: string | null; status: FileState['status']; binary: boolean; tooLarge: boolean; additions: number; deletions: number; hunks: unknown[]; sig: string }): FileState => ({
   ...f, hunks: f.hunks.length, verdicts: null, threads: { open: 0, resolved: 0, outdated: 0 }, unread: 0,
 });
 
@@ -71,7 +71,7 @@ export function ReviewView({ id, chrome }: { id: string; chrome?: ReactNode }) {
   const path = (route.round || route.compare) && !route.commit && !detail ? undefined : route.file;
   const sig = (round !== undefined ? roundView.data?.files : detail?.files)?.find((f) => f.path === path)?.sig;
   const fileDiff = useFileDiff({
-    reviewId: id, path, sig, version: rv.version, uncommitted: detail?.review.kind === 'uncommitted', commitFiles, round,
+    reviewId: id, path, sig, uncommitted: detail?.review.kind === 'uncommitted', commitFiles, round,
     compare: compare && { ...compare, files: compareView.data?.files, error: compareView.error, reload: compareView.reload },
   });
   const treeFiles = useMemo(

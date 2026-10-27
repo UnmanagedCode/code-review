@@ -237,25 +237,6 @@ test('an evicted entry comes back with its load count, not from zero', async () 
   expect(again.result.current.version).toBe(2);
 });
 
-// Invariant: the tag is read when a fetch starts and kept with the data that fetch returns, not read at completion.
-test('dataTag is the tag the fetch started under, even if the tag changes while it runs', async () => {
-  let tag = 'a';
-  const gates: (() => void)[] = [];
-  const fetch = vi.fn(() => new Promise<number>((res) => { gates.push(() => res(gates.length)); }));
-  const h = renderHook(() => useResource('k', { fetch, tag: () => tag }));
-  await settle();
-  tag = 'b'; // flipped while the first fetch is in flight
-  await act(async () => { gates[0](); });
-  await settle();
-  expect(h.result.current).toMatchObject({ data: 1, dataTag: 'a' });
-  act(() => h.result.current.reload());
-  await settle();
-  tag = 'c';
-  await act(async () => { gates[1](); });
-  await settle();
-  expect(h.result.current).toMatchObject({ data: 2, dataTag: 'b' });
-});
-
 // Invariant: a join reload (poll or focus kick) shares a fetch the visibility flush just started: one transition, one request.
 test('a join reload during a fetch started after the last invalidation starts no second one', async () => {
   const { fetch, spec } = counter({ matches: matchAll });

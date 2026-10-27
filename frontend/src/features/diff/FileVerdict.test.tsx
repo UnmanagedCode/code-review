@@ -15,7 +15,7 @@ const file = (...verdicts: Verdict[]) => diffFile({ hunks: verdicts.map((verdict
 const button = () => screen.getByRole('button', { name: 'Accept file' }) as HTMLButtonElement;
 
 test('Accept file posts the file path and only the pending hunk ids, flipping them optimistically', async () => {
-  const net = stubFetch({ [URL_]: { file: 'src/a.ts', accepted: ['h1', 'h3'], review: review({ rev: 2 }) } });
+  const net = stubFetch({ [URL_]: { file: 'src/a.ts', accepted: ['h1', 'h3'], review: review({ rev: 2 }), fileSig: { path: 'src/a.ts', sig: 's-2' } } });
   const { value } = renderInReview(<FileVerdict file={file('pending', 'rejected', 'pending', 'accepted')} />);
   await userEvent.setup().click(button());
   expect(vi.mocked(value.fileDiff.patchVerdict).mock.calls).toEqual([['h1', 'accepted'], ['h3', 'accepted']]);
@@ -68,7 +68,7 @@ test('no control on uncommitted reviews or the commit-filter view; disabled on a
 });
 
 test('a binary file\'s single file-level hunk can be accepted', async () => {
-  const net = stubFetch({ [URL_]: { file: 'img.png', accepted: ['f1'], review: review() } });
+  const net = stubFetch({ [URL_]: { file: 'img.png', accepted: ['f1'], review: review(), fileSig: { path: 'img.png', sig: 's-2' } } });
   const bin = diffFile({ path: 'img.png', binary: true, hunks: [{ id: 'f1', kind: 'file', lines: [], verdict: 'pending' }] });
   renderInReview(<FileVerdict file={bin} />);
   expect(screen.getByText('0/1 accepted')).toBeTruthy();

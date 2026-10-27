@@ -19,7 +19,7 @@ const down = (side: string, n: number, over = {}) => fireEvent.pointerDown(cell(
 
 // Invariant: a mouse gutter drag opens the composer for the dragged range on release, with no toolbar step and the message focused.
 test('mouse: releasing a gutter drag opens the composer for that range with no intermediate menu', async () => {
-  const net = stubFetch({ 'POST api/reviews/r-1/threads': { thread: thread() } });
+  const net = stubFetch({ 'POST api/reviews/r-1/threads': { thread: thread(), fileSig: { path: 'src/a.ts', sig: 's-2' } } });
   const user = userEvent.setup();
   show();
   down('new', 2);
@@ -90,7 +90,7 @@ test('touch: tap selects one line, a second tap extends, tapping an endpoint cle
 });
 
 test('keyboard: arrows move, Shift+Arrow extends, c opens the composer with the exact anchor, Esc clears', async () => {
-  const net = stubFetch({ 'POST api/reviews/r-1/threads': { thread: thread() } });
+  const net = stubFetch({ 'POST api/reviews/r-1/threads': { thread: thread(), fileSig: { path: 'src/a.ts', sig: 's-2' } } });
   const user = userEvent.setup();
   show();
   cell('new', 1).focus();

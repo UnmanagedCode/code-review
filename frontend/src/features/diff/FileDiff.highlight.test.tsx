@@ -63,7 +63,7 @@ describe.each(['inline', 'split'] as const)('%s', (view) => {
 
   // Invariant: highlighting changes only the text cell: range rails, thread placement and the composer anchor are as on a plain row.
   test('on highlighted rows the rail, the thread card under its end line and the composer anchor are unchanged', async () => {
-    const net = stubFetch({ 'POST api/reviews/r-1/threads': { thread: thread() } });
+    const net = stubFetch({ 'POST api/reviews/r-1/threads': { thread: thread(), fileSig: { path: 'src/a.ts', sig: 's-2' } } });
     const t = thread({ anchor: { ...thread().anchor, side: 'new', startLine: 2, endLine: 3 } });
     show(code({ threads: [t] }), view);
     await highlighted();

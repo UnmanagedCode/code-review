@@ -35,15 +35,15 @@ const fileLines = (u: URL) => {
 
 /** FileDiff over the real useFileDiff, so the Diff options run through the same transforms as in the app. */
 function Live({ over }: { over: Partial<ReviewCtx> }) {
-  const fileDiff = useFileDiff({ reviewId: 'r-1', path: 'src/a.ts', version: 1, uncommitted: false, round: over.round });
+  const fileDiff = useFileDiff({ reviewId: 'r-1', path: 'src/a.ts', uncommitted: false, round: over.round });
   return <ReviewProvider value={ctxValue({ files: [fileState()], ...over, fileDiff })}><FileDiff /></ReviewProvider>;
 }
-const show = async (file: DiffFile = diffFile({ hunks: [hw, hm] }), over: Partial<ReviewCtx> = {}, view: 'inline' | 'split' = 'inline') => {
+const show = async (file: DiffFile = diffFile({ hunks: [hw, hm], lineCount: { old: 40, new: 40 } }), over: Partial<ReviewCtx> = {}, view: 'inline' | 'split' = 'inline') => {
   localStorage.setItem('code-review:diffView', view);
   const net = stubFetch({
     'GET api/reviews/r-1/diff': { review: review(), files: [file] },
     'GET api/reviews/r-1/file': fileLines,
-    'PUT api/reviews/r-1/hunks/hw/verdict': { hunkId: 'hw', verdict: 'accepted', review: review({ rev: 2 }) },
+    'PUT api/reviews/r-1/hunks/hw/verdict': { hunkId: 'hw', verdict: 'accepted', review: review({ rev: 2 }), fileSig: { path: 'src/a.ts', sig: 's-2' } },
   });
   render(<Live over={over} />);
   ro.resize('all', 1000);
@@ -97,7 +97,7 @@ describe.each(['inline', 'split'] as const)('%s', (view) => {
   // Invariant: a thread keyed on a merged row's old line still renders under that row.
   test('a thread on a merged row\'s old line stays under that row', async () => {
     const t = thread({ anchor: { ...thread().anchor, side: 'old', startLine: 23, endLine: 23, hunkId: 'hm' } });
-    await show(diffFile({ hunks: [hw, hm], threads: [t] }), {}, view);
+    await show(diffFile({ hunks: [hw, hm], threads: [t], lineCount: { old: 40, new: 40 } }), {}, view);
     await pick('Ignore whitespace');
     const row = rowOf('old', 23)!;
     expect(rowOf('new', 23)).toBe(row);
@@ -122,7 +122,7 @@ test('a selection survives toggling Ignore whitespace', async () => {
 test('a whitespace-only hunk holding the routed thread stays expanded', async () => {
   const t = thread({ id: 't-9', anchor: { ...thread().anchor, side: 'new', startLine: 5, endLine: 5, hunkId: 'hw' } });
   navigate({ file: 'src/a.ts', thread: 't-9' });
-  await show(diffFile({ hunks: [hw, hm], threads: [t] }));
+  await show(diffFile({ hunks: [hw, hm], threads: [t], lineCount: { old: 40, new: 40 } }));
   await pick('Ignore whitespace');
   expect(summary()).toBeNull();
   expect(cell('new', 5)).not.toBeNull();
@@ -131,7 +131,7 @@ test('a whitespace-only hunk holding the routed thread stays expanded', async ()
 // Invariant: the automatic whitespace collapse never hides an open conversation; a resolved one does not hold it open.
 test.each([['open', false], ['resolved', true]] as const)('a whitespace-only hunk holding an %s thread collapses=%s', async (status, collapses) => {
   const t = thread({ id: 't-5', status, anchor: { ...thread().anchor, side: 'new', startLine: 5, endLine: 5, hunkId: 'hw' } });
-  await show(diffFile({ hunks: [hw, hm], threads: [t] }));
+  await show(diffFile({ hunks: [hw, hm], threads: [t], lineCount: { old: 40, new: 40 } }));
   await pick('Ignore whitespace');
   expect(!!summary()).toBe(collapses);
   expect(!!cell('new', 5)).toBe(!collapses);
@@ -140,7 +140,7 @@ test.each([['open', false], ['resolved', true]] as const)('a whitespace-only hun
 // Invariant: fewer context lines move hunk-edge context into gaps, but a thread's lines are reopened.
 test('context 0 puts edge context in gaps, and a thread on a trimmed line re-opens its gap', async () => {
   const t = thread({ anchor: { ...thread().anchor, side: 'new', startLine: 21, endLine: 21, hunkId: 'hm' } });
-  await show(diffFile({ hunks: [hw, hm], threads: [t] }));
+  await show(diffFile({ hunks: [hw, hm], threads: [t], lineCount: { old: 40, new: 40 } }));
   expect(cell('new', 3)).not.toBeNull();
   await pick('0');
   expect(cell('new', 3)).toBeNull();

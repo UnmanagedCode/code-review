@@ -2,7 +2,7 @@ import { useEffect, useRef, type ReactNode } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { lineSpan, rangeLabel } from '@/lib/ranges';
+import { anchorLabel, lineSpan, rangeLabel } from '@/lib/ranges';
 import { formatLines, navigate, useRoute, type Route } from '@/lib/route';
 import type { ComparedThread, Thread } from '@/lib/types';
 import { cn } from '@/lib/utils';
@@ -20,8 +20,16 @@ import { ResolveControls } from './ResolveControls';
  * in a comparison, so it opens that round's own view. `commit` is cleared because it beats `compare`. A live thread gets no
  * `lines=` (its range rail marks it; the wash is for citations) and a stale one is cleared; an outdated thread keeps
  * `lines=`, which the read-only excerpt needs when its file is not in that comparison.
+ * A file thread has no side or lines: an outdated one opens the round it last sat in. A review thread lives in the Threads
+ * pane, beside whatever file is open. `src/links.js` `threadLink` mirrors this.
  */
-const at = (t: Thread): Route => {
+export const threadPlace = (t: Thread): Route => {
+  if (t.anchor.kind === 'review') return { view: 'threads', thread: t.id };
+  if (t.anchor.kind === 'file') {
+    const { file, round } = t.anchor;
+    const place = { file, side: undefined, lines: undefined, thread: t.id };
+    return t.status === 'outdated' ? { ...place, round: String(round), compare: undefined, commit: undefined } : place;
+  }
   const { file, side, startLine, endLine, round } = t.anchor;
   if (t.status !== 'outdated') return { file, side, lines: undefined, thread: t.id };
   const lines = formatLines(startLine, endLine);
@@ -30,22 +38,31 @@ const at = (t: Thread): Route => {
 };
 
 /**
- * The range a thread's card names (`L3–L5 (new)`), or null: an outdated card's "was …" line names its last range, a
- * dropped one has none, and in a comparison the note names each copy's lines per round.
+ * The place a thread's card names (`L3–L5 (new)`, `Whole file`, `Review`), or null: an outdated card's "was …" line
+ * names its last place, a dropped one has none, and in a comparison the note names each copy's place per round.
  */
 export function cardRange(thread: Thread, { dropped = false, compare }: { dropped?: boolean; compare?: unknown }): string | null {
-  return thread.status === 'outdated' || dropped || compare ? null : rangeLabel(thread.anchor);
+  return thread.status === 'outdated' || dropped || compare ? null : anchorLabel(thread.anchor);
 }
 
 /**
- * What a location link names after the file: always the anchor's range (an outdated thread's is its last located one), so
- * two links in one file never share a name. In a comparison a copy's side is a round's head, so it names the round.
+ * What a location link names: the file, then the anchor's range (an outdated thread's is its last located one), so two
+ * links in one file never share a name; a file thread's names the whole file and a review thread's the review. In a
+ * comparison a copy's side is a round's head, so it names the round.
  */
-const linkRange = (t: Thread, compare?: { from: number; to: number }): string => {
+const linkText = (t: Thread, compare?: { from: number; to: number }): string => {
+  const a = t.anchor;
+  if (a.kind === 'review') return anchorLabel(a);
   const placement = (t as Partial<ComparedThread>).placement;
-  if (!compare || !placement) return rangeLabel(t.anchor);
-  return `round ${placement === 'from' ? compare.from : compare.to} ${lineSpan(t.anchor.startLine, t.anchor.endLine)}`;
+  if (!compare || !placement) return `${a.file} · ${anchorLabel(a)}`;
+  const round = `round ${placement === 'from' ? compare.from : compare.to}`;
+  return `${a.file} · ${a.kind === 'lines' ? `${round} ${lineSpan(a.startLine, a.endLine)}` : `${round} · ${anchorLabel(a)}`}`;
 };
+
+/** An outdated card's note on where the thread last sat. */
+const wasAt = (t: Thread): string => (t.anchor.kind === 'lines'
+  ? `outdated · was ${rangeLabel(t.anchor)} at round ${t.anchor.round}`
+  : `outdated · its file left the diff after round ${t.anchor.round}`);
 
 /** One thread. `unplaced`: a comparison has no place for it, so Focus never moves the file position. `dropped`: a session-local tombstone of an uncommitted thread whose lines changed. `note`: shown under the header. */
 export function ThreadCard({ thread, dropped = false, showLocation = false, unplaced = false, note }: { thread: Thread; dropped?: boolean; showLocation?: boolean; unplaced?: boolean; note?: ReactNode }) {
@@ -64,9 +81,11 @@ export function ThreadCard({ thread, dropped = false, showLocation = false, unpl
   const outdated = thread.status === 'outdated';
   const jump = () => {
     if (outdated && thread.unread > 0) void actions.markRead(thread.id); // this card unmounts before the focus effect can
-    navigate(at(thread));
+    navigate(threadPlace(thread));
   };
   const range = cardRange(thread, { dropped, compare });
+  // A review thread is shown in the pane, so Focus opens it there; a file-bound one opens its file unless that is open.
+  const elsewhere = thread.anchor.kind === 'review' ? route.view !== 'threads' : thread.anchor.file !== route.file;
   return (
     <article
       ref={ref}
@@ -77,19 +96,19 @@ export function ThreadCard({ thread, dropped = false, showLocation = false, unpl
         <KindBadge kind={thread.kind} severity={thread.severity} />
         <Badge variant={thread.status === 'open' ? 'warning' : 'secondary'}>{thread.status}</Badge>
         {thread.disposition && <Badge variant="success">{thread.disposition}</Badge>}
-        {thread.anchor.drifted && <Badge variant="info" title="Found again by its surrounding context">re-anchored by context</Badge>}
+        {thread.anchor.kind === 'lines' && thread.anchor.drifted && <Badge variant="info" title="Found again by its surrounding context">re-anchored by context</Badge>}
         {thread.unread > 0 && <Badge variant="default">{thread.unread} unread</Badge>}
         {showLocation && !dropped ? (
           <Button variant="link" size="sm" className="h-auto p-0 font-mono text-xs"
             onClick={jump}>
-            {thread.anchor.file} · {linkRange(thread, compare)}
+            {linkText(thread, compare)}
           </Button>
         ) : range && <span className="font-mono text-xs text-muted-foreground">{range}</span>}
-        {!dropped && !focused && <Button variant="ghost" size="sm" className="ml-auto h-6 px-2 text-xs" onClick={() => (!unplaced && (outdated || thread.anchor.file !== route.file) ? jump() : navigate({ thread: thread.id }))}>Focus</Button>}
+        {!dropped && !focused && <Button variant="ghost" size="sm" className="ml-auto h-6 px-2 text-xs" onClick={() => (!unplaced && (outdated || elsewhere) ? jump() : navigate({ thread: thread.id }))}>Focus</Button>}
       </header>
       {note}
-      {dropped && <p className="text-xs text-muted-foreground">dropped: its lines changed</p>}
-      {outdated && <p className="text-xs text-muted-foreground">outdated · was {rangeLabel(thread.anchor)} at round {thread.anchor.round}</p>}
+      {dropped && <p className="text-xs text-muted-foreground">dropped: {thread.anchor.kind === 'lines' ? 'its lines changed' : 'its file left the diff'}</p>}
+      {outdated && <p className="text-xs text-muted-foreground">{wasAt(thread)}</p>}
       {thread.resolveProposed && thread.status === 'open' && (
         <Alert variant="info"><AlertDescription>An agent proposes resolving this thread.</AlertDescription></Alert>
       )}

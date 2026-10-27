@@ -71,8 +71,8 @@ export async function seed() {
 
     const { review } = await call('POST', 'reviews', { project: 'app', worktree: 'feature', kind: 'range', base: 'main', recipient: 's-author', title: 'Feature work' });
     const id = review.id;
-    await call('POST', `reviews/${id}/threads`, { anchor: { file: 'a.js', side: 'new', startLine: 3, endLine: 4 }, kind: 'question', body: 'Why change both lines? See a.js#L3-L4.' });
-    const comment = (await call('POST', `reviews/${id}/threads`, { anchor: { file: 'a.js', side: 'new', startLine: 9, endLine: 9 }, kind: 'comment', body: 'Fine, but add a test.' })).thread;
+    await call('POST', `reviews/${id}/threads`, { anchor: { kind: 'lines', file: 'a.js', side: 'new', startLine: 3, endLine: 4 }, kind: 'question', body: 'Why change both lines? See a.js#L3-L4.' });
+    const comment = (await call('POST', `reviews/${id}/threads`, { anchor: { kind: 'lines', file: 'a.js', side: 'new', startLine: 9, endLine: 9 }, kind: 'comment', body: 'Fine, but add a test.' })).thread;
     // A markdown body: heading, emphasis, list, a citation in inline code, a fence with one long line, a link.
     const finding = [
       '## Missing guard', '', 'The old line 8 had a **guard** that is now gone.', '',
@@ -80,7 +80,7 @@ export async function seed() {
       '```', `if (!ready) return; // ${'a very long line that must scroll inside the card '.repeat(4)}`, '```', '',
       'See [the docs](https://example.com/guards).',
     ].join('\n');
-    await mcp('annotate', { review: id, kind: 'finding', severity: 'major', body: finding, file: 'a.js', side: 'old', startLine: 8 }, rev);
+    await mcp('annotate', { review: id, anchor: 'lines', kind: 'finding', severity: 'major', body: finding, file: 'a.js', side: 'old', startLine: 8 }, rev);
     await mcp('reply', { review: id, thread: comment.id, body: 'Test added. Resolving.', resolve: true }, author);
 
     // A third commit rewrites the questioned lines; refreshing turns that thread outdated. Line 6 is long enough to wrap in split view.
@@ -88,8 +88,8 @@ export async function seed() {
     wt.commit({ 'a.js': editLines({ 1: 'r1', 2: 'r2', 3: 'rewritten3', 4: 'rewritten4', 5: 'r5', 6: long6, 7: 'r7', 8: 'changed8', 19: 'changed19' }) }, 'third');
     await call('POST', `reviews/${id}/refresh`);
     // Two current-round ranges that touch at line 7 (separate rail lanes); the first spans the wrapping line 6.
-    await call('POST', `reviews/${id}/threads`, { anchor: { file: 'a.js', side: 'new', startLine: 5, endLine: 7 }, kind: 'suggestion', body: 'Split the long line into a list.' });
-    await mcp('annotate', { review: id, kind: 'question', body: 'Does r7 still need changed8 after it?', file: 'a.js', side: 'new', startLine: 7, endLine: 9 }, rev);
+    await call('POST', `reviews/${id}/threads`, { anchor: { kind: 'lines', file: 'a.js', side: 'new', startLine: 5, endLine: 7 }, kind: 'suggestion', body: 'Split the long line into a list.' });
+    await mcp('annotate', { review: id, anchor: 'lines', kind: 'question', body: 'Does r7 still need changed8 after it?', file: 'a.js', side: 'new', startLine: 7, endLine: 9 }, rev);
     const diff = await call('GET', `reviews/${id}/diff?file=a.js`);
     const [h1, h2] = diff.files[0].hunks;
     await call('PUT', `reviews/${id}/hunks/${h1.id}/verdict`, { verdict: 'accepted' });
@@ -102,7 +102,7 @@ export async function seed() {
     // An uncommitted review with a reviewer finding.
     wt.write('a.js', editLines({ 2: 'uncommitted2' }));
     const un = (await call('POST', 'reviews', { project: 'app', worktree: 'feature', kind: 'uncommitted', recipient: 's-author' })).review;
-    await mcp('annotate', { review: un.id, kind: 'finding', severity: 'minor', body: 'Name this better.', file: 'a.js', side: 'new', startLine: 2 }, rev);
+    await mcp('annotate', { review: un.id, anchor: 'lines', kind: 'finding', severity: 'minor', body: 'Name this better.', file: 'a.js', side: 'new', startLine: 2 }, rev);
 
     // Highlighting and the Diff options, on their own worktree so the other reviews' files and counts don't move:
     // a range review of hl.ts from the commit that added it (a sha base) to its edit.
@@ -116,14 +116,14 @@ export async function seed() {
       await call('POST', `reviews/${rid}/submissions/${submission.id}/result`, { ok: true });
     };
     // The conductor's review was delivered, then the conductor answered: your turn again.
-    const asked = (await call('POST', `reviews/${conducted.id}/threads`, { anchor: { file: 'c.js', side: 'new', startLine: 12, endLine: 12 }, kind: 'question', body: 'Is this line needed?' })).thread;
+    const asked = (await call('POST', `reviews/${conducted.id}/threads`, { anchor: { kind: 'lines', file: 'c.js', side: 'new', startLine: 12, endLine: 12 }, kind: 'question', body: 'Is this line needed?' })).thread;
     await deliver(conducted.id);
     await mcp('reply', { review: conducted.id, thread: asked.id, body: 'Yes, the parser reads it.' }, { sessionId: 's-cond', project: '.conduct' });
 
     // A review of the main checkout, delivered with no answer yet: waiting on the agent.
     w.repo.write('b.js', `${lines(10, 'b')}main edit\n`);
     const main = (await call('POST', 'reviews', { project: 'app', kind: 'uncommitted', recipient: 's-rev', title: 'Main checkout tidy-up' })).review;
-    await call('POST', `reviews/${main.id}/threads`, { anchor: { file: 'b.js', side: 'new', startLine: 11, endLine: 11 }, kind: 'comment', body: 'Keep this edit.' });
+    await call('POST', `reviews/${main.id}/threads`, { anchor: { kind: 'lines', file: 'b.js', side: 'new', startLine: 11, endLine: 11 }, kind: 'comment', body: 'Keep this edit.' });
     await deliver(main.id);
 
     return {

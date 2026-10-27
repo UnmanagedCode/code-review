@@ -9,7 +9,7 @@ import { renderInReview } from '@/test/renderCtx';
 import { stubFetch } from '@/test/stubFetch';
 import { Composer, MAX_BODY_CHARS } from './Composer';
 
-const anchor = { file: 'src/a.ts', side: 'new' as const, startLine: 3, endLine: 4 };
+const anchor = { kind: 'lines' as const, file: 'src/a.ts', side: 'new' as const, startLine: 3, endLine: 4 };
 const posted = (net: ReturnType<typeof stubFetch>) => net.calls.find((c) => c.method === 'POST')?.body;
 const post = () => screen.getByRole('button', { name: 'Post' }) as HTMLButtonElement;
 
@@ -47,13 +47,13 @@ test('a body over the limit disables Post and shows the counter', async () => {
   expect(post().disabled).toBe(true);
 });
 
-test('a hunk anchor is posted as {hunkId}', async () => {
+test('a hunk anchor is posted as {kind: hunk, hunkId}', async () => {
   const net = stubFetch({ 'POST api/reviews/r-1/threads': { thread: thread(), fileSig: { path: 'src/a.ts', sig: 's-2' } } });
   const user = userEvent.setup();
-  renderInReview(<Composer anchor={{ hunkId: 'h1' }} label="hunk" onClose={() => {}} />);
+  renderInReview(<Composer anchor={{ kind: 'hunk', hunkId: 'h1' }} label="hunk" onClose={() => {}} />);
   await user.type(screen.getByLabelText('Message'), 'whole hunk');
   await user.click(post());
-  await waitFor(() => expect(posted(net)).toEqual({ anchor: { hunkId: 'h1' }, kind: 'comment', body: 'whole hunk' }));
+  await waitFor(() => expect(posted(net)).toEqual({ anchor: { kind: 'hunk', hunkId: 'h1' }, kind: 'comment', body: 'whole hunk' }));
 });
 
 test('the body limit equals the backend’s MAX_BODY_CHARS', () => {

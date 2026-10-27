@@ -1,7 +1,8 @@
 import { lineSpan } from '@/lib/ranges';
 import type { ComparedThread, Thread, UnplacedReason } from '@/lib/types';
 
-const span = (t: Thread) => lineSpan(t.anchor.startLine, t.anchor.endLine);
+// A file thread's copy names only its round: it sits on the whole file in each.
+const at = (n: number, t: Thread) => (t.anchor.kind === 'lines' ? `round ${n} ${lineSpan(t.anchor.startLine, t.anchor.endLine)}` : `round ${n}`);
 const copyOf = (t: Thread) => t as Partial<ComparedThread>;
 
 export const UNPLACED_TEXT: Record<UnplacedReason, string> = {
@@ -19,10 +20,10 @@ export function CompareNote({ thread, other, compare }: { thread: Thread; other?
   let text: string;
   if (other) {
     const [a, b] = c.placement === 'from' ? [thread, other] : [other, thread];
-    text = `round ${compare.from} ${span(a)} · round ${compare.to} ${span(b)}`;
+    text = `${at(compare.from, a)} · ${at(compare.to, b)}`;
   } else if (c.placement === 'from') {
-    text = `round ${compare.from} ${span(thread)} · ${c.outdatedIn != null ? `outdated in round ${c.outdatedIn}` : `still applies in round ${compare.to}`}`;
-  } else text = `round ${compare.to} ${span(thread)}`;
+    text = `${at(compare.from, thread)} · ${c.outdatedIn != null ? `outdated in round ${c.outdatedIn}` : `still applies in round ${compare.to}`}`;
+  } else text = at(compare.to, thread);
   return <p className="text-xs text-muted-foreground">{text}</p>;
 }
 

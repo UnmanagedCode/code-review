@@ -5,7 +5,7 @@ A [code-conductor](https://github.com/UnmanagedCode/code-conductor) (cc) plugin 
 ## What it does
 
 - The human reviews a checkout's diff in the plugin UI, hunk by hunk, with accept/reject verdicts.
-- The human holds threaded discussions with agents, anchored to selected code lines.
+- The human holds threaded discussions with agents, anchored to code lines, a whole file, or the review.
 - Agents take part through the plugin's MCP tools and a Claude Code skill.
 - The human submits each round to the recipient session through cc's bridge.
 

@@ -67,6 +67,37 @@ test('migration is idempotent: a second run, or a review already in the current 
   assert.deepEqual(stored().map((r) => r.rev), [4, 3]);
 });
 
+test('anchors and past anchors with no kind become lines anchors', async () => {
+  // Invariant: anchorKinds sets kind 'lines' on every thread anchor and pastAnchors entry lacking one, and touches nothing else of them.
+  const pos = (round) => ({ file: 'a.js', side: 'new', startLine: 2, endLine: 2, hunkId: null, round, linesHash: 'h', drifted: false });
+  seed('r-000000000a', { threads: [
+    { id: 't1', messages: [], anchor: { ...pos(2), lines: ['x'] }, pastAnchors: [pos(1)] },
+    { id: 't2', messages: [], anchor: pos(1), pastAnchors: [] },
+  ] });
+  await migrateStore();
+  const [review] = stored();
+  assert.deepEqual(review.threads[0].anchor, { ...pos(2), lines: ['x'], kind: 'lines' });
+  assert.deepEqual(review.threads[0].pastAnchors, [{ ...pos(1), kind: 'lines' }]);
+  assert.deepEqual(review.threads[1].anchor, { ...pos(1), kind: 'lines' });
+});
+
+test('a review whose anchors all carry a kind, file and review anchors included, is not rewritten, nor is a migrated one', async () => {
+  // Invariant: anchorKinds self-checks kind === undefined, so a second run (or a current review) leaves the file byte-identical.
+  const kinds = [
+    { id: 't1', messages: [], anchor: { kind: 'file', file: 'a.js', round: 2 }, pastAnchors: [{ kind: 'file', file: 'b.js', round: 1 }] },
+    { id: 't2', messages: [], anchor: { kind: 'review', round: 1 }, pastAnchors: [] },
+  ];
+  seed('r-000000000a', { lastActivityAt: '2026-02-01T00:00:00.000Z', agentSeq: 0, threads: kinds });
+  seed('r-000000000b', { threads: [{ id: 't1', messages: [], anchor: { file: 'a.js', side: 'new', startLine: 1, endLine: 1, round: 1 }, pastAnchors: [] }] });
+  const current = fs.readFileSync(fileOf('r-000000000a'));
+  await migrateStore();
+  assert.deepEqual(fs.readFileSync(fileOf('r-000000000a')), current);
+  const migrated = fs.readFileSync(fileOf('r-000000000b'));
+  await migrateStore();
+  assert.deepEqual(fs.readFileSync(fileOf('r-000000000b')), migrated);
+  assert.equal(stored()[1].threads[0].anchor.kind, 'lines');
+});
+
 test('an unparsable file is logged and left byte-identical; the other reviews are migrated', async (t) => {
   // Invariant: a file mutate cannot read is skipped through logSkipped ('not migrated'), never rewritten or removed, and does not stop the run.
   const errors = t.mock.method(console, 'error', () => {});

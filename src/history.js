@@ -35,3 +35,6 @@ export function threadsAt(review, n) {
 
 /** A thread of `threadsAt` as the API shows it. */
 export const roundThreadView = (t) => ({ ...threadView(t), laterMessages: t.laterMessages });
+
+/** The review-anchored threads as of round `n`, as the API shows them. */
+export const reviewThreadsAt = (review, n) => threadsAt(review, n).filter((t) => t.anchor.kind === 'review').map(roundThreadView);

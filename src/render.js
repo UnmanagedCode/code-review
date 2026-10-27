@@ -1,4 +1,5 @@
 import { clean } from './text.js';
+import { anchorLabel } from './anchor.js';
 
 // Plain-text renderings for MCP results: agents read these, so they stay compact.
 // Header fields go through clean(); code lines and message bodies stay verbatim.
@@ -6,15 +7,18 @@ const fence = (lines) => ['```', ...lines, '```'];
 const sid8 = (a) => clean(a.sessionId.slice(0, 8));
 export const who = (a) => (a.kind === 'human' ? 'human' : `${a.role} ${sid8(a)}`);
 
-const span = (a) => `${clean(a.file)}#L${a.startLine}${a.endLine > a.startLine ? `-L${a.endLine}` : ''}`;
 
-/** Per-file rollup of a ReviewSummary + FileStates. */
-export function renderRollup(s, files) {
+/** Per-file rollup of a ReviewSummary + FileStates, with a line for the review threads when there are any. */
+export function renderRollup(s, files, reviewThreads = []) {
   const out = [
     `${clean(s.id)} · ${clean(s.label)} · round ${s.round} · ${s.status}`,
     `recipient: ${s.recipient ? `${clean(s.recipient)} (${s.recipientRole})` : 'none'}${s.author ? ` · author: ${clean(s.author)}` : ''} · mergeBlockers: ${s.mergeBlockers} · unread: ${s.unread}`,
     `threads: ${s.counts.threads.open} open, ${s.counts.threads.resolved} resolved, ${s.counts.threads.outdated} outdated`,
   ];
+  if (reviewThreads.length) {
+    const open = reviewThreads.filter((t) => t.status === 'open').length;
+    out.push(`review threads: ${open} open/${reviewThreads.length - open} resolved`);
+  }
   if (s.snapshotError) out.push(`diff unavailable: ${clean(s.snapshotError)}`);
   for (const f of files) {
     const v = f.verdicts ? `hunks ${f.verdicts.pending} pending/${f.verdicts.accepted} accepted/${f.verdicts.rejected} rejected` : `hunks ${f.hunks}`;
@@ -27,8 +31,9 @@ export function renderRollup(s, files) {
 export function renderThreads(threads) {
   const blocks = threads.map((t) => {
     const a = t.anchor;
-    const out = [`[${t.id}] ${t.kind}${t.severity ? `/${t.severity}` : ''} · ${t.status} · ${span(a)} (${a.side})${a.hunkId ? ` · hunk h:${a.hunkId}` : ''} · by ${who(t.openedBy)}${a.drifted ? ' · drifted' : ''}${t.resolveProposed ? ' · resolution proposed' : ''}${t.disposition ? ` · ${t.disposition}` : ''}`];
-    out.push(...fence(t.anchorLines.map((l, i) => `${String(a.startLine + i).padStart(4)}  ${l}`)));
+    const where = a.kind === 'lines' ? `${clean(anchorLabel(a))} (${a.side})${a.hunkId ? ` · hunk h:${a.hunkId}` : ''}` : clean(anchorLabel(a));
+    const out = [`[${t.id}] ${t.kind}${t.severity ? `/${t.severity}` : ''} · ${t.status} · ${where} · by ${who(t.openedBy)}${a.drifted ? ' · drifted' : ''}${t.resolveProposed ? ' · resolution proposed' : ''}${t.disposition ? ` · ${t.disposition}` : ''}`];
+    if (t.anchorLines) out.push(...fence(t.anchorLines.map((l, i) => `${String(a.startLine + i).padStart(4)}  ${l}`)));
     for (const m of t.messages) {
       out.push(`— ${who(m.author)}:`, m.body);
       for (const e of m.excerpts) {

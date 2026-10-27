@@ -61,7 +61,7 @@ test('Comment on hunk opens the composer anchored by {hunkId}', async () => {
   await user.selectOptions(screen.getByLabelText('Kind'), 'question');
   await user.type(screen.getByLabelText('Message'), 'why');
   await user.click(screen.getByRole('button', { name: 'Post' }));
-  await waitFor(() => expect(net.calls[0].body).toEqual({ anchor: { hunkId: 'h1' }, kind: 'question', body: 'why' }));
+  await waitFor(() => expect(net.calls[0].body).toEqual({ anchor: { kind: 'hunk', hunkId: 'h1' }, kind: 'question', body: 'why' }));
 });
 
 // A harness whose patchVerdict really updates the hunk, so the pressed state reflects what the UI shows.

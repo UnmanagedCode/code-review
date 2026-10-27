@@ -2,8 +2,9 @@ import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { toast } from 'sonner';
 import { expect, test, vi } from 'vitest';
-import { agent, message, refusal, review, thread } from '@/test/fixtures';
+import { agent, message, refusal, review, thread, linesAnchor } from '@/test/fixtures';
 import { parseRoute } from '@/lib/route';
+import type { LinesAnchor } from '@/lib/types';
 import { renderInReview } from '@/test/renderCtx';
 import { stubFetch } from '@/test/stubFetch';
 import { ThreadCard } from './ThreadCard';
@@ -41,7 +42,7 @@ test('a resolved thread offers Reopen', async () => {
 });
 
 test('an outdated thread has no status controls but keeps a reply box, and says where it was', () => {
-  renderInReview(<ThreadCard thread={thread({ status: 'outdated', anchor: { ...thread().anchor, startLine: 10, endLine: 14, round: 2 } })} />);
+  renderInReview(<ThreadCard thread={thread({ status: 'outdated', anchor: linesAnchor({ startLine: 10, endLine: 14, round: 2 }) })} />);
   expect(screen.getByText('outdated · was L10–L14 (new) at round 2')).toBeTruthy();
   expect(screen.queryByRole('button', { name: /Resolve|Reopen/ })).toBeNull();
   expect(screen.getByLabelText('Reply')).toBeTruthy();
@@ -74,7 +75,7 @@ test('a reply draft survives a remount and is cleared once sent', async () => {
 });
 
 test('a drifted anchor is flagged', () => {
-  renderInReview(<ThreadCard thread={thread({ anchor: { ...thread().anchor, drifted: true } })} />);
+  renderInReview(<ThreadCard thread={thread({ anchor: linesAnchor({ drifted: true }) })} />);
   expect(screen.getByText('re-anchored by context')).toBeTruthy();
 });
 
@@ -170,7 +171,7 @@ test('outside a comparison a citation link adds no round', async () => {
   expect(parseRoute(location.search)).toEqual({ review: 'r-1', file: 'src/a.ts', side: 'new', lines: '3' });
 });
 
-const anchorAt = (over: Partial<ReturnType<typeof thread>['anchor']>) => ({ ...thread().anchor, ...over });
+const anchorAt = (over: Partial<LinesAnchor>) => linesAnchor(over);
 
 // Invariant: Focus on a thread of another file opens that file at the thread, dropping the old file's side and lines
 // (no `lines=` of its own: its range rail marks it).
@@ -209,7 +210,7 @@ test('an outdated base-side thread opens its round view', async () => {
   expect(parseRoute(location.search)).toEqual({ review: 'r-1', round: '2', file: 'src/a.ts', side: 'old', lines: '10-14', thread: 't-1' });
 });
 
-const ranged = (over: Partial<ReturnType<typeof thread>> = {}) => thread({ ...over, anchor: { ...thread().anchor, startLine: 3, endLine: 5 } });
+const ranged = (over: Partial<ReturnType<typeof thread>> = {}) => thread({ ...over, anchor: linesAnchor({ startLine: 3, endLine: 5 }) });
 
 // Invariant: a live card names the lines it is anchored to, with their side.
 test('a live card names its range', () => {
@@ -264,4 +265,44 @@ test('in a comparison the location link names the copy\'s round and lines', () =
   renderInReview(<><ThreadCard thread={copy('from', 3)} showLocation /><ThreadCard thread={copy('to', 5)} showLocation /></>, { compare: { from: 1, to: 2 }, readOnly: true });
   expect(screen.getByRole('button', { name: 'src/a.ts · round 1 L3–L5' })).toBeTruthy();
   expect(screen.getByRole('button', { name: 'src/a.ts · round 2 L5–L7' })).toBeTruthy();
+});
+
+// ---- file and review threads ----
+
+// Invariant: a card names a file thread's place as the whole file and a review thread's as the review, never as lines.
+test.each([
+  [{ kind: 'file', file: 'src/a.ts', round: 1 }, 'Whole file', 'src/a.ts · Whole file'],
+  [{ kind: 'review', round: 1 }, 'Review', 'Review'],
+] as const)('a card on %o names its place', (anchor, label, link) => {
+  const { unmount } = renderInReview(<ThreadCard thread={thread({ anchor })} />);
+  expect(screen.getByText(label)).toBeTruthy();
+  expect(screen.getByRole('article').textContent).not.toMatch(/undefined|L\d/);
+  unmount();
+  renderInReview(<ThreadCard thread={thread({ anchor })} showLocation />);
+  expect(screen.getByRole('button', { name: link })).toBeTruthy();
+});
+
+// Invariant: Focus on a file thread opens its file at the thread with no side or lines.
+test('Focus on a file thread in another file opens that file at the thread, with no side or lines', async () => {
+  history.replaceState(null, '', '?review=r-1&file=src%2Fb.ts&lines=9&side=old');
+  renderInReview(<ThreadCard thread={thread({ anchor: { kind: 'file', file: 'src/a.ts', round: 1 } })} />);
+  await userEvent.setup().click(screen.getByRole('button', { name: 'Focus' }));
+  expect(parseRoute(location.search)).toEqual({ review: 'r-1', file: 'src/a.ts', thread: 't-1' });
+});
+
+// Invariant: Focus on a review thread opens the Threads pane at it and leaves the open file alone.
+test('Focus on a review thread opens the Threads pane at the thread and keeps the open file', async () => {
+  history.replaceState(null, '', '?review=r-1&file=src%2Fb.ts&lines=9');
+  renderInReview(<ThreadCard thread={thread({ anchor: { kind: 'review', round: 1 } })} />);
+  await userEvent.setup().click(screen.getByRole('button', { name: 'Focus' }));
+  expect(parseRoute(location.search)).toEqual({ review: 'r-1', file: 'src/b.ts', lines: '9', thread: 't-1', view: 'threads' });
+});
+
+// Invariant: an outdated file thread says its file left the diff, and its link opens the round it last sat in.
+test('an outdated file thread links to the round view it last sat in', async () => {
+  history.replaceState(null, '', '?review=r-1&compare=1..2&commit=abc1234');
+  renderInReview(<ThreadCard thread={thread({ status: 'outdated', anchor: { kind: 'file', file: 'src/a.ts', round: 2 } })} showLocation />);
+  expect(screen.getByText('outdated · its file left the diff after round 2')).toBeTruthy();
+  await userEvent.setup().click(screen.getByRole('button', { name: 'src/a.ts · Whole file' }));
+  expect(parseRoute(location.search)).toEqual({ review: 'r-1', file: 'src/a.ts', thread: 't-1', round: '2' });
 });

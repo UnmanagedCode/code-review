@@ -20,7 +20,7 @@ beforeEach(async () => {
 afterEach(() => w.cleanup());
 
 const ok = (res) => { assert.equal(res.ok, true, JSON.stringify(res)); return res; };
-const at = (file, startLine) => ({ file, side: 'new', startLine, endLine: startLine });
+const at = (file, startLine) => ({ kind: 'lines', file, side: 'new', startLine, endLine: startLine });
 const author = agent('s-author');
 
 // Only Date is mocked, so the fake cc's sockets and timers keep running. Each `clock.at(n)` is a distinct, later wall-clock time.

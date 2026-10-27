@@ -179,7 +179,7 @@ test('an uncommitted review\'s detail, summary and diff cost exactly two execs, 
   };
   ok(await reviews.diff(uncommitted.id, {})); // reads a.js's line count at HEAD once; tests/diffMeta.test.js pins that cost
   await budget();
-  for (const anchor of [{ file: 'a.js', side: 'new', startLine: 5 }, { file: 'a.js', side: 'old', startLine: 5 }, { file: 'n.txt', side: 'new', startLine: 2 }]) {
+  for (const anchor of [{ kind: 'lines', file: 'a.js', side: 'new', startLine: 5 }, { kind: 'lines', file: 'a.js', side: 'old', startLine: 5 }, { kind: 'lines', file: 'n.txt', side: 'new', startLine: 2 }]) {
     ok(await threads.annotate(uncommitted.id, HUMAN, { anchor, kind: 'comment', body: 'x' }));
   }
   w.repo.write('a.js', ['top', ...editLines({ 5: 'live' }).split('\n')].join('\n')); // the sweep moves the new-side thread

@@ -14,7 +14,7 @@ afterEach(() => w.cleanup());
 const ok = (res) => { assert.equal(res.ok, true, JSON.stringify(res)); return res; };
 const codeOf = (res) => { assert.equal(res.ok, false, 'expected a refusal'); return res.code; };
 const open = async (args = {}, actor = HUMAN) => ok(await reviews.openReview({ project: 'app', worktree: 'feature', ...args }, actor)).review;
-const at = (file, startLine, endLine = startLine, side = 'new') => ({ file, side, startLine, endLine });
+const at = (file, startLine, endLine = startLine, side = 'new') => ({ kind: 'lines', file, side, startLine, endLine });
 const say = (id, anchor, extra = {}, actor = HUMAN) =>
   threads.annotate(id, actor, { anchor, kind: 'comment', body: 'b', ...extra });
 
@@ -55,22 +55,22 @@ test('annotate: a binary file takes no line anchors', async () => {
   const diff = ok(await reviews.diff(review.id, {}));
   assert.equal(diff.files[0].binary, true);
   assert.equal(codeOf(await say(review.id, at('img.bin', 1))), 'BINARY_FILE');
-  assert.equal(codeOf(await threads.annotate(review.id, HUMAN, { anchor: { hunkId: diff.files[0].hunks[0].id }, kind: 'comment', body: 'x' })), 'BINARY_FILE');
+  assert.equal(codeOf(await threads.annotate(review.id, HUMAN, { anchor: { kind: 'hunk', hunkId: diff.files[0].hunks[0].id }, kind: 'comment', body: 'x' })), 'BINARY_FILE');
 });
 
 test('annotate: a hunk-only anchor spans the hunk\'s new lines, or its old lines for a pure deletion', async () => {
   const { review } = await rangeReview();
   const hunk = ok(await reviews.diff(review.id, {})).files[0].hunks[0];
-  const t = ok(await threads.annotate(review.id, HUMAN, { anchor: { hunkId: hunk.id }, kind: 'comment', body: 'x' })).thread;
-  assert.deepEqual([t.anchor.side, t.anchor.startLine, t.anchor.endLine, t.anchor.hunkId], ['new', hunk.newStart, hunk.newStart + hunk.newLines - 1, hunk.id]);
-  assert.equal(codeOf(await threads.annotate(review.id, HUMAN, { anchor: { hunkId: 'nope' }, kind: 'comment', body: 'x' })), 'HUNK_UNKNOWN');
+  const t = ok(await threads.annotate(review.id, HUMAN, { anchor: { kind: 'hunk', hunkId: hunk.id }, kind: 'comment', body: 'x' })).thread;
+  assert.deepEqual([t.anchor.kind, t.anchor.side, t.anchor.startLine, t.anchor.endLine, t.anchor.hunkId], ['lines', 'new', hunk.newStart, hunk.newStart + hunk.newLines - 1, hunk.id]);
+  assert.equal(codeOf(await threads.annotate(review.id, HUMAN, { anchor: { kind: 'hunk', hunkId: 'nope' }, kind: 'comment', body: 'x' })), 'HUNK_UNKNOWN');
 
   const del = w.addWorktree('del');
   del.commit({ 'b.js': null });
   const delReview = await open({ worktree: 'del' });
   const dh = ok(await reviews.diff(delReview.id, {})).files[0].hunks[0];
   assert.equal(dh.newLines, 0);
-  const d = ok(await threads.annotate(delReview.id, HUMAN, { anchor: { hunkId: dh.id }, kind: 'comment', body: 'x' })).thread;
+  const d = ok(await threads.annotate(delReview.id, HUMAN, { anchor: { kind: 'hunk', hunkId: dh.id }, kind: 'comment', body: 'x' })).thread;
   assert.deepEqual([d.anchor.side, d.anchor.startLine, d.anchor.endLine], ['old', 1, 10]);
 });
 
@@ -425,5 +425,135 @@ test('annotate refuses a tooLarge file with BINARY_FILE, for a line anchor and f
   const big = ok(await reviews.diff(review.id, {})).files.find((f) => f.path === 'big.txt');
   assert.equal(big.tooLarge, true);
   assert.equal(codeOf(await say(review.id, at('big.txt', 1))), 'BINARY_FILE');
-  assert.equal(codeOf(await threads.annotate(review.id, HUMAN, { anchor: { hunkId: big.hunks[0].id }, kind: 'comment', body: 'x' })), 'BINARY_FILE');
+  assert.equal(codeOf(await threads.annotate(review.id, HUMAN, { anchor: { kind: 'hunk', hunkId: big.hunks[0].id }, kind: 'comment', body: 'x' })), 'BINARY_FILE');
+  assert.equal(ok(await say(review.id, { kind: 'file', file: 'big.txt' })).thread.anchor.file, 'big.txt', 'a file anchor reads no lines');
+});
+
+// ---- file and review anchors ----
+
+const onFile = (file) => ({ kind: 'file', file });
+const onReview = { kind: 'review' };
+
+test('annotate: a file anchor is {kind, file, round}, sits in its file\'s diff threads and FileState, and returns that file\'s sig', async () => {
+  // Invariant: a file anchor stores and shows only kind/file/round; withThreads and fileStates pick it up by anchor.file; fileSig is the file's live sig.
+  const { review } = await rangeReview();
+  const res = ok(await say(review.id, onFile('a.js')));
+  assert.deepEqual(res.thread.anchor, { kind: 'file', file: 'a.js', round: 1 });
+  assert.deepEqual(store.read(review.id).threads[0].anchor, { kind: 'file', file: 'a.js', round: 1 });
+  const file = ok(await reviews.diff(review.id, { file: 'a.js' })).files[0];
+  assert.deepEqual(file.threads.map((t) => t.id), [res.thread.id]);
+  assert.deepEqual(res.fileSig, { path: 'a.js', sig: file.sig });
+  assert.equal(ok(await reviews.getReview(review.id)).files[0].threads.open, 1);
+});
+
+test('annotate: a file anchor takes a binary file, where a lines anchor is refused BINARY_FILE', async () => {
+  // Invariant: the binary refusal applies to line anchors only; a file anchor never reads lines.
+  const { review } = await rangeReview({ 'img.bin': Buffer.from([0, 1, 2, 0, 255]) });
+  assert.equal(codeOf(await say(review.id, at('img.bin', 1))), 'BINARY_FILE');
+  assert.deepEqual(ok(await say(review.id, onFile('img.bin'))).thread.anchor, { kind: 'file', file: 'img.bin', round: 1 });
+});
+
+test('annotate: a file anchor on a path outside the diff is refused FILE_NOT_IN_DIFF', async () => {
+  // Invariant: a file anchor needs its file in the current snapshot.
+  const { review } = await rangeReview();
+  assert.equal(codeOf(await say(review.id, onFile('b.js'))), 'FILE_NOT_IN_DIFF');
+  assert.equal(codeOf(await say(review.id, onFile('nope.js'))), 'FILE_NOT_IN_DIFF');
+});
+
+test('annotate: a review anchor is {kind, round} with a null fileSig, listed in reviewThreads and the summary but on no file', async () => {
+  // Invariant: review threads count in counts.threads and unread, appear in getReview().reviewThreads, and in no DiffFile or FileState.
+  roster();
+  const { review } = await rangeReview(undefined, { recipient: 's-author' });
+  const res = ok(await say(review.id, onReview, {}, reviewer));
+  assert.deepEqual(res.thread.anchor, { kind: 'review', round: 1 });
+  assert.equal(res.fileSig, null);
+  const detail = ok(await reviews.getReview(review.id));
+  assert.deepEqual(detail.reviewThreads.map((t) => t.id), [res.thread.id]);
+  assert.deepEqual([detail.review.counts.threads.open, detail.review.unread], [1, 1]);
+  assert.deepEqual(detail.files.map((f) => [f.threads.open, f.unread]), [[0, 0]]);
+  assert.deepEqual(ok(await reviews.diff(review.id, {})).files.flatMap((f) => f.threads), []);
+});
+
+test('annotate: a review anchor reads no snapshot, so it is written while the diff is unreadable', async () => {
+  // Invariant: annotate reads the snapshot for lines, hunk and file anchors only.
+  const { wt, review } = await uncommittedReview();
+  wt.destroy();
+  assert.equal(codeOf(await say(review.id, at('a.js', 10))), 'CHECKOUT_GONE');
+  assert.equal(codeOf(await say(review.id, onFile('a.js'))), 'CHECKOUT_GONE');
+  assert.equal(ok(await say(review.id, onReview)).thread.anchor.kind, 'review');
+});
+
+test('annotate: an anchor spec with an unknown kind, a key its kind does not take or a missing required key is refused and writes nothing', async () => {
+  // Invariant: buildAnchor's checks refuse every bad combination with INVALID_ARGUMENT before any write, in words that name no spec key.
+  const { review } = await rangeReview();
+  const hunkId = ok(await reviews.diff(review.id, {})).files[0].hunks[0].id;
+  const before = store.read(review.id);
+  const bad = [
+    undefined, 'a.js',
+    { file: 'a.js', startLine: 2 }, { kind: 'range', file: 'a.js' }, { kind: 'toString' },
+    { kind: 'lines', startLine: 2 }, { kind: 'lines', file: 'a.js' }, { kind: 'lines', file: 'a.js', startLine: 2, hunkId },
+    { kind: 'file', file: 'a.js', startLine: 2 }, { kind: 'file', file: 'a.js', endLine: 2 }, { kind: 'file', file: 'a.js', side: 'new' },
+    { kind: 'file', file: 'a.js', hunkId }, { kind: 'file' },
+    { kind: 'review', file: 'a.js' }, { kind: 'review', startLine: 2 }, { kind: 'review', side: 'new' }, { kind: 'review', hunkId },
+    { kind: 'hunk', hunkId, file: 'a.js' }, { kind: 'hunk', hunkId, startLine: 2 }, { kind: 'hunk' },
+  ];
+  for (const anchor of bad) {
+    const res = await say(review.id, anchor);
+    assert.equal(codeOf(res), 'INVALID_ARGUMENT', JSON.stringify(anchor));
+    assert.doesNotMatch(res.reason, /hunkId|startLine|endLine/, res.reason);
+  }
+  const after = store.read(review.id);
+  assert.deepEqual([after.seq, after.threads], [before.seq, before.threads]);
+});
+
+test('mergeBlockers counts an open question alike on every anchor kind, on range and uncommitted reviews; findings and comments never', async () => {
+  // Invariant: mergeBlockers ignores the anchor: +1 per open question whatever it sits on, 0 for findings (even blockers) and comments.
+  const { review: range } = await rangeReview();
+  const unc = w.addWorktree('unc');
+  unc.write('a.js', editLines({ 10: 'X10' }));
+  const uncommitted = await open({ kind: 'uncommitted', worktree: 'unc' });
+  for (const [review, line] of [[range, 2], [uncommitted, 10]]) {
+    const blockers = async () => ok(await reviews.getReview(review.id)).review.mergeBlockers;
+    for (const anchor of [at('a.js', line), onFile('a.js'), onReview]) {
+      const q = ok(await say(review.id, anchor, { kind: 'question' })).thread;
+      assert.equal(await blockers(), 1, `${review.kind} ${anchor.kind}`);
+      ok(await say(review.id, anchor, { kind: 'finding', severity: 'blocker' }));
+      ok(await say(review.id, anchor, { kind: 'comment' }));
+      assert.equal(await blockers(), 1, `${review.kind} ${anchor.kind}`);
+      ok(await threads.setThreadStatus(review.id, q.id, { status: 'resolved' }));
+      assert.equal(await blockers(), 0, `${review.kind} ${anchor.kind}`);
+    }
+  }
+});
+
+test('file and review threads take the whole resolve flow; their writes return the file\'s sig, or null for the review', async () => {
+  // Invariant: resolve rights and dispositions ignore the anchor kind; reply/setThreadStatus fileSig is {path, sig} on a file thread, null on a review thread.
+  roster();
+  const { review } = await rangeReview(undefined, { recipient: 's-author' });
+  for (const anchor of [onFile('a.js'), onReview]) {
+    const sigOk = (res) => {
+      if (anchor.kind === 'review') assert.equal(res.fileSig, null);
+      else assert.deepEqual([res.fileSig.path, typeof res.fileSig.sig], ['a.js', 'string']);
+      return res;
+    };
+    const c = ok(await say(review.id, anchor)).thread;
+    assert.equal(sigOk(ok(await threads.setThreadStatus(review.id, c.id, { status: 'resolved' }))).thread.status, 'resolved');
+    assert.equal(ok(await threads.setThreadStatus(review.id, c.id, { status: 'open' })).thread.status, 'open');
+    const f = ok(await say(review.id, anchor, { kind: 'finding', severity: 'major' })).thread;
+    assert.equal(codeOf(await threads.setThreadStatus(review.id, f.id, { status: 'resolved' })), 'INVALID_ARGUMENT');
+    assert.equal(ok(await threads.setThreadStatus(review.id, f.id, { status: 'resolved', disposition: 'fixed' })).thread.disposition, 'fixed');
+    const mine = ok(await say(review.id, anchor, {}, reviewer)).thread;
+    assert.equal(sigOk(ok(await threads.reply(review.id, reviewer, mine.id, { body: 'ok', resolve: true }))).thread.status, 'resolved');
+    const theirs = ok(await say(review.id, anchor, { kind: 'question' }, author)).thread;
+    assert.equal(ok(await threads.reply(review.id, reviewer, theirs.id, { body: 'done', resolve: true })).thread.status, 'open', 'another agent only proposes');
+    assert.equal(ok(await threads.reply(review.id, conductor, theirs.id, { body: 'ok', resolve: true })).thread.status, 'resolved');
+  }
+});
+
+test('a file thread\'s reply returns the sig the file\'s diff then serves', async () => {
+  // Invariant: sigAfterWrite signs the file of a file anchor, so the UI patches instead of refetching.
+  const { review } = await rangeReview();
+  const t = ok(await say(review.id, onFile('a.js'))).thread;
+  const res = ok(await threads.reply(review.id, HUMAN, t.id, { body: 'more' }));
+  assert.equal(res.fileSig.sig, ok(await reviews.diff(review.id, { file: 'a.js' })).files[0].sig);
 });

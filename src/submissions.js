@@ -3,11 +3,10 @@ import { assertOpen, currentRound, inReview, recipientRole } from './context.js'
 import { renderPrompt } from './prompt.js';
 import { verdictOf } from './rollup.js';
 import { touch } from './reviews.js';
+import { anchorLabel } from './anchor.js';
 
 const BRIDGE_CODES = ['INVALID_ARGUMENT', 'SESSION_UNKNOWN', 'SESSION_NOT_LIVE', 'SESSION_NOT_READY', 'SEND_FAILED', 'LOOKUP_FAILED', 'HOST_ERROR'];
 const now = () => new Date().toISOString();
-
-const where = (a) => `${a.file}#L${a.startLine}${a.endLine > a.startLine ? `-L${a.endLine}` : ''}`;
 
 // A human status change takes its own seq; opening and agent resolves share the seq of a message.
 const humanChangedStatus = (t, since) => t.statusSeq > since && !t.messages.some((m) => m.seq === t.statusSeq);
@@ -21,7 +20,7 @@ function activeThreads(review, since) {
     const latest = human[human.length - 1];
     const note = latest ? latest.body.split('\n')[0] : '';
     const state = t.status === 'open' ? 'reopened' : `${t.status}${t.disposition ? ` (${t.disposition})` : ''}`;
-    out.push({ id: t.id, kind: t.kind, where: where(t.anchor), note: humanChangedStatus(t, since) ? `${state}${note ? ` — ${note}` : ''}` : note });
+    out.push({ id: t.id, kind: t.kind, where: anchorLabel(t.anchor), note: humanChangedStatus(t, since) ? `${state}${note ? ` — ${note}` : ''}` : note });
   }
   return out;
 }

@@ -35,14 +35,45 @@ const mayClose = (thread, actor) => thread.status === 'open' && thread.openedBy.
 // Annotated files are always in the diff, so the binary decision never needs their content.
 const noContent = async () => null;
 
-// {file, side, startLine, endLine} or {hunkId} -> a complete anchor against the current snapshot.
-async function buildAnchor(review, snap, spec) {
+// What each anchor kind takes besides `kind`, and what it needs. A hunk anchor is stored as a lines anchor.
+const ANCHOR_KINDS = {
+  lines: { takes: ['file', 'side', 'startLine', 'endLine'], needs: ['file', 'startLine'] },
+  hunk: { takes: ['hunkId'], needs: ['hunkId'] },
+  file: { takes: ['file'], needs: ['file'] },
+  review: { takes: [], needs: [] },
+};
+// Spec keys in domain words, so one refusal reads the same over REST and MCP.
+const WORDS = { file: 'file', startLine: 'lines', endLine: 'lines', side: 'side', hunkId: 'hunk' };
+const words = (keys) => {
+  const w = [...new Set(keys.map((k) => WORDS[k]))];
+  return w.length > 1 ? `${w.slice(0, -1).join(', ')} or ${w.at(-1)}` : w[0];
+};
+
+/** Refuses an anchor spec whose kind is unknown, or that carries what its kind does not take or lacks what it needs. */
+function checkSpec(spec) {
   if (!spec || typeof spec !== 'object') throw invalid('anchor is required');
+  if (typeof spec.kind !== 'string' || !Object.hasOwn(ANCHOR_KINDS, spec.kind)) throw invalid(`anchor kind must be one of ${Object.keys(ANCHOR_KINDS).join(', ')}`);
+  const kind = ANCHOR_KINDS[spec.kind];
+  const foreign = Object.keys(WORDS).filter((k) => !kind.takes.includes(k));
+  if (foreign.some((k) => spec[k] !== undefined)) throw invalid(`a ${spec.kind} anchor takes no ${words(foreign)}`);
+  const lacking = kind.needs.filter((k) => spec[k] === undefined);
+  if (lacking.length) throw invalid(`a ${spec.kind} anchor needs ${kind.needs.map((k) => WORDS[k]).join(' and ')}`);
+}
+
+// A checked spec -> a complete anchor; `snap` (the current snapshot) is null for a review anchor, which reads none.
+async function buildAnchor(review, snap, spec) {
+  const round = currentRound(review).n;
+  if (spec.kind === 'review') return { kind: 'review', round };
+  if (spec.kind === 'file') {
+    const f = snap.files.find((x) => x.path === spec.file);
+    if (!f) throw new Refusal('FILE_NOT_IN_DIFF', `${spec.file} is not in the diff`);
+    return { kind: 'file', file: f.path, round };
+  }
   let file;
   let side = spec.side ?? 'new';
   let startLine = spec.startLine;
   let endLine = spec.endLine ?? spec.startLine;
-  if (spec.hunkId) {
+  if (spec.kind === 'hunk') {
     file = snap.files.find((f) => f.hunks.some((h) => h.id === spec.hunkId));
     if (!file) throw new Refusal('HUNK_UNKNOWN', `no such hunk: ${spec.hunkId}`);
     const hunk = file.hunks.find((h) => h.id === spec.hunkId);
@@ -61,14 +92,17 @@ async function buildAnchor(review, snap, spec) {
   const fileLines = await snap.lines(side, file.path);
   if (!fileLines) throw new Refusal('FILE_NOT_IN_DIFF', `${file.path} does not exist on the ${side} side`);
   if (endLine > fileLines.length) throw new Refusal('LINE_OUT_OF_RANGE', `${file.path} has ${fileLines.length} lines on the ${side} side`);
-  return makeAnchor({ file: file.path, side, startLine, endLine, round: currentRound(review).n, fileLines, hunks: file.hunks });
+  return makeAnchor({ file: file.path, side, startLine, endLine, round, fileLines, hunks: file.hunks });
 }
 
 /**
  * `{path, sig}` of the thread's file in the live diff after a write, from a snapshot this request already has
  * (uncommitted: the sweep's; committed: this process's cached one, else read). Never fails the write: `sig` null.
+ * A review thread is on no file: null.
  */
-async function sigAfterWrite(review, env, path) {
+async function sigAfterWrite(review, env, thread) {
+  if (thread.anchor.kind === 'review') return null;
+  const path = thread.anchor.file;
   let snap = null;
   try {
     if (review.kind === 'uncommitted') snap = env.sweep ? await env.snapshot() : null;
@@ -89,13 +123,15 @@ function message(review, actor, body, extra = {}) {
   };
 }
 
-/** Starts a thread on lines or on a whole hunk. */
+/** Starts a thread on lines, a whole hunk, a whole file or the review. */
 export const annotate = (id, actor, { anchor, kind, severity, body }) => attempt(() => inReview(id, async (review, env) => {
   assertOpen(review);
   if (!KINDS.includes(kind)) throw invalid(`kind must be one of ${KINDS.join(', ')}`);
   if (kind === 'finding' && !SEVERITIES.includes(severity)) throw new Refusal('SEVERITY_REQUIRED', `a finding needs a severity: ${SEVERITIES.join(', ')}`);
   needBody(body);
-  const snap = await env.snapshot();
+  checkSpec(anchor);
+  // Only a review anchor reads no snapshot, so it can be written while the diff is unreadable.
+  const snap = anchor.kind === 'review' ? null : await env.snapshot();
   const built = await buildAnchor(review, snap, anchor);
   const first = message(review, actor, body);
   const thread = {
@@ -104,7 +140,7 @@ export const annotate = (id, actor, { anchor, kind, severity, body }) => attempt
     humanReadSeq: actor.kind === 'human' ? first.seq : 0, createdAt: now(), messages: [first],
   };
   review.threads.push(thread);
-  return { ok: true, thread: threadView(thread), fileSig: liveSig(review, snap, built.file) };
+  return { ok: true, thread: threadView(thread), fileSig: built.kind === 'review' ? null : liveSig(review, snap, built.file) };
 }));
 
 /** Adds a message. `resolve` closes a thread the caller may close (`mayClose`), otherwise it proposes resolution. */
@@ -135,7 +171,7 @@ export const reply = (id, actor, tid, { body, resolve = false, disposition }) =>
     thread.resolveProposed = true;
   }
   thread.messages.push(msg);
-  return { ok: true, thread: threadView(thread), fileSig: await sigAfterWrite(review, env, thread.anchor.file) };
+  return { ok: true, thread: threadView(thread), fileSig: await sigAfterWrite(review, env, thread) };
 }));
 
 /** Human-only: resolve (a finding needs a disposition) or reopen. */
@@ -160,7 +196,7 @@ export const setThreadStatus = (id, tid, { status, disposition } = {}) => attemp
     thread.disposition = null;
     thread.resolution = null;
   }
-  return { ok: true, thread: threadView(thread), fileSig: await sigAfterWrite(review, env, thread.anchor.file) };
+  return { ok: true, thread: threadView(thread), fileSig: await sigAfterWrite(review, env, thread) };
 }));
 
 /** Marks one thread, or (no threadId) the whole review, as read by the human. */
@@ -186,7 +222,7 @@ export const listThreads = (id, { status = 'open', file, owner } = {}) => attemp
   for (const t of picked) {
     const view = threadView(t);
     out.push({
-      ...view, anchorLines: t.anchor.lines,
+      ...view, anchorLines: t.anchor.kind === 'lines' ? t.anchor.lines : null,
       messages: await Promise.all(t.messages.map(async (m, i) => {
         const round = review.rounds.find((r) => r.n === m.round);
         return { ...view.messages[i], ref: review.kind === 'uncommitted' ? 'working tree' : round.headSha.slice(0, 7), excerpts: await citationsForMessage(env, m) };

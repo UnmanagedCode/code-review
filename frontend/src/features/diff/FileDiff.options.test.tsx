@@ -9,7 +9,7 @@ import { useFileDiff } from '@/state/fileDiff';
 import { ReviewProvider, type ReviewCtx } from '@/state/reviewContext';
 import { installMedia } from '@/test/fakeMedia';
 import { installResizeObserver } from '@/test/fakeResizeObserver';
-import { diffFile, fileState, hunk, review, thread } from '@/test/fixtures';
+import { diffFile, fileState, hunk, review, thread, linesAnchor } from '@/test/fixtures';
 import { ctxValue } from '@/test/renderCtx';
 import { stubFetch } from '@/test/stubFetch';
 import { FileDiff } from './FileDiff';
@@ -96,7 +96,7 @@ test('a mixed hunk shows the merged row, and toggling off restores the original 
 describe.each(['inline', 'split'] as const)('%s', (view) => {
   // Invariant: a thread keyed on a merged row's old line still renders under that row.
   test('a thread on a merged row\'s old line stays under that row', async () => {
-    const t = thread({ anchor: { ...thread().anchor, side: 'old', startLine: 23, endLine: 23, hunkId: 'hm' } });
+    const t = thread({ anchor: linesAnchor({ side: 'old', startLine: 23, endLine: 23, hunkId: 'hm' }) });
     await show(diffFile({ hunks: [hw, hm], threads: [t], lineCount: { old: 40, new: 40 } }), {}, view);
     await pick('Ignore whitespace');
     const row = rowOf('old', 23)!;
@@ -120,7 +120,7 @@ test('a selection survives toggling Ignore whitespace', async () => {
 
 // Invariant: a whitespace-only hunk holding the routed thread is never collapsed.
 test('a whitespace-only hunk holding the routed thread stays expanded', async () => {
-  const t = thread({ id: 't-9', anchor: { ...thread().anchor, side: 'new', startLine: 5, endLine: 5, hunkId: 'hw' } });
+  const t = thread({ id: 't-9', anchor: linesAnchor({ side: 'new', startLine: 5, endLine: 5, hunkId: 'hw' }) });
   navigate({ file: 'src/a.ts', thread: 't-9' });
   await show(diffFile({ hunks: [hw, hm], threads: [t], lineCount: { old: 40, new: 40 } }));
   await pick('Ignore whitespace');
@@ -130,7 +130,7 @@ test('a whitespace-only hunk holding the routed thread stays expanded', async ()
 
 // Invariant: the automatic whitespace collapse never hides an open conversation; a resolved one does not hold it open.
 test.each([['open', false], ['resolved', true]] as const)('a whitespace-only hunk holding an %s thread collapses=%s', async (status, collapses) => {
-  const t = thread({ id: 't-5', status, anchor: { ...thread().anchor, side: 'new', startLine: 5, endLine: 5, hunkId: 'hw' } });
+  const t = thread({ id: 't-5', status, anchor: linesAnchor({ side: 'new', startLine: 5, endLine: 5, hunkId: 'hw' }) });
   await show(diffFile({ hunks: [hw, hm], threads: [t], lineCount: { old: 40, new: 40 } }));
   await pick('Ignore whitespace');
   expect(!!summary()).toBe(collapses);
@@ -139,7 +139,7 @@ test.each([['open', false], ['resolved', true]] as const)('a whitespace-only hun
 
 // Invariant: fewer context lines move hunk-edge context into gaps, but a thread's lines are reopened.
 test('context 0 puts edge context in gaps, and a thread on a trimmed line re-opens its gap', async () => {
-  const t = thread({ anchor: { ...thread().anchor, side: 'new', startLine: 21, endLine: 21, hunkId: 'hm' } });
+  const t = thread({ anchor: linesAnchor({ side: 'new', startLine: 21, endLine: 21, hunkId: 'hm' }) });
   await show(diffFile({ hunks: [hw, hm], threads: [t], lineCount: { old: 40, new: 40 } }));
   expect(cell('new', 3)).not.toBeNull();
   await pick('0');

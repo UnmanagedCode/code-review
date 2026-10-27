@@ -1,12 +1,12 @@
-import { ArrowLeftIcon, ChevronLeftIcon, ChevronRightIcon } from 'lucide-react';
+import { ArrowLeftIcon, ChevronLeftIcon, ChevronRightIcon, MessageSquarePlusIcon } from 'lucide-react';
 import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { dedupeCopies } from '@/lib/compare';
+import { dedupeCopies, type ShownThread } from '@/lib/compare';
 import { decorateRows } from '@/lib/decorate';
 import { collapseRows, type Row } from '@/lib/diffRows';
 import { languageFor } from '@/lib/highlight';
-import { rangeLabel, rangeMarks } from '@/lib/ranges';
+import { onLines, rangeLabel, rangeMarks } from '@/lib/ranges';
 import { navigate, parseLines, useRoute } from '@/lib/route';
 import { lineOn, selectionTouches, type Selection } from '@/lib/selection';
 import { pairLine, splitRows, type SplitRow as SplitRowT } from '@/lib/splitRows';
@@ -38,7 +38,7 @@ import { ViewToggle } from './ViewToggle';
 export const CHUNK_ROWS = 1500;
 const byId = (a: Thread, b: Thread) => a.id.localeCompare(b.id, undefined, { numeric: true });
 
-function FileHeader({ file, files, onBack, extra, view, options }: { file: DiffFile; files: { path: string }[]; onBack?: () => void; extra?: ReactNode; view?: { chosen: DiffView; choose: (v: DiffView) => void }; options: boolean }) {
+function FileHeader({ file, files, onBack, extra, view, options, onComment }: { file: DiffFile; files: { path: string }[]; onBack?: () => void; extra?: ReactNode; view?: { chosen: DiffView; choose: (v: DiffView) => void }; options: boolean; onComment?: () => void }) {
   const { round, compare } = useReviewCtx();
   const i = files.findIndex((f) => f.path === file.path);
   const go = (path: string) => navigate({ file: path, lines: undefined, side: undefined, thread: undefined });
@@ -55,6 +55,7 @@ function FileHeader({ file, files, onBack, extra, view, options }: { file: DiffF
       <span className="text-xs"><span className="text-success">+{file.additions}</span> <span className="text-destructive">−{file.deletions}</span></span>
       <FileVerdict file={file} />
       <CodeGitFileLink file={file} />
+      {onComment && <Button variant="ghost" size="icon-sm" aria-label="Comment on file" title="Comment on file" onClick={onComment}><MessageSquarePlusIcon /></Button>}
       {view && <ViewToggle view={view.chosen} onChange={view.choose} />}
       {options && <DiffOptions />}
       <Button variant="ghost" size="icon-sm" aria-label="Previous file" disabled={i <= 0} onClick={() => go(files[i - 1].path)}><ChevronLeftIcon /></Button>
@@ -85,18 +86,21 @@ export function FileDiff({ onBack, extra }: { onBack?: () => void; extra?: React
   // the routed thread's range or the cited range never do. The routed thread is shown on arrival but collapses if it gets resolved while routed.
   // A whitespace-only hunk holding an open thread stays expanded: that collapse is automatic, so it never hides a conversation.
   const textHunks = useMemo(() => (file?.hunks ?? []).filter((h): h is TextHunk => h.kind === 'text'), [file]);
+  // Threads on lines sit under rows; threads on the whole file sit in the block under the header.
+  const lineThreads = useMemo(() => (file?.threads ?? []).filter(onLines), [file]);
+  const fileThreads = useMemo(() => dedupeCopies((file?.threads ?? []).filter((t) => t.anchor.kind === 'file')), [file]);
   const settled = useMemo(() => {
-    const open = (file?.threads ?? []).filter((t) => t.status === 'open').map((t) => ({ side: t.anchor.side, start: t.anchor.startLine, end: t.anchor.endLine }));
+    const open = lineThreads.filter((t) => t.status === 'open').map((t) => ({ side: t.anchor.side, start: t.anchor.startLine, end: t.anchor.endLine }));
     const wsOnly = new Set(rows.flatMap((r) => (r.kind === 'hunk' && isWhitespaceOnly(r.hunk) && !open.some((s) => selectionTouches(s, r.hunk.lines)) ? [r.hunk.id] : [])));
     return [
       ...textHunks.filter((h) => h.verdict === 'accepted' || wsOnly.has(h.id)).map((h) => `h:${h.id}`),
       ...(file?.threads ?? []).filter((t) => t.status === 'resolved').map((t) => `t:${t.id}`),
     ];
-  }, [file, textHunks, rows]);
+  }, [file, lineThreads, textHunks, rows]);
   const routed = useMemo(() => {
-    const a = route.thread ? file?.threads.find((t) => t.id === route.thread)?.anchor : undefined;
+    const a = route.thread ? lineThreads.find((t) => t.id === route.thread)?.anchor : undefined;
     return a ? { side: a.side, start: a.startLine, end: a.endLine } : null;
-  }, [file, route.thread]);
+  }, [lineThreads, route.thread]);
   const forced = useMemo(() => new Set([
     ...textHunks.filter((h) => selectionTouches(targetSel, h.lines) || selectionTouches(routed, h.lines)).map((h) => `h:${h.id}`),
   ]), [route.thread, routed, targetSel, textHunks]);
@@ -116,26 +120,30 @@ export function FileDiff({ onBack, extra }: { onBack?: () => void; extra?: React
 
   const threadsByRow = useMemo(() => {
     const m = new Map<string, Thread[]>();
-    for (const t of file?.threads ?? []) {
+    for (const t of lineThreads) {
       const key = `${t.anchor.side}:${t.anchor.endLine}`;
       m.set(key, [...(m.get(key) ?? []), t].sort(byId));
     }
     return m;
-  }, [file]);
+  }, [lineThreads]);
+  const ownDropped = useMemo(() => dropped.filter((d) => d.anchor.kind !== 'review' && d.anchor.file === file?.path), [dropped, file?.path]);
+  const fileTombstones = ownDropped.filter((d) => d.anchor.kind === 'file');
   const tombstones = useMemo(() => {
     const m = new Map<string, Thread[]>();
-    for (const t of dropped.filter((d) => d.anchor.file === file?.path)) {
+    for (const t of ownDropped.filter(onLines)) {
       const key = `${t.anchor.side}:${t.anchor.endLine}`;
       m.set(key, [...(m.get(key) ?? []), t]);
     }
     return m;
-  }, [dropped, file?.path]);
+  }, [ownDropped]);
+  // The file's composer is open for this path only, so another file never inherits it.
+  const [composingOn, setComposingOn] = useState<string | null>(null);
 
   // Open context that hides any line of a thread's range, of the cited lines, or (after a Diff options change) of the selection.
   const revealKey = `${file?.path}|${file?.threads.map((t) => t.id).join()}|${route.lines}|${targetSide}|${ctx.fileDiff.total}|${prefs.context}|${prefs.ignoreWhitespace}`;
   useEffect(() => {
     if (!file) return;
-    const wanted = file.threads.map((t) => ({ side: t.anchor.side, start: t.anchor.startLine, end: t.anchor.endLine }));
+    const wanted = lineThreads.map((t) => ({ side: t.anchor.side, start: t.anchor.startLine, end: t.anchor.endLine }));
     if (target) wanted.push({ side: targetSide, start: target.start, end: target.end });
     if (sel.selection) wanted.push(sel.selection);
     reveal(wanted);
@@ -144,7 +152,7 @@ export function FileDiff({ onBack, extra }: { onBack?: () => void; extra?: React
   // A target beyond the rendered window widens it.
   useEffect(() => {
     const wantLine = target?.start;
-    const wantThread = route.thread ? [...(file?.threads ?? [])].find((t) => t.id === route.thread)?.anchor : null;
+    const wantThread = route.thread ? lineThreads.find((t) => t.id === route.thread)?.anchor : null;
     const idx = visible.findIndex((r) => (wantLine != null && lineOn(r, targetSide) === wantLine) || (wantThread && lineOn(r, wantThread.side) === wantThread.endLine));
     if (idx >= limit) setLimit(idx + 200);
   }, [visible, route.lines, route.thread]);
@@ -170,6 +178,14 @@ export function FileDiff({ onBack, extra }: { onBack?: () => void; extra?: React
   }
   const lastGap = [...visible].reverse().find((r) => r.kind === 'gap');
   const enabled = !ctx.readOnly;
+  const composingFile = composingOn === file.path && enabled;
+
+  const settledThread = ({ thread: t, other }: ShownThread) => (
+    <SettledThread
+      key={t.id} thread={t} collapsed={collapse.collapsed.has(`t:${t.id}`)} toggleable={collapse.toggleable(`t:${t.id}`)} onToggle={(open) => collapse.setOpen(`t:${t.id}`, open)}
+      note={ctx.compare && <CompareNote thread={t} other={other} compare={ctx.compare} />}
+    />
+  );
 
   /**
    * What renders under a row: tombstone notices, thread cards, then the selection toolbar or composer.
@@ -183,19 +199,14 @@ export function FileDiff({ onBack, extra }: { onBack?: () => void; extra?: React
         {notices.map((t) => <p key={t.id} className="px-3 py-1 font-sans text-xs text-muted-foreground">Thread {t.id} dropped: its lines changed</p>)}
         {threads.length > 0 && (
           <div className="sticky left-0 flex flex-col gap-2 px-3 py-2 font-sans text-sm">
-            {threads.map(({ thread: t, other }) => (
-              <SettledThread
-                key={t.id} thread={t} collapsed={collapse.collapsed.has(`t:${t.id}`)} toggleable={collapse.toggleable(`t:${t.id}`)} onToggle={(open) => collapse.setOpen(`t:${t.id}`, open)}
-                note={ctx.compare && <CompareNote thread={t} other={other} compare={ctx.compare} />}
-              />
-            ))}
+            {threads.map(settledThread)}
           </div>
         )}
         {endsSelection && sel.selection && !sel.dragging && (
           <div className="sticky left-0 px-3 py-2 font-sans text-sm">
             {sel.composing ? (
               <Composer
-                anchor={{ file: file.path, side: sel.selection.side, startLine: sel.selection.start, endLine: sel.selection.end }}
+                anchor={{ kind: 'lines', file: file.path, side: sel.selection.side, startLine: sel.selection.start, endLine: sel.selection.end }}
                 label={selectionLabel(sel.selection)}
                 onClose={sel.clear}
               />
@@ -246,7 +257,17 @@ export function FileDiff({ onBack, extra }: { onBack?: () => void; extra?: React
 
   return (
     <div ref={diffView.paneRef} aria-busy={switching || undefined} inert={switching || undefined} className={cn('flex min-w-0 flex-col', switching && 'opacity-60')}>
-      <FileHeader file={file} files={ctx.files} onBack={onBack} extra={extra} view={textFile && diffView.available ? diffView : undefined} options={textFile} />
+      <FileHeader
+        file={file} files={ctx.files} onBack={onBack} extra={extra} view={textFile && diffView.available ? diffView : undefined} options={textFile}
+        onComment={enabled ? () => setComposingOn(file.path) : undefined}
+      />
+      {(fileThreads.length > 0 || fileTombstones.length > 0 || composingFile) && (
+        <section aria-label="File threads" className="flex flex-col gap-2 border-b px-3 py-2 text-sm">
+          {fileTombstones.map((t) => <p key={t.id} className="text-xs text-muted-foreground">Thread {t.id} dropped: its file left the diff</p>)}
+          {fileThreads.map(settledThread)}
+          {composingFile && <Composer anchor={{ kind: 'file', file: file.path }} label="This file" onClose={() => setComposingOn(null)} />}
+        </section>
+      )}
       {!textFile && (
         <div className="flex flex-col gap-2 p-3">
           <p className="text-sm text-muted-foreground">{file.binary ? 'Binary file changed' : 'Too large to diff'}</p>

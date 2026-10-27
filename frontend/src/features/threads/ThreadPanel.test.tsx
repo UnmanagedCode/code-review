@@ -1,11 +1,11 @@
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { expect, test, vi } from 'vitest';
-import { agent, diffFile, fileState, HUMAN, message, review, thread } from '@/test/fixtures';
+import { agent, diffFile, fileState, HUMAN, message, review, thread, linesAnchor } from '@/test/fixtures';
 import { parseRoute } from '@/lib/route';
 import { ctxValue } from '@/test/renderCtx';
 import { stubFetch } from '@/test/stubFetch';
-import type { ComparedThread, UnplacedThread } from '@/lib/types';
+import type { ComparedThread, Thread, UnplacedThread } from '@/lib/types';
 import { ReviewProvider } from '@/state/reviewContext';
 import { ThreadPanel } from './ThreadPanel';
 
@@ -79,11 +79,11 @@ test('thread panel cards render bodies as markdown', async () => {
 /** A comparison of rounds 1 → 2: t-1 with both copies in src/a.ts, t-2 a round-2 copy there, t-3 on the base side. */
 function comparison(over: Partial<ReturnType<typeof ctxValue>> = {}) {
   const copy = (id: string, placement: 'from' | 'to', side: 'old' | 'new' = placement === 'from' ? 'old' : 'new') =>
-    ({ ...thread({ id, anchor: { ...thread().anchor, side } }), placement, outdatedIn: null }) as ComparedThread;
+    ({ ...thread({ id, anchor: linesAnchor({ side }) }), placement, outdatedIn: null }) as ComparedThread;
   const file = { ...diffFile(), threads: [copy('t-1', 'from'), copy('t-1', 'to'), copy('t-2', 'to')] };
   const unplaced: UnplacedThread[] = [{ ...copy('t-3', 'to', 'old'), reason: 'base-side' }];
   const round = (n: number) => ({ n, headSha: `${n}`.repeat(40), baseSha: 'b'.repeat(40), createdAt: '', submittedAt: null });
-  const view = { readOnly: true as const, from: round(1), to: round(2), files: [file], counts: { open: 1, resolved: 0, outdated: 2 }, unplaced };
+  const view = { readOnly: true as const, from: round(1), to: round(2), files: [file], counts: { open: 1, resolved: 0, outdated: 2 }, unplaced, reviewThreads: [] };
   return ctxValue({ compare: { from: 1, to: 2, view }, readOnly: true, threadCounts: view.counts, fileDiff: { file } as never, ...over });
 }
 
@@ -220,4 +220,78 @@ test('a comparison\'s All list filters by owner', async () => {
   await user.selectOptions(owner, 'agents');
   expect(screen.queryAllByRole('article')).toHaveLength(0);
   expect(screen.getByText('No threads')).toBeTruthy();
+});
+
+// ---- review threads ----
+
+const onReview = (over: Partial<Thread> = {}) => thread({ id: 't-r', anchor: { kind: 'review', round: 1 }, ...over });
+const reviewTab = () => screen.getByRole('tab', { name: /^Review/ });
+
+// Invariant: the Review tab lists the review's own threads, counted on the tab.
+test('the Review tab lists the review threads', async () => {
+  render(<ReviewProvider value={ctxValue({ reviewThreads: [onReview()], fileDiff: { file: undefined } as never })}><ThreadPanel /></ReviewProvider>);
+  expect(reviewTab().textContent).toContain('1');
+  await userEvent.setup().click(reviewTab());
+  const [card] = screen.getAllByRole('article');
+  expect(screen.getAllByRole('article')).toHaveLength(1);
+  expect(within(card).getByText('Review')).toBeTruthy();
+});
+
+// Invariant: New review thread posts a review anchor; a read-only view does not offer it.
+test('New review thread posts {kind: review}; read-only there is none', async () => {
+  const net = stubFetch({ 'POST api/reviews/r-1/threads': { thread: onReview(), fileSig: null } });
+  const user = userEvent.setup();
+  const { unmount } = render(<ReviewProvider value={ctxValue({ fileDiff: { file: undefined } as never })}><ThreadPanel /></ReviewProvider>);
+  await user.click(reviewTab());
+  await user.click(screen.getByRole('button', { name: 'New review thread' }));
+  await user.type(screen.getByLabelText('Message'), 'overall');
+  await user.click(screen.getByRole('button', { name: 'Post' }));
+  await waitFor(() => expect(net.calls.find((c) => c.method === 'POST')?.body).toEqual({ anchor: { kind: 'review' }, kind: 'comment', body: 'overall' }));
+  unmount();
+  render(<ReviewProvider value={ctxValue({ readOnly: true, fileDiff: { file: undefined } as never })}><ThreadPanel /></ReviewProvider>);
+  await user.click(reviewTab());
+  expect(screen.queryByRole('button', { name: 'New review thread' })).toBeNull();
+});
+
+// Invariant: All lists the review threads beside the file threads, so it matches the All count.
+test('All includes the review threads', async () => {
+  stubFetch({ 'GET api/reviews/r-1/diff': { review: review(), files: [diffFile({ threads: [thread({ id: 't-1' })] })] } });
+  const files = [fileState({ threads: { open: 1, resolved: 0, outdated: 0 } })];
+  render(<ReviewProvider value={ctxValue({ files, reviewThreads: [onReview()], fileDiff: { file: undefined } as never })}><ThreadPanel /></ReviewProvider>);
+  await userEvent.setup().click(screen.getByRole('tab', { name: /^All/ }));
+  await waitFor(() => expect(screen.getAllByRole('article')).toHaveLength(2));
+  expect(screen.getByRole('button', { name: 'Review' })).toBeTruthy();
+});
+
+// Invariant: Next unread reaches an unread review thread and routes it to the Threads pane, keeping the open file.
+test('"Next unread" reaches an unread review thread', async () => {
+  history.replaceState(null, '', '?review=r-1&file=src%2Fa.ts');
+  stubFetch({ 'POST api/reviews/r-1/read': { review: review() } });
+  const user = userEvent.setup();
+  render(<ReviewProvider value={ctxValue({ reviewThreads: [onReview({ unread: 1 })], fileDiff: { file: undefined } as never })}><ThreadPanel /></ReviewProvider>);
+  await user.click(screen.getByRole('tab', { name: /^All/ }));
+  await user.click(screen.getByRole('button', { name: 'Next unread' }));
+  expect(parseRoute(location.search)).toEqual({ review: 'r-1', file: 'src/a.ts', thread: 't-r', view: 'threads' });
+  await waitFor(() => expect(reviewTab().getAttribute('aria-selected')).toBe('true'));
+});
+
+// Invariant: a route naming a review thread selects the Review tab, where its card is.
+test('a route naming a review thread selects the Review tab', () => {
+  history.replaceState(null, '', '?review=r-1&view=threads&thread=t-r');
+  stubFetch({ 'POST api/reviews/r-1/read': { review: review() } });
+  render(<ReviewProvider value={ctxValue({ reviewThreads: [onReview()], fileDiff: { file: undefined } as never })}><ThreadPanel /></ReviewProvider>);
+  expect(reviewTab().getAttribute('aria-selected')).toBe('true');
+});
+
+// Invariant: a comparison lists round B's review threads read-only in its Review tab and in All, with no compare note.
+test('in a comparison the Review tab lists the review threads read-only, and All includes them', async () => {
+  const user = userEvent.setup();
+  render(<ReviewProvider value={comparison({ reviewThreads: [onReview()] })}><ThreadPanel /></ReviewProvider>);
+  await user.click(reviewTab());
+  expect(screen.getAllByRole('article')).toHaveLength(1);
+  expect(screen.queryByRole('button', { name: 'New review thread' })).toBeNull();
+  expect(screen.getByRole('tab', { name: /^All/ }).textContent).toContain('4');
+  await user.click(screen.getByRole('tab', { name: /^All/ }));
+  const card = screen.getAllByRole('article').find((a) => within(a).queryByRole('button', { name: 'Review' }))!;
+  expect(card.textContent).not.toMatch(/round \d/);
 });

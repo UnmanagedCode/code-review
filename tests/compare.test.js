@@ -10,7 +10,7 @@ import { placeThreads, compareRounds } from '../src/compare.js';
 // ---- placeThreads: pure, over stored-shape fixtures (as in history.test.js) ----
 
 const pos = (round, startLine, extra = {}) => ({
-  file: 'a.js', side: 'new', startLine, endLine: startLine, hunkId: `h${round}`, round, linesHash: `x${startLine}`, drifted: false, ...extra,
+  kind: 'lines', file: 'a.js', side: 'new', startLine, endLine: startLine, hunkId: `h${round}`, round, linesHash: `x${startLine}`, drifted: false, ...extra,
 });
 const stored = (round, startLine, extra) => ({ ...pos(round, startLine, extra), lines: ['x'], ctxBefore: { hash: 'b', n: 1 }, ctxAfter: { hash: 'a', n: 1 } });
 let seq = 0;
@@ -34,9 +34,9 @@ describe('placeThreads', () => {
     const ctx = thread('t2', { pastAnchors: [pos(1, 15)], anchor: stored(2, 15) });
     const res = place([t, ctx], 1, 2, [file('a.js', { hunks: [hunk('c1', 3, 3, 3, 1), hunk('c2', 8, 1, 6, 4)] })]);
     assert.deepEqual(copy(res, 'a.js', 't1', 'from').anchor,
-      { file: 'a.js', side: 'old', startLine: 4, endLine: 4, hunkId: 'c1', round: 1, linesHash: 'x4', drifted: false });
+      { kind: 'lines', file: 'a.js', side: 'old', startLine: 4, endLine: 4, hunkId: 'c1', round: 1, linesHash: 'x4', drifted: false });
     assert.deepEqual(copy(res, 'a.js', 't1', 'to').anchor,
-      { file: 'a.js', side: 'new', startLine: 9, endLine: 9, hunkId: 'c2', round: 2, linesHash: 'x9', drifted: false });
+      { kind: 'lines', file: 'a.js', side: 'new', startLine: 9, endLine: 9, hunkId: 'c2', round: 2, linesHash: 'x9', drifted: false });
     // Line 15 is in no compare hunk on either side: pure context.
     assert.equal(copy(res, 'a.js', 't2', 'from').anchor.hunkId, null);
     assert.equal(copy(res, 'a.js', 't2', 'to').anchor.hunkId, null);
@@ -160,6 +160,29 @@ describe('placeThreads', () => {
     placeThreads({ review, from: 1, to: 3, files: [file('a.js')] });
     assert.deepEqual(review, before);
   });
+
+  test('a file thread\'s copies sit on their comparison file, with no side or hunk, whatever its content', () => {
+    // Invariant: placeCopy places a file anchor by path alone (old path for a from-copy), binary or not, keeping {kind, file, round}.
+    const fileAnchor = (round, f = 'a.js') => ({ kind: 'file', file: f, round });
+    const t = thread('t1', { pastAnchors: [fileAnchor(1, 'old.js')], anchor: fileAnchor(2, 'a.js') });
+    const bin = thread('t2', { pastAnchors: [fileAnchor(1, 'bin')], anchor: fileAnchor(2, 'bin') });
+    const gone = thread('t3', { pastAnchors: [fileAnchor(1, 'c.js')], anchor: fileAnchor(2, 'c.js') });
+    const res = place([t, bin, gone], 1, 2, [file('a.js', { oldPath: 'old.js', status: 'renamed' }), file('bin', { binary: true })]);
+    assert.deepEqual(copy(res, 'a.js', 't1', 'from').anchor, { kind: 'file', file: 'a.js', round: 1 });
+    assert.deepEqual(copy(res, 'a.js', 't1', 'to').anchor, { kind: 'file', file: 'a.js', round: 2 });
+    assert.deepEqual(copiesIn(res, 'bin'), [['t2', 'from'], ['t2', 'to']]);
+    assert.deepEqual(res.unplaced.map((c) => [c.id, c.reason]), [['t3', 'unchanged-file']]);
+  });
+
+  test('review threads are never placed, never unplaced and not counted', () => {
+    // Invariant: copies() skips review anchors, so the comparison's files, unplaced and counts hold only file-bound threads.
+    const r = thread('t1', { anchor: { kind: 'review', round: 1 } });
+    const line = thread('t2', { pastAnchors: [pos(1, 5)], anchor: stored(2, 5) });
+    const res = place([r, line], 1, 2, [file('a.js')]);
+    assert.deepEqual([...res.byFile.values()].flat().map((c) => c.id), ['t2', 't2']);
+    assert.deepEqual(res.unplaced, []);
+    assert.deepEqual(res.counts, { open: 1, resolved: 0, outdated: 0 });
+  });
 });
 
 // ---- compareRounds over real git ----
@@ -172,7 +195,7 @@ const ok = (res) => { assert.equal(res.ok, true, JSON.stringify(res)); return re
 const codeOf = (res) => { assert.equal(res.ok, false, 'expected a refusal'); return res.code; };
 const open = async (args = {}) => ok(await reviews.openReview({ project: 'app', worktree: 'feature', ...args }, HUMAN)).review;
 const say = async (id, startLine, body = 'x', side = 'new') =>
-  ok(await threads.annotate(id, HUMAN, { anchor: { file: 'a.js', side, startLine, endLine: startLine }, kind: 'comment', body })).thread;
+  ok(await threads.annotate(id, HUMAN, { anchor: { kind: 'lines', file: 'a.js', side, startLine, endLine: startLine }, kind: 'comment', body })).thread;
 const withTop = (top, edits) => [...top, ...editLines(edits).split('\n')].join('\n');
 const compare = async (id, from, to) => ok(await compareRounds(id, { from, to }));
 const changed = (f) => f.hunks.flatMap((h) => h.lines.filter((l) => l.t !== 'ctx').map((l) => `${l.t === 'add' ? '+' : '-'}${l.text}`));
@@ -262,7 +285,7 @@ test('a file reviewed in A and back at base content in B is in the comparison, i
   const wt = w.addWorktree();
   wt.commit({ 'a.js': editLines({ 2: 'top-edit' }), 'b.js': lines(10, 'b').replace('b3\n', 'b-edit\n') });
   const review = await open();
-  const t = ok(await threads.annotate(review.id, HUMAN, { anchor: { file: 'b.js', side: 'new', startLine: 3, endLine: 3 }, kind: 'comment', body: 'b' })).thread;
+  const t = ok(await threads.annotate(review.id, HUMAN, { anchor: { kind: 'lines', file: 'b.js', side: 'new', startLine: 3, endLine: 3 }, kind: 'comment', body: 'b' })).thread;
   wt.commit({ 'a.js': editLines({ 2: 'top-edit' }), 'b.js': lines(10, 'b') });
   ok(await reviews.refreshReview(review.id, HUMAN));
   assert.deepEqual(ok(await reviews.diff(review.id, {})).files.map((f) => f.path), ['a.js'], 'round B does not review b.js');
@@ -371,7 +394,7 @@ test('comparing rounds of a linked worktree leaves the common git dir, its workt
   assert.deepEqual(gitDirSig(w.repo.dir), before);
 });
 
-const POSITIONAL = ['drifted', 'endLine', 'file', 'hunkId', 'linesHash', 'round', 'side', 'startLine'];
+const POSITIONAL = ['drifted', 'endLine', 'file', 'hunkId', 'kind', 'linesHash', 'round', 'side', 'startLine'];
 
 test('every anchor the comparison serves is positional only: no stored lines or context hashes leak', async () => {
   const { review } = await threeRounds();
@@ -380,4 +403,20 @@ test('every anchor the comparison serves is positional only: no stored lines or 
   const served = [...res.files.flatMap((f) => f.threads), ...res.unplaced];
   assert.ok(served.length >= 5);
   for (const t of served) assert.deepEqual(Object.keys(t.anchor).sort(), POSITIONAL, `${t.id} ${t.placement}`);
+});
+
+test('a comparison serves the review threads as of round B, apart from the files', async () => {
+  // Invariant: compareRounds.reviewThreads is reviewThreadsAt(B); review threads are in no file's threads and not in unplaced.
+  const { wt, review } = await threeRounds();
+  const r = ok(await threads.annotate(review.id, HUMAN, { anchor: { kind: 'review' }, kind: 'comment', body: 'overall' })).thread;
+  wt.commit({ 'b.js': 'b-edit-4\n' });
+  ok(await reviews.refreshReview(review.id, HUMAN));
+  const early = await compare(review.id, 1, 2);
+  const late = await compare(review.id, 3, 4);
+  assert.deepEqual(early.reviewThreads, []);
+  assert.deepEqual(late.reviewThreads.map((t) => t.id), [r.id]);
+  for (const res of [early, late]) {
+    assert.ok(!res.files.some((f) => f.threads.some((t) => t.id === r.id)));
+    assert.ok(!res.unplaced.some((t) => t.id === r.id));
+  }
 });

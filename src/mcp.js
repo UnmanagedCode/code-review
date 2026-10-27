@@ -28,7 +28,7 @@ const handlers = {
 
   get_review: async (a) => {
     const res = await reviews.getReview(a.review);
-    return res.ok ? { text: renderRollup(res.review, res.files), meta: { ...res.review, link: reviewLink(res.review) } } : res;
+    return res.ok ? { text: renderRollup(res.review, res.files, res.reviewThreads), meta: { ...res.review, link: reviewLink(res.review) } } : res;
   },
 
   list_threads: async (a) => {
@@ -36,7 +36,7 @@ const handlers = {
     if (!res.ok) return res;
     const text = res.threads.length ? renderThreads(res.threads) : `no ${a.status ?? 'open'} threads${a.owner ? ` opened by ${a.owner === 'user' ? 'the user' : 'agents'}` : ''}`;
     const rv = { id: res.review, project: res.project, worktree: res.worktree };
-    return { text, meta: { review: res.review, count: res.threads.length, counts: res.counts, threads: res.threads.map((t) => ({ id: t.id, link: threadLink(rv, t) })) } };
+    return { text, meta: { review: res.review, count: res.threads.length, counts: res.counts, threads: res.threads.map((t) => ({ id: t.id, anchor: t.anchor.kind, link: threadLink(rv, t) })) } };
   },
 
   get_hunk: async (a) => {
@@ -50,10 +50,8 @@ const handlers = {
 
   annotate: (a, caller) => attempt(async () => {
     const actor = needCaller(caller);
-    let anchor;
-    if (a.hunk) anchor = { hunkId: a.hunk };
-    else if (a.file && a.startLine) anchor = { file: a.file, side: a.side ?? 'new', startLine: a.startLine, endLine: a.endLine ?? a.startLine };
-    else throw new Refusal('INVALID_ARGUMENT', 'give file and startLine, or hunk');
+    // `threads.annotate` checks the combination, for this surface and REST alike.
+    const anchor = { kind: a.anchor, file: a.file, side: a.side, startLine: a.startLine, endLine: a.endLine, hunkId: a.hunk };
     return threads.annotate(a.review, actor, { anchor, kind: a.kind, severity: a.severity, body: a.body });
   }),
 

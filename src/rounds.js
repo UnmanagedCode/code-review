@@ -1,7 +1,7 @@
 import { attempt, Refusal } from './refusals.js';
 import { viewReview } from './context.js';
 import { fileStates, tally, signStates, diffFiles } from './rollup.js';
-import { threadsAt, roundThreadView } from './history.js';
+import { threadsAt, roundThreadView, reviewThreadsAt } from './history.js';
 
 const invalid = (reason) => new Refusal('INVALID_ARGUMENT', reason);
 
@@ -29,7 +29,7 @@ export const roundThreadsOn = (then, path) => then.threads.filter((t) => t.statu
 // How past-round views render a file: no verdicts, the round's threads.
 const pastView = (then) => ({ hunk: (h) => ({ ...h, verdict: null }), threads: (path) => roundThreadsOn(then, path) });
 
-/** Read-only view of one round of a range review: its files, the counts of its threads, and its outdated threads. */
+/** Read-only view of one round of a range review: its files, the counts of its threads, its outdated threads and its review threads. */
 export const roundView = (id, raw) => attempt(() => viewReview(id, async (review, env) => {
   const { round, snap, then } = await asOf(review, env, raw);
   return {
@@ -37,6 +37,7 @@ export const roundView = (id, raw) => attempt(() => viewReview(id, async (review
     files: signStates(snap, noVerdicts(fileStates(then, snap.files)), snap.files, pastView(then)),
     counts: tally(then.threads),
     outdatedThreads: then.threads.filter((t) => t.status === 'outdated').map(roundThreadView),
+    reviewThreads: reviewThreadsAt(review, round.n),
   };
 }));
 

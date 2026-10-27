@@ -1,5 +1,5 @@
 import { formatLines } from './route';
-import type { Side, Thread, ThreadKind } from './types';
+import type { Anchor, LinesAnchor, Side, Thread, ThreadKind } from './types';
 
 /** `L3` or `L3–L5`. */
 export const lineSpan = (start: number, end: number): string => `L${formatLines(start, end).replace('-', '–L')}`;
@@ -7,13 +7,20 @@ export const lineSpan = (start: number, end: number): string => `L${formatLines(
 /** `L3–L5 (new)`: a range with its side, as cards, the composer and the gutter's accessible name show it. */
 export const rangeLabel = (r: { side: Side; startLine: number; endLine: number }): string => `${lineSpan(r.startLine, r.endLine)} (${r.side})`;
 
+/** A thread on lines: the only kind with a side, a range, rails and a row in the diff. */
+export type LinesThread<T extends Thread = Thread> = T & { anchor: LinesAnchor };
+export const onLines = <T extends Thread>(t: T): t is LinesThread<T> => t.anchor.kind === 'lines';
+
+/** What a card names a thread's place by: its range, the whole file, or the review. */
+export const anchorLabel = (a: Anchor): string => (a.kind === 'lines' ? rangeLabel(a) : a.kind === 'file' ? 'Whole file' : 'Review');
+
 /** Rail lanes per gutter; deeper overlaps share the last one. */
 export const MAX_LANES = 3;
 
 /** One thread's range rail on one line: its lane, whether the line starts or ends the range, and its accessible label. */
 export interface RangeMark { threadId: string; kind: ThreadKind; lane: number; first: boolean; last: boolean; active: boolean; label: string }
 
-interface Laned { t: Thread; lane: number }
+interface Laned { t: LinesThread; lane: number }
 const NONE: RangeMark[] = [];
 
 /**
@@ -24,7 +31,7 @@ const NONE: RangeMark[] = [];
 export function rangeMarks(threads: Thread[], activeId?: string): (side: Side, n: number) => RangeMark[] {
   const bySide: Record<Side, Laned[]> = { old: [], new: [] };
   for (const side of ['old', 'new'] as const) {
-    const list = threads.filter((t) => t.status !== 'outdated' && t.anchor.side === side).sort((a, b) =>
+    const list = threads.filter(onLines).filter((t) => t.status !== 'outdated' && t.anchor.side === side).sort((a, b) =>
       a.anchor.startLine - b.anchor.startLine || b.anchor.endLine - a.anchor.endLine || a.id.localeCompare(b.id, undefined, { numeric: true }));
     const lastEnd: number[] = [];
     for (const t of list) {

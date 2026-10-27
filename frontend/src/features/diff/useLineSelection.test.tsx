@@ -34,7 +34,7 @@ test('mouse: releasing a gutter drag opens the composer for that range with no i
   expect(composerName()).toBe('Comment on L2–L4 (new)');
   await user.type(screen.getByLabelText('Message'), 'note');
   await user.click(screen.getByRole('button', { name: 'Post' }));
-  await waitFor(() => expect(net.calls[0].body).toMatchObject({ anchor: { file: 'src/a.ts', side: 'new', startLine: 2, endLine: 4 } }));
+  await waitFor(() => expect(net.calls[0].body).toMatchObject({ anchor: { kind: 'lines', file: 'src/a.ts', side: 'new', startLine: 2, endLine: 4 } }));
 });
 
 // Invariant: only a released primary press on a line number opens the composer; code text, stray releases, other buttons and cancelled presses never do.
@@ -101,7 +101,7 @@ test('keyboard: arrows move, Shift+Arrow extends, c opens the composer with the 
   await user.keyboard('c');
   await user.type(screen.getByLabelText('Message'), 'note');
   await user.click(screen.getByRole('button', { name: 'Post' }));
-  await waitFor(() => expect(net.calls[0].body).toEqual({ anchor: { file: 'src/a.ts', side: 'new', startLine: 2, endLine: 3 }, kind: 'comment', body: 'note' }));
+  await waitFor(() => expect(net.calls[0].body).toEqual({ anchor: { kind: 'lines', file: 'src/a.ts', side: 'new', startLine: 2, endLine: 3 }, kind: 'comment', body: 'note' }));
 });
 
 test('keyboard: Space selects the focused line, ArrowLeft switches side, Esc clears', async () => {

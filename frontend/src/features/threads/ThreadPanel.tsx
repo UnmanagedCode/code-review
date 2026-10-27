@@ -1,17 +1,22 @@
-import { useState } from 'react';
+import { MessageSquarePlusIcon } from 'lucide-react';
+import { useEffect, useState } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { NativeSelect } from '@/components/ui/native-select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { dedupeCopies, type ShownThread } from '@/lib/compare';
-import { navigate } from '@/lib/route';
+import { navigate, useRoute } from '@/lib/route';
 import type { Thread, UnplacedThread } from '@/lib/types';
 import { useDropped } from '@/state/dropped';
 import { useReviewCtx } from '@/state/reviewContext';
 import { useThreadIndex } from '@/state/threadIndex';
 import { Empty, ErrorState, Loading } from '@/features/common/States';
 import { CompareNote, UnplacedNote } from '@/features/diff/CompareNote';
-import { ThreadCard } from './ThreadCard';
+import { Composer } from './Composer';
+import { ThreadCard, threadPlace } from './ThreadCard';
+
+// More filter tabs than a narrow pane fits scroll sideways instead of overflowing it.
+const FILTER_TABS = 'm-3 w-auto justify-start overflow-x-auto';
 
 type Owner = 'all' | 'user' | 'agents';
 const ownedBy = (t: Thread, owner: Owner) => owner === 'all' || (t.openedBy.kind === 'human') === (owner === 'user');
@@ -31,28 +36,40 @@ const list = (threads: Thread[], opts: { dropped?: boolean; showLocation?: boole
   <div className="flex flex-col gap-3 p-3">{threads.map((t) => <ThreadCard key={t.id} thread={t} {...opts} />)}</div>
 );
 
-/** Comparison cards, one per thread, each noting where its copies sit (or why it has no place). */
+/** Comparison cards, one per thread, each noting where its copies sit (or why it has no place); a review thread sits on no file. */
 const compareList = (shown: ShownThread[], compare: { from: number; to: number }, showLocation: boolean) => (
   <div className="flex flex-col gap-3 p-3">
     {shown.map(({ thread: t, other }) => {
       const reason = (t as Partial<UnplacedThread>).reason;
-      const note = reason ? <UnplacedNote reason={reason} /> : <CompareNote thread={t} other={other} compare={compare} />;
+      const note = reason ? <UnplacedNote reason={reason} /> : t.anchor.kind !== 'review' && <CompareNote thread={t} other={other} compare={compare} />;
       return <ThreadCard key={t.id} thread={t} note={note} showLocation={showLocation && !reason} unplaced={!!reason} />;
     })}
   </div>
 );
 
-/** The thread panel of a comparison: this file's threads, every thread once, and the threads its diff has no place for. */
+/**
+ * When the route names one of the review threads, the Review tab is the one that shows it; otherwise the user's choice.
+ * Returns the tab state.
+ */
+function useThreadTab(reviewThreads: Thread[]) {
+  const route = useRoute();
+  const [tab, setTab] = useState('file');
+  const routedHere = !!route.thread && reviewThreads.some((t) => t.id === route.thread);
+  useEffect(() => { if (routedHere) setTab('review'); }, [routedHere, route.thread]);
+  return [tab, setTab] as const;
+}
+
+/** The thread panel of a comparison: this file's threads, every thread once, the threads its diff has no place for, and the review's own threads. */
 function CompareThreadPanel({ compare }: { compare: NonNullable<ReturnType<typeof useReviewCtx>['compare']> }) {
   const ctx = useReviewCtx();
-  const [tab, setTab] = useState('file');
+  const [tab, setTab] = useThreadTab(ctx.reviewThreads);
   const [status, setStatus] = useState<'open' | 'resolved' | 'all'>('open');
   const [owner, setOwner] = useState<Owner>('all');
   const view = compare.view;
   const unplaced = view?.unplaced ?? [];
   const fileThreads = dedupeCopies(ctx.fileDiff.file?.threads ?? []);
   // Every compared thread once; one outdated by round B is listed too, as its round-A copy.
-  const every = dedupeCopies([...(view?.files.flatMap((f) => f.threads) ?? []), ...unplaced])
+  const every = dedupeCopies([...(view?.files.flatMap((f) => f.threads) ?? []), ...unplaced, ...ctx.reviewThreads])
     .sort((a, b) => a.thread.id.localeCompare(b.thread.id, undefined, { numeric: true }));
   const all = every.filter((s) => (status === 'all' || s.thread.status === status) && ownedBy(s.thread, owner));
   // Until the comparison has loaded (or when it failed) no tab can list anything, nor claim that nothing is there.
@@ -62,10 +79,11 @@ function CompareThreadPanel({ compare }: { compare: NonNullable<ReturnType<typeo
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <Tabs value={tab} onValueChange={setTab} className="min-h-0 flex-1 gap-0">
-        <TabsList aria-label="Thread filter" className="m-3 w-auto">
+        <TabsList aria-label="Thread filter" className={FILTER_TABS}>
           <TabsTrigger value="file">This file</TabsTrigger>
           <TabsTrigger value="all">All <Badge variant="secondary">{every.length}</Badge></TabsTrigger>
           <TabsTrigger value="unplaced">Not in diff <Badge variant="secondary">{unplaced.length}</Badge></TabsTrigger>
+          <TabsTrigger value="review">Review <Badge variant="secondary">{ctx.reviewThreads.length}</Badge></TabsTrigger>
         </TabsList>
         <div className="min-h-0 flex-1 overflow-y-auto">
           <TabsContent value="file">
@@ -84,6 +102,9 @@ function CompareThreadPanel({ compare }: { compare: NonNullable<ReturnType<typeo
           <TabsContent value="unplaced">
             {gate ?? (unplaced.length ? compareList(unplaced.map((t) => ({ thread: t })), compare, false) : <Empty title="Every thread has a place in this diff" />)}
           </TabsContent>
+          <TabsContent value="review">
+            {gate ?? (ctx.reviewThreads.length ? list(ctx.reviewThreads) : <Empty title="No threads on the review" />)}
+          </TabsContent>
         </div>
       </Tabs>
     </div>
@@ -97,22 +118,26 @@ export function ThreadPanel() {
 
 function ReviewThreadPanel() {
   const ctx = useReviewCtx();
-  const [tab, setTab] = useState('file');
+  const [tab, setTab] = useThreadTab(ctx.reviewThreads);
+  const [composing, setComposing] = useState(false);
   const [status, setStatus] = useState<'open' | 'resolved' | 'all'>('open');
   const [owner, setOwner] = useState<Owner>('all');
   const dropped = useDropped(ctx.id);
   const index = useThreadIndex(ctx.id, ctx.files, tab === 'all', ctx.round);
   const fileThreads = ctx.fileDiff.file?.threads ?? [];
-  const allThreads = index.threads.filter((t) => (status === 'all' || t.status === status) && ownedBy(t, owner));
-  const nextUnread = index.threads.find((t) => t.unread > 0);
+  // The file-bound threads, then the review's own: together what the All badge counts.
+  const every = [...index.threads, ...ctx.reviewThreads];
+  const allThreads = every.filter((t) => (status === 'all' || t.status === status) && ownedBy(t, owner));
+  const nextUnread = every.find((t) => t.unread > 0);
   const counts = ctx.threadCounts;
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <Tabs value={tab} onValueChange={setTab} className="min-h-0 flex-1 gap-0">
-        <TabsList aria-label="Thread filter" className="m-3 w-auto">
+        <TabsList aria-label="Thread filter" className={FILTER_TABS}>
           <TabsTrigger value="file">This file</TabsTrigger>
           <TabsTrigger value="all">All <Badge variant="secondary">{counts.open + counts.resolved}</Badge></TabsTrigger>
           <TabsTrigger value="outdated">Outdated <Badge variant="secondary">{ctx.outdatedThreads.length}</Badge></TabsTrigger>
+          <TabsTrigger value="review">Review <Badge variant="secondary">{ctx.reviewThreads.length}</Badge></TabsTrigger>
           {dropped.length > 0 && <TabsTrigger value="dropped">Dropped <Badge variant="secondary">{dropped.length}</Badge></TabsTrigger>}
         </TabsList>
         <div className="min-h-0 flex-1 overflow-y-auto">
@@ -126,7 +151,7 @@ function ReviewThreadPanel() {
                 <option value="open">Open</option><option value="resolved">Resolved</option><option value="all">All</option>
               </NativeSelect>
               <OwnerSelect value={owner} onChange={setOwner} />
-              <Button size="sm" variant="outline" disabled={!nextUnread} onClick={() => nextUnread && navigate({ file: nextUnread.anchor.file, side: nextUnread.anchor.side, lines: undefined, thread: nextUnread.id })}>Next unread</Button>
+              <Button size="sm" variant="outline" disabled={!nextUnread} onClick={() => nextUnread && navigate(threadPlace(nextUnread))}>Next unread</Button>
             </div>
             {index.loading && !index.threads.length ? <Loading label="Loading threads" rows={3} />
               : index.error ? <ErrorState error={index.error} />
@@ -134,6 +159,16 @@ function ReviewThreadPanel() {
           </TabsContent>
           <TabsContent value="outdated">
             {ctx.outdatedThreads.length ? list(ctx.outdatedThreads, { showLocation: true }) : <Empty title="No outdated threads" />}
+          </TabsContent>
+          <TabsContent value="review">
+            {!ctx.readOnly && (
+              <div className="px-3">
+                {composing
+                  ? <Composer anchor={{ kind: 'review' }} label="This review" onClose={() => setComposing(false)} />
+                  : <Button size="sm" variant="outline" onClick={() => setComposing(true)}><MessageSquarePlusIcon />New review thread</Button>}
+              </div>
+            )}
+            {ctx.reviewThreads.length ? list(ctx.reviewThreads) : <Empty title="No threads on the review">Threads here are about the review as a whole.</Empty>}
           </TabsContent>
           <TabsContent value="dropped">{list(dropped, { dropped: true })}</TabsContent>
         </div>

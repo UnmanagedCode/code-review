@@ -41,7 +41,7 @@ test('request budget across a list ↔ review session', async () => {
     [/^GET api\/sessions/, { sessions: [] }],
     [/^GET api\/reviews\?/, () => ({ reviews: [review({ id: 'r-1', worktree: null, rev }), review({ id: 'r-2', worktree: null, rev: 1 })] })],
     [/^GET api\/inbox$/, { reviews: [] }],
-    [/^GET api\/reviews\/r-1$/, () => ({ review: review({ worktree: null, rev }), files: files(), rounds: [], submissions: [], outdatedThreads: [] })],
+    [/^GET api\/reviews\/r-1$/, () => ({ review: review({ worktree: null, rev }), files: files(), rounds: [], submissions: [], outdatedThreads: [], reviewThreads: [] })],
     [/^GET api\/reviews\/r-1\/diff/, (u: URL) => {
       const path = u.searchParams.get('file')!;
       return { review: review({ worktree: null, rev }), files: [{ ...diffFile({ path }), sig: sig[path], lineCount: { old: 40, new: 40 } }] };

@@ -100,6 +100,7 @@ export function ReviewView({ id, chrome }: { id: string; chrome?: ReactNode }) {
       round, compare: compare && { ...compare, view: compareView.data }, pastView,
       viewLoad: past && { loading: past.loading && !past.data, error: past.error, reload: past.reload },
       outdatedThreads: past ? (round !== undefined && roundView.data?.outdatedThreads) || [] : detail.outdatedThreads,
+      reviewThreads: past ? past.data?.reviewThreads ?? [] : detail.reviewThreads,
       threadCounts: past ? past.data?.counts ?? NO_THREADS : detail.review.counts.threads,
     }}>
       {chrome}

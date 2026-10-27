@@ -42,7 +42,7 @@ export function hunkFor({ side, startLine, endLine }, hunks) {
 export function makeAnchor({ file, side, startLine, endLine, round, fileLines, hunks }) {
   const lines = fileLines.slice(startLine - 1, endLine);
   const anchor = {
-    file, side, startLine, endLine, round,
+    kind: 'lines', file, side, startLine, endLine, round,
     linesHash: linesHash(lines),
     lines,
     ...contextAround(fileLines, startLine - 1, lines.length),
@@ -53,8 +53,19 @@ export function makeAnchor({ file, side, startLine, endLine, round, fileLines, h
 }
 
 /** The positional part of an anchor: what the API shows and what a thread keeps of each earlier round. */
-export const anchorView = ({ file, side, startLine, endLine, hunkId, round, linesHash, drifted }) =>
-  ({ file, side, startLine, endLine, hunkId, round, linesHash, drifted });
+export function anchorView(a) {
+  if (a.kind === 'review') return { kind: a.kind, round: a.round };
+  if (a.kind === 'file') return { kind: a.kind, file: a.file, round: a.round };
+  const { kind, file, side, startLine, endLine, hunkId, round, linesHash, drifted } = a;
+  return { kind, file, side, startLine, endLine, hunkId, round, linesHash, drifted };
+}
+
+/** Where a thread sits, in words: `a.js#L2-L4`, `a.js (whole file)` or `the review`. The file is not cleaned. */
+export function anchorLabel(a) {
+  if (a.kind === 'review') return 'the review';
+  if (a.kind === 'file') return `${a.file} (whole file)`;
+  return `${a.file}#L${a.startLine}${a.endLine > a.startLine ? `-L${a.endLine}` : ''}`;
+}
 
 /**
  * Finds `anchor` in `newLines`. Returns {startLine, endLine, drifted} or null.

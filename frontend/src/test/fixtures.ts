@@ -1,4 +1,4 @@
-import type { Author, DiffFile, DiffLine, FileState, InboxItem, Message, ReviewSummary, TextHunk, Thread } from '@/lib/types';
+import type { Author, DiffFile, DiffLine, FileState, InboxItem, LinesAnchor, Message, ReviewSummary, TextHunk, Thread } from '@/lib/types';
 
 export const HUMAN: Author = { kind: 'human' };
 export const agent = (sessionId = 's-rev', role: 'author' | 'reviewer' | 'conductor' = 'reviewer'): Author => ({ kind: 'session', sessionId, role });
@@ -42,9 +42,13 @@ export const diffFile = (over: Partial<DiffFile> = {}): DiffFile => {
 
 export const message = (over: Partial<Message> = {}): Message => ({ id: 1, author: HUMAN, body: 'hello', at: '2026-01-01T00:00:00Z', round: 1, citations: [], ...over });
 
+export const linesAnchor = (over: Partial<LinesAnchor> = {}): LinesAnchor => ({
+  kind: 'lines', file: 'src/a.ts', side: 'new', startLine: 3, endLine: 3, hunkId: 'h1', round: 1, drifted: false, ...over,
+});
+
 export const thread = (over: Partial<Thread> = {}): Thread => ({
   id: 't-1', kind: 'comment', severity: null, status: 'open', disposition: null, resolveProposed: false,
-  anchor: { file: 'src/a.ts', side: 'new', startLine: 3, endLine: 3, hunkId: 'h1', round: 1, drifted: false },
+  anchor: linesAnchor(),
   openedBy: HUMAN, unread: 0, messages: [message()], ...over,
 });
 

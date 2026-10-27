@@ -3,7 +3,7 @@ import { viewReview } from './context.js';
 import { buildSnapshot } from './snapshot.js';
 import { fileStates, tally, diffFiles } from './rollup.js';
 import { hunkFor } from './anchor.js';
-import { threadsAt, roundThreadView, anchorChain } from './history.js';
+import { threadsAt, roundThreadView, anchorChain, reviewThreadsAt } from './history.js';
 import { pickRound } from './rounds.js';
 
 const byNumber = (a, b) => Number(a.id.slice(1)) - Number(b.id.slice(1));
@@ -14,12 +14,15 @@ const outdatedRound = (t) => (t.status === 'outdated' ? anchorChain(t).at(-1).ro
 /**
  * Where one copy sits in the comparison (old side = round A's head, new side = round B's head), or why it cannot.
  * A head-side anchor of round n is line-for-line in round n's head, so its numbers carry over unchanged.
+ * A file anchor sits on its comparison file, whatever that file's content.
  */
 function placeCopy(c, files) {
   const from = c.placement === 'from';
-  if (c.anchor.side === 'old') return { reason: 'base-side' };
+  const lines = c.anchor.kind === 'lines';
+  if (lines && c.anchor.side === 'old') return { reason: 'base-side' };
   const f = files.find((x) => (from ? (x.oldPath ?? x.path) === c.anchor.file && x.status !== 'added' : x.path === c.anchor.file && x.status !== 'deleted'));
   if (!f) return { reason: 'unchanged-file' };
+  if (!lines) return { path: f.path, copy: { ...c, anchor: { ...c.anchor, file: f.path } } };
   if (f.binary || f.tooLarge) return { reason: 'no-lines' };
   const anchor = { ...c.anchor, file: f.path, side: from ? 'old' : 'new' };
   anchor.hunkId = hunkFor(anchor, f.hunks);
@@ -30,10 +33,11 @@ function placeCopy(c, files) {
  * The threads of rounds `from` (A) and `to` (B) placed in the comparison's `files`: a from-copy of each thread live in
  * A (as of A, on the old side) and a to-copy of each thread live in B (as of B, on the new side).
  * `unplaced` has one entry per thread with no placed copy: its to-copy if it has one, else its from-copy.
+ * Review threads sit on no file and are not compared.
  */
 export function placeThreads({ review, from, to, files }) {
   const stored = new Map(review.threads.map((t) => [t.id, t]));
-  const copies = (n, placement) => threadsAt(review, n).filter((t) => t.status !== 'outdated').map((t) => {
+  const copies = (n, placement) => threadsAt(review, n).filter((t) => t.status !== 'outdated' && t.anchor.kind !== 'review').map((t) => {
     const out = placement === 'from' ? outdatedRound(stored.get(t.id)) : null;
     return { ...roundThreadView(t), placement, outdatedIn: out !== null && out <= to ? out : null };
   });
@@ -75,5 +79,5 @@ export const compareRounds = (id, { from, to }) => attempt(() => viewReview(id, 
   const states = await diffFiles(delta, fileStates({ ...review, threads: [], verdicts: {} }, files).map((s) => ({ ...s, verdicts: null })), files, {
     hunk: (h) => ({ ...h, verdict: null }), threads: (path) => byFile.get(path) ?? [],
   });
-  return { ok: true, readOnly: true, from: a, to: b, files: states, counts, unplaced };
+  return { ok: true, readOnly: true, from: a, to: b, files: states, counts, unplaced, reviewThreads: reviewThreadsAt(review, b.n) };
 }));

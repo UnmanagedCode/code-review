@@ -5,7 +5,7 @@ import { WIDE_QUERY } from '@/lib/useMediaQuery';
 import { installFakeEventSource } from '@/test/fakeEventSource';
 import { installMedia } from '@/test/fakeMedia';
 import { parseRoute } from '@/lib/route';
-import { diffFile, fileState, refusal, review, thread } from '@/test/fixtures';
+import { diffFile, fileState, refusal, review, thread, linesAnchor } from '@/test/fixtures';
 import { stubFetch } from '@/test/stubFetch';
 import { ReviewView } from './ReviewView';
 
@@ -14,7 +14,7 @@ beforeEach(() => installFakeEventSource());
 function world(status: 'open' | 'closed') {
   const file = diffFile({ threads: [thread()] });
   stubFetch({
-    'GET api/reviews/r-1': { review: review({ status }), files: [fileState()], rounds: [], submissions: [], outdatedThreads: [] },
+    'GET api/reviews/r-1': { review: review({ status }), files: [fileState()], rounds: [], submissions: [], outdatedThreads: [], reviewThreads: [] },
     'GET api/reviews/r-1/diff': (u: URL) => (u.searchParams.has('commit')
       ? { readOnly: true, commit: { sha: 'abc1234', subject: 's' }, files: [{ ...file, threads: [] }] }
       : { review: review({ status }), files: [file] }),
@@ -70,10 +70,10 @@ test('the commit-filter view is read-only even on an open review', async () => {
 /** A two-round range review: round 1 had `old.ts`, round 2 (current) has `src/a.ts`. */
 function twoRounds(roundView: unknown = undefined) {
   const rounds = [1, 2].map((n) => ({ n, headSha: `${n}`.repeat(40), baseSha: 'b'.repeat(40), createdAt: '', submittedAt: null }));
-  const then = diffFile({ path: 'old.ts', hunks: [{ ...diffFile().hunks[0], verdict: null }], threads: [thread({ anchor: { ...thread().anchor, file: 'old.ts' }, laterMessages: 1 })] });
+  const then = diffFile({ path: 'old.ts', hunks: [{ ...diffFile().hunks[0], verdict: null }], threads: [thread({ anchor: linesAnchor({ file: 'old.ts' }), laterMessages: 1 })] });
   return stubFetch({
-    'GET api/reviews/r-1': { review: review({ round: 2 }), files: [fileState()], rounds, submissions: [], outdatedThreads: [] },
-    'GET api/reviews/r-1/rounds/1': roundView ?? { readOnly: true, round: rounds[0], files: [fileState({ path: 'old.ts', verdicts: null })], counts: { open: 1, resolved: 0, outdated: 0 }, outdatedThreads: [] },
+    'GET api/reviews/r-1': { review: review({ round: 2 }), files: [fileState()], rounds, submissions: [], outdatedThreads: [], reviewThreads: [] },
+    'GET api/reviews/r-1/rounds/1': roundView ?? { readOnly: true, round: rounds[0], files: [fileState({ path: 'old.ts', verdicts: null })], counts: { open: 1, resolved: 0, outdated: 0 }, outdatedThreads: [], reviewThreads: [] },
     'GET api/reviews/r-1/diff': (u: URL) => (u.searchParams.get('round') === '1'
       ? { readOnly: true, round: rounds[0], files: [then] }
       : { review: review({ round: 2 }), files: [diffFile({ threads: [thread()] })] }),
@@ -133,8 +133,8 @@ test('a refused round view shows its error in the Files tab, with History still 
 
 test('a closed review in a past-round view says it is closed but offers no Reopen', async () => {
   stubFetch({
-    'GET api/reviews/r-1': { review: review({ round: 2, status: 'closed' }), files: [fileState()], rounds: [1, 2].map((n) => ({ n, headSha: `${n}`.repeat(40), baseSha: 'b'.repeat(40), createdAt: '', submittedAt: null })), submissions: [], outdatedThreads: [] },
-    'GET api/reviews/r-1/rounds/1': { readOnly: true, round: { n: 1, headSha: '1'.repeat(40), baseSha: 'b'.repeat(40), createdAt: '', submittedAt: null }, files: [fileState({ verdicts: null })], counts: { open: 0, resolved: 0, outdated: 0 }, outdatedThreads: [] },
+    'GET api/reviews/r-1': { review: review({ round: 2, status: 'closed' }), files: [fileState()], rounds: [1, 2].map((n) => ({ n, headSha: `${n}`.repeat(40), baseSha: 'b'.repeat(40), createdAt: '', submittedAt: null })), submissions: [], outdatedThreads: [], reviewThreads: [] },
+    'GET api/reviews/r-1/rounds/1': { readOnly: true, round: { n: 1, headSha: '1'.repeat(40), baseSha: 'b'.repeat(40), createdAt: '', submittedAt: null }, files: [fileState({ verdicts: null })], counts: { open: 0, resolved: 0, outdated: 0 }, outdatedThreads: [], reviewThreads: [] },
     'GET api/reviews/r-1/commits': { commits: [] },
     'GET api/sessions': { sessions: [] },
   });
@@ -148,15 +148,15 @@ test('a closed review in a past-round view says it is closed but offers no Reope
 function threeRounds(kind: 'range' | 'commit' = 'range', current = 3) {
   const rounds = Array.from({ length: current }, (_, i) => ({ n: i + 1, headSha: `${i + 1}`.repeat(40), baseSha: 'b'.repeat(40), createdAt: '', submittedAt: null }));
   const copy = (placement: 'from' | 'to', side: 'old' | 'new', round: number) =>
-    ({ ...thread({ anchor: { ...thread().anchor, side, round } }), placement, outdatedIn: null });
+    ({ ...thread({ anchor: linesAnchor({ side, round }) }), placement, outdatedIn: null });
   const cmpFile = diffFile({ hunks: [{ ...diffFile().hunks[0], verdict: null }], threads: [copy('from', 'old', 1), copy('to', 'new', 3)] });
   return stubFetch({
-    'GET api/reviews/r-1': { review: review({ kind, round: current }), files: [fileState()], rounds, submissions: [], outdatedThreads: [thread({ id: 't-9', status: 'outdated' })] },
+    'GET api/reviews/r-1': { review: review({ kind, round: current }), files: [fileState()], rounds, submissions: [], outdatedThreads: [thread({ id: 't-9', status: 'outdated' })], reviewThreads: [] },
     'GET api/reviews/r-1/compare': (u: URL) => ({
       readOnly: true, from: rounds[Number(u.searchParams.get('from')) - 1], to: rounds[Number(u.searchParams.get('to')) - 1],
-      files: [cmpFile], counts: { open: 1, resolved: 0, outdated: 0 }, unplaced: [],
+      files: [cmpFile], counts: { open: 1, resolved: 0, outdated: 0 }, unplaced: [], reviewThreads: [],
     }),
-    'GET api/reviews/r-1/rounds/1': { readOnly: true, round: rounds[0], files: [fileState({ verdicts: null })], counts: { open: 0, resolved: 0, outdated: 0 }, outdatedThreads: [] },
+    'GET api/reviews/r-1/rounds/1': { readOnly: true, round: rounds[0], files: [fileState({ verdicts: null })], counts: { open: 0, resolved: 0, outdated: 0 }, outdatedThreads: [], reviewThreads: [] },
     'GET api/reviews/r-1/diff': (u: URL) => (u.searchParams.has('commit')
       ? { readOnly: true, commit: { sha: 'abc1234', subject: 's' }, files: [{ ...diffFile(), threads: [] }] }
       : { review: review({ kind, round: current }), files: [diffFile({ threads: [thread()] })] }),
@@ -242,7 +242,7 @@ test('Exit comparison clears the comparison and the file position', async () => 
 test('Retry in the file pane of a failed comparison fetches the comparison again', async () => {
   const rounds = [1, 2].map((n) => ({ n, headSha: `${n}`.repeat(40), baseSha: 'b'.repeat(40), createdAt: '', submittedAt: null }));
   const net = stubFetch({
-    'GET api/reviews/r-1': { review: review({ round: 2 }), files: [fileState()], rounds, submissions: [], outdatedThreads: [] },
+    'GET api/reviews/r-1': { review: review({ round: 2 }), files: [fileState()], rounds, submissions: [], outdatedThreads: [], reviewThreads: [] },
     'GET api/reviews/r-1/compare': refusal('SNAPSHOT_GONE', 410),
     'GET api/sessions': { sessions: [] },
   });
@@ -259,9 +259,9 @@ test('Retry in the file pane of a failed comparison fetches the comparison again
 /** Two files; src/a.ts is open and holds t-1, src/b.ts holds t-2. */
 function twoFiles() {
   const one = { open: 1, resolved: 0, outdated: 0 };
-  const b = (id: string) => thread({ id, anchor: { ...thread().anchor, file: 'src/b.ts', startLine: 3, endLine: 3 } });
+  const b = (id: string) => thread({ id, anchor: linesAnchor({ file: 'src/b.ts', startLine: 3, endLine: 3 }) });
   return stubFetch({
-    'GET api/reviews/r-1': { review: review(), files: [fileState({ threads: one }), fileState({ path: 'src/b.ts', threads: one })], rounds: [], submissions: [], outdatedThreads: [] },
+    'GET api/reviews/r-1': { review: review(), files: [fileState({ threads: one }), fileState({ path: 'src/b.ts', threads: one })], rounds: [], submissions: [], outdatedThreads: [], reviewThreads: [] },
     'GET api/reviews/r-1/diff': (u: URL) => ({
       review: review(),
       files: u.searchParams.get('file') === 'src/b.ts'
@@ -306,13 +306,13 @@ test('cross-file Focus loads the other file and focuses its thread there, the Th
 /** A range review at round 3 whose t-9 went outdated in round 3 (its last located anchor is round 2). */
 function outdatedWorld(files: ReturnType<typeof diffFile>[], unread = 0) {
   const rounds = [1, 2, 3].map((n) => ({ n, headSha: `${n}`.repeat(40), baseSha: 'b'.repeat(40), createdAt: '', submittedAt: null }));
-  const t9 = thread({ id: 't-9', status: 'outdated', unread, anchor: { ...thread().anchor, round: 2, startLine: 3, endLine: 3 } });
-  const from = { ...thread({ id: 't-9', anchor: { ...thread().anchor, side: 'old', round: 2 } }), placement: 'from', outdatedIn: 3 };
+  const t9 = thread({ id: 't-9', status: 'outdated', unread, anchor: linesAnchor({ round: 2, startLine: 3, endLine: 3 }) });
+  const from = { ...thread({ id: 't-9', anchor: linesAnchor({ side: 'old', round: 2 }) }), placement: 'from', outdatedIn: 3 };
   return stubFetch({
-    'GET api/reviews/r-1': { review: review({ kind: 'range', round: 3 }), files: [fileState()], rounds, submissions: [], outdatedThreads: [t9] },
+    'GET api/reviews/r-1': { review: review({ kind: 'range', round: 3 }), files: [fileState()], rounds, submissions: [], outdatedThreads: [t9], reviewThreads: [] },
     'GET api/reviews/r-1/compare': (u: URL) => ({
       readOnly: true, from: rounds[Number(u.searchParams.get('from')) - 1], to: rounds[Number(u.searchParams.get('to')) - 1],
-      files: files.map((f) => ({ ...f, threads: [from] })), counts: { open: 1, resolved: 0, outdated: 0 }, unplaced: [],
+      files: files.map((f) => ({ ...f, threads: [from] })), counts: { open: 1, resolved: 0, outdated: 0 }, unplaced: [], reviewThreads: [],
     }),
     'GET api/reviews/r-1/diff': { review: review({ kind: 'range', round: 3 }), files: [diffFile()] },
     'GET api/reviews/r-1/file': { path: 'src/a.ts', side: 'old', total: 4, lines: [{ n: 3, text: 'x' }] },
@@ -389,7 +389,7 @@ test('jumping from the Outdated tab to an unread outdated thread marks it read',
 test('phone: the pane without a file, the diff with one, and its Threads button lands on the Threads tab', async () => {
   installMedia({ [WIDE_QUERY]: false });
   stubFetch({
-    'GET api/reviews/r-1': { review: review({ unread: 2 }), files: [fileState()], rounds: [], submissions: [], outdatedThreads: [] },
+    'GET api/reviews/r-1': { review: review({ unread: 2 }), files: [fileState()], rounds: [], submissions: [], outdatedThreads: [], reviewThreads: [] },
     'GET api/reviews/r-1/diff': { review: review({ unread: 2 }), files: [diffFile({ threads: [thread()] })] },
     'GET api/sessions': { sessions: [] },
   });
@@ -429,7 +429,7 @@ test('wide: focusing an unread thread posts exactly one read mark, though two ca
   let read = false;
   const t1 = () => thread({ unread: read ? 0 : 1 });
   const net = stubFetch({
-    'GET api/reviews/r-1': () => ({ review: review(), files: [fileState({ sig: read ? 's2' : 's1' })], rounds: [], submissions: [], outdatedThreads: [] }),
+    'GET api/reviews/r-1': () => ({ review: review(), files: [fileState({ sig: read ? 's2' : 's1' })], rounds: [], submissions: [], outdatedThreads: [], reviewThreads: [] }),
     'GET api/reviews/r-1/diff': () => ({ review: review(), files: [diffFile({ sig: read ? 's2' : 's1', threads: [t1()] })] }),
     'GET api/reviews/r-1/commits': { commits: [] },
     'POST api/reviews/r-1/read': () => { read = true; return { review: review() }; },

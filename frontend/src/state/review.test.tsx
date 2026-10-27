@@ -6,7 +6,7 @@ import { stubFetch } from '@/test/stubFetch';
 import { REFOCUS_MIN_MS } from './live';
 import { useReview } from './review';
 
-const detail = (rev: number, kind: 'range' | 'uncommitted' = 'range') => ({ review: review({ rev, kind }), files: [fileState()], rounds: [], submissions: [], outdatedThreads: [] });
+const detail = (rev: number, kind: 'range' | 'uncommitted' = 'range') => ({ review: review({ rev, kind }), files: [fileState()], rounds: [], submissions: [], outdatedThreads: [], reviewThreads: [] });
 
 beforeEach(() => { installFakeEventSource(); });
 afterEach(() => { vi.useRealTimers(); });

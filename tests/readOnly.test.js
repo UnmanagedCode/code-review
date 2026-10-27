@@ -101,7 +101,7 @@ for (const where of ['main', 'worktree']) {
 
     for (const [kind, id] of Object.entries(ids)) {
       const line = kind === 'uncommitted' ? 4 : 2;
-      const t = (await call('POST', `/reviews/${id}/threads`, { anchor: { file: 'a.js', side: 'new', startLine: line }, kind: 'comment', body: 'see n.js#L1' })).thread;
+      const t = (await call('POST', `/reviews/${id}/threads`, { anchor: { kind: 'lines', file: 'a.js', side: 'new', startLine: line }, kind: 'comment', body: 'see n.js#L1' })).thread;
       await call('POST', `/reviews/${id}/threads/${t.id}/messages`, { body: 'and a.js#L1-L2' });
       await call('PATCH', `/reviews/${id}/threads/${t.id}`, { status: 'resolved' });
       await call('GET', `/reviews/${id}`);

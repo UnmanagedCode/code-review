@@ -45,6 +45,13 @@ test('every tool except open_review requires `review`', () => {
   }
 });
 
+test('annotate requires `anchor`, one of lines, hunk, file and review', () => {
+  // Invariant: the schema makes agents name the anchor kind, from exactly the kinds buildAnchor takes.
+  const schema = manifest.mcp.tools.find((t) => t.name === 'annotate').inputSchema;
+  assert.ok(schema.required.includes('anchor'));
+  assert.deepEqual(schema.properties.anchor.enum, ['lines', 'hunk', 'file', 'review']);
+});
+
 test('the conductor-scope convention declares an existing file; a missing one would make the plugin invalid', () => {
   const conv = manifest.conventions.find((c) => c.scope === 'conductor');
   assert.ok(conv, 'a conductor-scope convention exists');

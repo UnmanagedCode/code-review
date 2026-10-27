@@ -146,6 +146,20 @@ test('in a comparison the total is round B\'s head count with no line read, and 
   expect(fileCalls(net).every(([side, round]) => side === 'new' && round === '3')).toBe(true);
 });
 
+// Invariant: after a round change that reuses a cached, identically-shaped diff, the total is lineCount[side] again, not null.
+test('returning to a cached round view with an identical diff restores the total', async () => {
+  const file = diffFile({ hunks: [hunk({ oldStart: 11, newStart: 11, verdict: null })], lineCount: { old: 38, new: 40 } });
+  const net = stubFetch({ 'GET api/reviews/r-1/diff': { review: review(), files: [file] } });
+  const { result, rerender } = renderHook((p: { round?: number }) => useFileDiff({ reviewId: 'r-1', path: 'src/a.ts', uncommitted: false, round: p.round }), { initialProps: {} as { round?: number } });
+  await vi.waitFor(() => expect(result.current.total).toBe(40));
+  rerender({ round: 1 });
+  await vi.waitFor(() => expect(net.count('GET api/reviews/r-1/diff')).toBe(2));
+  await vi.waitFor(() => expect(result.current.total).toBe(40));
+  rerender({ round: undefined });
+  await vi.waitFor(() => expect(result.current.total).toBe(40));
+  expect(net.count('GET api/reviews/r-1/diff')).toBe(2);
+});
+
 // Invariant: a file deleted in the comparison exists only in round A's head, so its total is lineCount.old and its context is read there.
 test('in a comparison a deleted file\'s total is round A\'s head count with no line read, and its context is read from round A\'s head', async () => {
   const net = stubFetch({ 'GET api/reviews/r-1/file': fileLines });

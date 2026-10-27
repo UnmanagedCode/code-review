@@ -76,7 +76,9 @@ export function useFileDiff({ reviewId, path, sig, uncommitted, commitFiles, rou
   const [baseline, setBaseline] = useState<Expansions>({});
   const [fetchedTexts, setTexts] = useState<Record<number, string>>({});
   const [total, setTotal] = useState<number | null>(null);
-  useEffect(() => { setExpansions({}); setBaseline({}); setTexts({}); textsRef.current = {}; setTotal(null); }, [reviewId, path, commitMode, round, compare?.from, compare?.to]);
+  // What the view is of; the reset and the total effects both key on it, so the total is re-set whenever it is cleared.
+  const scope = [reviewId, path, commitMode, round, compare?.from, compare?.to].join('\0');
+  useEffect(() => { setExpansions({}); setBaseline({}); setTexts({}); textsRef.current = {}; setTotal(null); }, [scope]);
 
   const shownTotal = commitMode ? null : total;
   const shown = useMemo(() => {
@@ -95,7 +97,7 @@ export function useFileDiff({ reviewId, path, sig, uncommitted, commitFiles, rou
     if (!expandable || !lineCount || !path || switching) return;
     // `side`, not `source.side`: a comparison's old count is round A's head and its new count round B's.
     setTotal(lineCount[side]);
-  }, [path, side, expandable, hunkSig, lineCount?.old, lineCount?.new, switching]);
+  }, [scope, side, expandable, hunkSig, lineCount?.old, lineCount?.new, switching]);
 
   // Uncommitted threads that vanish between loads are kept (session-local) as tombstones.
   const seen = useRef<{ path: string; threads: Map<string, Thread> } | null>(null);

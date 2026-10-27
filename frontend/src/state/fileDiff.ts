@@ -93,12 +93,9 @@ export function useFileDiff({ reviewId, path, sig, uncommitted, commitFiles, rou
   const lineCount = file?.lineCount;
   useEffect(() => {
     if (!expandable || !lineCount || !path || switching) return;
-    // The response counted this side of its own round; a comparison reads a round's head instead.
-    if (!compare) { setTotal(lineCount[source.side]); return; }
-    let live = true;
-    ep.fileLines(reviewId, path, source.side, 1, 1, source.round).then((r) => { if (live) setTotal(r.total); }, () => {});
-    return () => { live = false; };
-  }, [reviewId, path, source.side, expandable, hunkSig, source.round, lineCount?.old, lineCount?.new, switching]);
+    // `side`, not `source.side`: a comparison's old count is round A's head and its new count round B's.
+    setTotal(lineCount[side]);
+  }, [path, side, expandable, hunkSig, lineCount?.old, lineCount?.new, switching]);
 
   // Uncommitted threads that vanish between loads are kept (session-local) as tombstones.
   const seen = useRef<{ path: string; threads: Map<string, Thread> } | null>(null);

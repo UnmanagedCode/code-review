@@ -28,13 +28,32 @@ const GIT = `git ${BASE_ARGS.join(' ')}`;
 const GIT_LOCATION_VARS = ['GIT_ALTERNATE_OBJECT_DIRECTORIES', 'GIT_CONFIG', 'GIT_CONFIG_PARAMETERS', 'GIT_CONFIG_COUNT', 'GIT_OBJECT_DIRECTORY',
   'GIT_DIR', 'GIT_WORK_TREE', 'GIT_IMPLICIT_WORK_TREE', 'GIT_GRAFT_FILE', 'GIT_INDEX_FILE', 'GIT_NO_REPLACE_OBJECTS', 'GIT_REPLACE_REF_BASE',
   'GIT_PREFIX', 'GIT_SHALLOW_FILE', 'GIT_COMMON_DIR', 'GIT_NAMESPACE'];
-const CLEAN_ENV = `unset ${GIT_LOCATION_VARS.join(' ')}`;
+// Variables in the target's own environment that make git write trace output to a file (git's documented
+// GIT_TRACE* and GIT_TRACE2* family): an inherited one would make a read write wherever it points, the tree included.
+const GIT_TRACE_VARS = ['GIT_TRACE', 'GIT_TRACE_BARE', 'GIT_TRACE_CURL', 'GIT_TRACE_CURL_NO_DATA', 'GIT_TRACE_FSMONITOR', 'GIT_TRACE_PACK_ACCESS',
+  'GIT_TRACE_PACKET', 'GIT_TRACE_PACKFILE', 'GIT_TRACE_PERFORMANCE', 'GIT_TRACE_REDACT', 'GIT_TRACE_REFS', 'GIT_TRACE_SETUP', 'GIT_TRACE_SHALLOW',
+  'GIT_TRACE_WORKING_TREE_ENCODING', 'GIT_TRACE2', 'GIT_TRACE2_BRIEF', 'GIT_TRACE2_CONFIG_PARAMS', 'GIT_TRACE2_DST_DEBUG', 'GIT_TRACE2_ENV_VARS',
+  'GIT_TRACE2_EVENT', 'GIT_TRACE2_EVENT_BRIEF', 'GIT_TRACE2_EVENT_NESTING', 'GIT_TRACE2_MAX_FILES', 'GIT_TRACE2_PARENT_NAME', 'GIT_TRACE2_PARENT_SID',
+  'GIT_TRACE2_PERF', 'GIT_TRACE2_PERF_BRIEF', 'GIT_TRACE2_REDACT'];
+const CLEAN_ENV = `unset ${[...GIT_LOCATION_VARS, ...GIT_TRACE_VARS].join(' ')}`;
 
-/** `argv` with the git location variables unset first: scripts get it as their first line, git runs under an sh that unsets them. */
+// Exit code of a command whose git cannot be found on the target: one sh never uses for its own errors, and distinct
+// from a script's other tools going missing (126/127, which stay loud errors). Mapped to GIT_UNAVAILABLE, as cc's
+// EXEC_SPAWN_FAILED is when git is the command itself.
+const GIT_MISSING = 12;
+const NEED_GIT = `command -v git >/dev/null 2>&1 || exit ${GIT_MISSING}`;
+
+/**
+ * `argv` with the git location and trace variables unset first: scripts get it as their first line, git runs under an sh
+ * that unsets them. Anything that runs git checks first that it can (`GIT_MISSING`). Whether it runs git: `{argv, git}`.
+ */
 const cleanArgv = (argv) => {
-  if (argv[0] === 'sh' && argv[1] === '-c') return ['sh', '-c', `${CLEAN_ENV}\n${argv[2]}`, ...argv.slice(3)];
-  if (argv[0] === 'git') return ['sh', '-c', `${CLEAN_ENV}\nexec "$@"`, 'sh', ...argv];
-  return argv;
+  if (argv[0] === 'sh' && argv[1] === '-c') {
+    const git = argv[2].includes(GIT);
+    return { git, argv: ['sh', '-c', `${CLEAN_ENV}\n${git ? `${NEED_GIT}\n` : ''}${argv[2]}`, ...argv.slice(3)] };
+  }
+  if (argv[0] === 'git') return { git: true, argv: ['sh', '-c', `${CLEAN_ENV}\n${NEED_GIT}\nexec "$@"`, 'sh', ...argv] };
+  return { git: false, argv };
 };
 
 // Paths per batched script call, well under any ARG_MAX.
@@ -56,7 +75,11 @@ const shq = (s) => `'${s.replace(/'/g, `'\\''`)}'`;
 
 // `bytes`: stdout stays a Buffer (scripts whose output is sliced by byte lengths).
 async function call(place, argv, what, { input, ok = [0], maxBuffer = MAX_DIFF_BYTES, env, readOnly, bytes = false } = {}) {
-  const r = await exec(place, cleanArgv(argv), { env: { ...BASE_ENV, ...env }, stdin: input, maxOutputBytes: maxBuffer, readOnly });
+  const clean = cleanArgv(argv);
+  const r = await exec(place, clean.argv, { env: { ...BASE_ENV, ...env }, stdin: input, maxOutputBytes: maxBuffer, readOnly });
+  if (clean.git && r.code === GIT_MISSING) {
+    throw new Refusal('GIT_UNAVAILABLE', `git could not start on ${place.system}${place.remoteId ? `/${place.remoteId}` : ''} (not found)`);
+  }
   const stdout = bytes ? r.stdout : r.stdout.toString('utf8');
   const stderr = r.stderr.toString('utf8');
   if (ok.includes(r.code)) return { code: r.code, stdout, stderr };

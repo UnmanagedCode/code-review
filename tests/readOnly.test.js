@@ -139,12 +139,14 @@ for (const where of ['main', 'worktree']) {
 for (const [packed, hostile] of [[false, false], [true, false], [false, true], [true, true]]) {
   test(`reading an uncommitted review with an unchanged restaged path (rm --cached, file byte-identical) leaves .git untouched, its blob ${packed ? 'packed' : 'loose'}${hostile ? ', with git location variables in the target\'s environment' : ''}`, async () => {
     // Invariant: restaging a path whose blob is already in the real object store neither writes nor freshens it (no loose object or pack mtime moves): blobs are written only to the private dir.
-    // Hostile: GIT_ALTERNATE_OBJECT_DIRECTORIES naming the real store, GIT_INDEX_FILE naming the real index and GIT_DIR naming another repo, inherited from the target's environment, change nothing: every command unsets them first.
+    // Hostile: GIT_ALTERNATE_OBJECT_DIRECTORIES naming the real store, and GIT_INDEX_FILE and GIT_DIR naming another repo's index and git dir, inherited from the target's environment, change nothing: every command unsets them first.
+    // Uncleared, the foreign index would show: SCAN and PROBE's status would read it (its entries name objects this repo lacks), giving a wrong answer or a failed request, either of which the asserts below catch.
     w = await world();
     w.repo.commit({ 'r.txt': 'unchanged\n', 's.txt': 's1\n' });
     if (packed) w.repo.git('gc', '-q');
     w.repo.git('rm', '--cached', '-q', 'r.txt', 's.txt');
     w.repo.write('s.txt', 's2\n'); // a changed restage beside it
+    w.addWorktree(); // clean: PROBE's status must say so
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'cr-ro-tmp-'));
     cleanups.push(() => fs.rmSync(tmp, { recursive: true, force: true }));
     const other = makeRepo();
@@ -152,7 +154,7 @@ for (const [packed, hostile] of [[false, false], [true, false], [false, true], [
     other.commit({ 'elsewhere.txt': 'x\n' });
     w.cc.state.execEnv = { TMPDIR: tmp, ...(hostile ? {
       GIT_ALTERNATE_OBJECT_DIRECTORIES: path.join(w.repo.dir, '.git', 'objects'),
-      GIT_INDEX_FILE: path.join(w.repo.dir, '.git', 'index'),
+      GIT_INDEX_FILE: path.join(other.dir, '.git', 'index'),
       GIT_DIR: path.join(other.dir, '.git'),
     } : {}) };
     // Age everything in the object store, so a freshen (utime to now) cannot land on the same timestamp.
@@ -160,12 +162,45 @@ for (const [packed, hostile] of [[false, false], [true, false], [false, true], [
     const age = (p) => { for (const e of fs.readdirSync(p, { withFileTypes: true })) { const q = path.join(p, e.name); if (e.isDirectory()) age(q); else fs.utimesSync(q, old, old); } };
     age(path.join(w.repo.dir, '.git', 'objects'));
     const before = treeSig(w.repo.dir);
+    const otherBefore = treeSig(other.dir);
     const { review } = await call('POST', '/reviews', { project: 'app', kind: 'uncommitted' });
     const got = await call('GET', `/reviews/${review.id}`);
     assert.deepEqual(got.files.map((f) => f.path), ['s.txt'], 'the unchanged path has no entry; the changed one is modified');
     await call('GET', `/reviews/${review.id}/diff`);
     await call('GET', '/reviews?project=app');
+    const co = (await call('GET', '/checkout?project=app&worktree=feature')).checkout;
+    assert.deepEqual([co.exists, co.dirty], [true, false], 'the clean worktree is clean');
     assert.deepEqual(treeSig(w.repo.dir), before);
+    assert.deepEqual(treeSig(other.dir), otherBefore, 'nor is the other repo touched');
     assert.deepEqual(fs.readdirSync(tmp), []);
   });
 }
+
+test('git trace variables in the target\'s environment make no read write a file, in the tree or anywhere', async () => {
+  // Invariant: every command unsets git's GIT_TRACE* / GIT_TRACE2* family first, so an inherited trace target never turns a read into a write.
+  w = await world();
+  const first = w.repo.git('rev-parse', 'HEAD');
+  const wt = w.addWorktree();
+  wt.commit({ 'a.js': editLines({ 2: 'two' }) });
+  w.repo.write('a.js', editLines({ 4: 'live' }));
+  const range = (await call('POST', '/reviews', { project: 'app', worktree: 'feature', base: first })).review;
+  const unc = (await call('POST', '/reviews', { project: 'app', kind: 'uncommitted' })).review;
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'cr-ro-tmp-'));
+  cleanups.push(() => fs.rmSync(tmp, { recursive: true, force: true }));
+  const targets = { GIT_TRACE: path.join(w.repo.dir, 'trace.log'), GIT_TRACE2_EVENT: path.join(w.repo.dir, 'trace2.json'),
+    GIT_TRACE_PERFORMANCE: path.join(wt.dir, 'perf.log'), GIT_TRACE2_PERF: path.join(tmp, 'perf2.log') };
+  w.cc.state.execEnv = { TMPDIR: tmp, ...targets };
+  const roots = [w.repo.dir, wt.dir];
+  const before = roots.map(treeSig);
+  for (const id of [range.id, unc.id]) {
+    await call('GET', `/reviews/${id}`);
+    await call('GET', `/reviews/${id}/diff`);
+    await call('GET', `/reviews/${id}/file?path=a.js&side=old&start=1&end=2`);
+  }
+  await call('GET', '/reviews?project=app');
+  await call('GET', '/checkout?project=app&worktree=feature');
+  await call('GET', '/checkout/commits?project=app');
+  assert.deepEqual(roots.map(treeSig), before);
+  for (const f of Object.values(targets)) assert.equal(fs.existsSync(f), false, f);
+  assert.deepEqual(fs.readdirSync(tmp), []);
+});

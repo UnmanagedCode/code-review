@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { execFileSync } from 'node:child_process';
 import { world, HUMAN, editLines } from './_world.js';
 import { tempStore } from './_store.js';
 import { start } from '../server.js';
@@ -220,6 +221,20 @@ test('a probe that fails with sh\'s own exit 2 is a loud error, never "checkout 
   const at = { system: 'local', remoteId: null, path: w.repo.dir };
   await assert.rejects(git.probe(at, { path: w.repo.dir }), (e) => !e.code && /arithmetic expression/.test(e.message));
   await assert.rejects(reviews.getReview(range.id), /arithmetic expression/);
+});
+
+test('on a target where git cannot be found, every review still lists, degraded to snapshotError GIT_UNAVAILABLE, never gone', async () => {
+  // Invariant: a missing git degrades summaries exactly as cc's EXEC_SPAWN_FAILED did (GIT_UNAVAILABLE in UNREACHABLE: snapshotError, checkoutGone false), for committed (PROBE) and uncommitted (SCAN) reviews.
+  await reviewed();
+  const bin = fs.mkdtempSync(path.join(path.dirname(w.repo.dir), 'bin-'));
+  for (const tool of ['sh', 'ls', 'awk', 'wc', 'cp', 'touch', 'mkdir', 'rm', 'cat', 'realpath', 'readlink']) {
+    fs.symlinkSync(execFileSync('sh', ['-c', `command -v ${tool}`], { encoding: 'utf8' }).trim(), path.join(bin, tool));
+  }
+  w.cc.state.execEnv = { PATH: bin };
+  const rows = ok(await reviews.listReviews({ project: 'app' })).reviews;
+  assert.equal(rows.length, 3);
+  for (const r of rows) assert.deepEqual([r.kind, r.snapshotError, r.checkoutGone], [r.kind, 'GIT_UNAVAILABLE', false]);
+  assert.equal((await checkoutInfo({ project: 'app', worktree: 'feature' }).catch((e) => e)).code, 'GIT_UNAVAILABLE');
 });
 
 test('list rows run concurrently under ROW_CONCURRENCY, and the list keeps newest-first order', async () => {

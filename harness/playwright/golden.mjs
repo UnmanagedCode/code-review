@@ -462,7 +462,7 @@ try {
     const link = threadLink(review, files[0].threads[0]);
     await page.goto(q({ review: range, file: 'a.js' }));
     await page.getByRole('grid', { name: 'Changes in a.js' }).waitFor();
-    await page.evaluate((p) => { history.replaceState(null, '', p); dispatchEvent(new PopStateEvent('popstate')); }, link.slice('#plugin/code-review/'.length));
+    await page.evaluate((p) => { history.replaceState(null, '', p); dispatchEvent(new PopStateEvent('popstate')); }, new URL(link).hash.slice('#plugin/code-review/'.length));
     const card = page.getByRole('article', { name: /thread$/ }).filter({ hasText: 'Name this better.' });
     await card.waitFor();
     assert.equal(await card.getByRole('button', { name: 'Focus' }).count(), 0, 'the linked thread is the focused one');

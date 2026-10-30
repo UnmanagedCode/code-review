@@ -10,6 +10,11 @@ import { reviewLink, threadLink } from '../src/links.js';
 import { parseRoute } from '../frontend/src/lib/route.ts';
 
 const manifest = JSON.parse(fs.readFileSync(new URL('../conductor.plugin.json', import.meta.url), 'utf8'));
+const PREFIX = `http://cc.internal/#plugin/${manifest.id}/`;
+const routeOf = (link) => {
+  assert.ok(link.startsWith(`${PREFIX}?`), link);
+  return parseRoute(link.slice(PREFIX.length));
+};
 
 let w;
 beforeEach(async () => {
@@ -252,7 +257,7 @@ test('open_review returns the review\'s link, for a new and a reused review', as
   const again = await result('open_review', { project: 'app', worktree: 'feature', author: 's-author' }, cond);
   for (const out of [{ review }, again]) {
     assert.equal(out.review.link, reviewLink(out.review));
-    assert.deepEqual(parseRoute(out.review.link.slice(out.review.link.indexOf('/?') + 1)), { project: 'app', worktree: 'feature', review: out.review.id });
+    assert.deepEqual(routeOf(out.review.link), { project: 'app', worktree: 'feature', review: out.review.id });
   }
   assert.equal(again.reused, true);
 });
@@ -262,6 +267,7 @@ test('get_review meta carries the review\'s link', async () => {
   const { review } = await reviewOnFeature();
   const body = await call('get_review', { review: review.id });
   assert.equal(body.meta.link, reviewLink(body.meta));
+  assert.deepEqual(routeOf(body.meta.link), { project: 'app', worktree: 'feature', review: review.id });
 });
 
 test('list_threads returns one link per listed thread, in listed order', async () => {
@@ -277,7 +283,7 @@ test('list_threads returns one link per listed thread, in listed order', async (
   for (const t of listed.meta.threads) {
     const full = (await threads.listThreads(review.id, { status: 'all' })).threads.find((x) => x.id === t.id);
     assert.equal(t.link, threadLink(rv, full));
-    const r = parseRoute(t.link.slice(t.link.indexOf('/?') + 1));
+    const r = routeOf(t.link);
     assert.equal(r.thread, t.id);
     assert.equal(r.file, 'a.js');
   }
@@ -326,7 +332,8 @@ test('list_threads shows file and review threads by their label with no code fen
   for (const b of blocks.slice(1)) assert.ok(!b.includes('```'), b);
   assert.deepEqual((await call('list_threads', { review: review.id, file: 'a.js' })).meta.threads.map((t) => t.id), [l.thread.id, f.thread.id]);
   const rv = { id: review.id, project: 'app', worktree: 'feature' };
-  assert.deepEqual(parseRoute(all.meta.threads[2].link.slice(all.meta.threads[2].link.indexOf('/?') + 1)), { project: 'app', worktree: 'feature', review: review.id, thread: r.thread.id, view: 'threads' });
+  assert.deepEqual(routeOf(all.meta.threads[2].link), { project: 'app', worktree: 'feature', review: review.id, thread: r.thread.id, view: 'threads' });
+  assert.deepEqual(routeOf(all.meta.threads[1].link), { project: 'app', worktree: 'feature', review: review.id, file: 'a.js', thread: f.thread.id });
   assert.equal(all.meta.threads[1].link, threadLink(rv, f.thread));
 });
 

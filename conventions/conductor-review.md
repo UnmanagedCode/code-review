@@ -7,4 +7,4 @@ Your default review flow is unchanged. Only when the user asks for a task to be 
 - Brief each reviewer lens to post its issues into that review as `finding`s instead of in its report.
 - Read the findings with `list_threads` and arbitrate them as usual.
 - Hold `merge_worktree` while `get_review` reports `mergeBlockers` above 0.
-- To point the user at the review or one of its threads, give that item's `link` from the tool result unchanged (it is origin-relative: add no host) as a `[▶ Open review](<link>)` button.
+- To point the user at the review or one of its threads, give that item's `link` from the tool result unchanged as a `[▶ Open review](<link>)` button.

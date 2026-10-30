@@ -5,7 +5,7 @@ import { reviewLink, threadLink } from '../src/links.js';
 import { parseRoute, toSearch } from '../frontend/src/lib/route.ts';
 
 const manifest = JSON.parse(fs.readFileSync(new URL('../conductor.plugin.json', import.meta.url), 'utf8'));
-const PREFIX = `#plugin/${manifest.id}/`;
+const PREFIX = `http://cc.internal/#plugin/${manifest.id}/`;
 const built = [];
 
 const route = (link) => {
@@ -22,9 +22,15 @@ test('a review link opens that review in its checkout', () => {
   assert.deepEqual(route(reviewLink({ ...rv, worktree: null })), { project: 'app', review: 'r-1' });
 });
 
-test('the link prefix is the manifest id', () => {
-  // Invariant: links address the plugin by the id cc reads from conductor.plugin.json.
-  assert.ok(reviewLink(rv).startsWith(`#plugin/${manifest.id}/?`));
+test('a link is an absolute http://cc.internal URL whose fragment is the plugin route', () => {
+  // Invariant: WHATWG parsing gives a complete URL on cc's fake host, addressed by the manifest id, with no route data in the path or query.
+  for (const link of [reviewLink(rv), threadLink(rv, thread('open', {}))]) {
+    const url = new URL(link);
+    assert.equal(url.origin, 'http://cc.internal', link);
+    assert.equal(url.pathname, '/', link);
+    assert.equal(url.search, '', link);
+    assert.ok(url.hash.startsWith(`#plugin/${manifest.id}/?`), link);
+  }
 });
 
 test('a live thread opens its file at the thread, with no lines=', () => {
@@ -78,7 +84,8 @@ test('every value is URL-encoded and survives the round-trip', () => {
   assert.equal(r.file, file);
   assert.equal(r.project, 'my app');
   assert.equal(r.worktree, 'a&b');
-  assert.ok(!/[#\s()]/.test(link.slice(1)), link);
+  assert.ok(!/[\s()]/.test(link), link);
+  assert.equal(link.indexOf('#'), link.lastIndexOf('#'), link);
 });
 
 test('links are canonical: toSearch(parseRoute(s)) is s', () => {

@@ -199,8 +199,8 @@ The page keeps its state in the query string (`?…`, never the hash) and writes
 | `sha` | With `view=new`: prefill a one-commit review of that ref or sha. As `range` otherwise |
 | `view` | Outside a review: `new` (New review dialog) or `inbox` (the side pane's Inbox tab; absent = Checkout, written with `replace`; session following keeps it). Inside one, the side pane's tab: `threads` or `history` (History only on range reviews; elsewhere it shows Files); absent = Files. Tab clicks write it with `replace`; every other in-review navigation keeps it; opening or leaving a review clears it |
 
-**Links.** MCP results carry origin-relative links (never absolute: cc supplies the host) that open the review or a thread in the plugin view; built by `src/links.js`.
-- Format: `#plugin/<manifest id>/?<route>`; values are encoded as `URLSearchParams` does, keys follow the route serialiser's order.
+**Links.** MCP results carry absolute links on cc's fake host `http://cc.internal` (`CC_ORIGIN` in `src/links.js`). cc opens each one in its plugin view, or in the plugin dock when that is showing. Each link opens the review or a thread.
+- Format: `http://cc.internal/#plugin/<manifest id>/?<route>`; values are encoded as `URLSearchParams` does, keys follow the route serialiser's order.
 - Review: `project`, `worktree` (when set), `review`. `project` is always present so a fresh load does not follow the session's checkout instead.
 - Thread: the review keys plus the route `ThreadCard`'s Focus uses (`threadPlace`).
 

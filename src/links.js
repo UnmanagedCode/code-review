@@ -4,16 +4,18 @@ import manifest from '../conductor.plugin.json' with { type: 'json' };
 const PLUGIN_ID = manifest.id;
 // The order of `KEYS` in frontend/src/lib/route.ts.
 const ORDER = ['project', 'worktree', 'review', 'file', 'side', 'lines', 'thread', 'commit', 'round', 'compare', 'view'];
+// cc's transcript renderer maps this fake host's `#plugin/…` URLs to its in-app view links.
+const CC_ORIGIN = 'http://cc.internal';
 
 function link(route) {
   const p = new URLSearchParams();
   for (const k of ORDER) if (route[k]) p.set(k, route[k]);
-  return `#plugin/${encodeURIComponent(PLUGIN_ID)}/?${p}`;
+  return `${CC_ORIGIN}/#plugin/${encodeURIComponent(PLUGIN_ID)}/?${p}`;
 }
 
 const reviewRoute = ({ id, project, worktree }) => ({ project, worktree, review: id });
 
-/** Origin-relative link that opens a review in its checkout. */
+/** Link that opens a review in its checkout. */
 export const reviewLink = (review) => link(reviewRoute(review));
 
 /**

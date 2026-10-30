@@ -34,7 +34,7 @@ Services return a plain object or a refusal `{ok:false, code, reason}`. Low-leve
 | `inbox.js` | `listInbox`: every open review, latest activity first, with `checkoutGone` from cc's project locations and worktree lists (one lookup scope, `ROW_CONCURRENCY` at a time); store and cc only, no git |
 | `migrate.js` | `migrateStore`: the startup migrations of stored reviews (see [Migrations](#migrations)) |
 | `threads.js` | annotate (`buildAnchor`: the anchor checks for REST and MCP alike), reply, thread status, mark read, list |
-| `links.js` | plugin-view hash links for MCP results; mirrors `frontend/src/lib/route.ts` |
+| `links.js` | plugin-view links for MCP results (`http://cc.internal/#plugin/…`); mirrors `frontend/src/lib/route.ts` |
 | `rollup.js` | counts, `mergeBlockers`, unread, `ReviewSummary`, `turnOf`, `inboxItem` (InboxItem), thread/hunk views, `withThreads`, `liveView`, `fileSig`, `signStates`, `diffFiles` (DiffFiles with `lineCount` and `sig`), `liveSig` (a write's `fileSig`) |
 | `citations.js` | parse and resolve `path#L…` |
 | `submissions.js`, `prompt.js` | compose and record submissions; render the prompt text (pure) |

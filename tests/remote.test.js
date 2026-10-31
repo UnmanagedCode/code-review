@@ -190,6 +190,21 @@ test('over HTTP: /projects lists the project on a system; /checkout describes it
   assert.deepEqual([down.status, down.body.code], [502, 'SYSTEM_UNREACHABLE']);
 });
 
+test('over HTTP: /checkout/lookup names a worktree of a project on a system while that system is down, running nothing there', async () => {
+  // Invariant: the row-menu arrival validates a remote checkout from cc's metadata alone, so a down System does not refuse it.
+  const boot = tempStore();
+  const dist = fs.mkdtempSync(path.join(os.tmpdir(), 'cr-remote-dist-'));
+  fs.writeFileSync(path.join(dist, 'index.html'), '<!doctype html>');
+  const server = await start({ port: 0, distDir: dist });
+  cleanups.push(() => { server.closeAllConnections(); server.close(); fs.rmSync(dist, { recursive: true, force: true }); boot.cleanup(); });
+  await remoteWorld();
+  w.addWorktree();
+  w.cc.state.execHook = () => ({ status: 502, body: { error: 'down', code: 'SYSTEM_UNREACHABLE' } });
+  const res = await fetch(`http://127.0.0.1:${server.address().port}/api/checkout/lookup?project=app&worktree=feature`);
+  assert.deepEqual([res.status, await res.json()], [200, { ok: true, checkout: { project: 'app', worktree: 'feature' } }]);
+  assert.deepEqual(w.cc.state.execCalls, []);
+});
+
 /** Opens a range (where possible), commit and uncommitted review of one checkout and runs every read path on each. */
 async function readEverything(worktree, base) {
   const ids = [];

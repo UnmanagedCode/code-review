@@ -21,7 +21,7 @@ const world = () => stubFetch([
 ]);
 
 function Pane() {
-  return <ListPane route={useRoute()} follow={{ followingTitle: undefined, unfollowable: false }} />;
+  return <ListPane route={useRoute()} follow={{ followingTitle: undefined, unfollowable: false }} arrival={0} />;
 }
 
 // Invariant: the Inbox tab is view=inbox written with replace; Checkout clears view, also with replace.
@@ -31,7 +31,7 @@ test('the Inbox tab writes view=inbox with replace, the Checkout tab clears it',
   const push = vi.spyOn(history, 'pushState');
   const replace = vi.spyOn(history, 'replaceState');
   render(<Pane />);
-  await screen.findByText('No reviews yet');
+  await screen.findByText('No open reviews');
   const user = userEvent.setup();
   await user.click(screen.getByRole('tab', { name: 'Inbox' }));
   expect(location.search).toBe('?project=app&view=inbox');
@@ -47,7 +47,7 @@ test('the Checkout panel keeps the review list status across a round trip; the i
   const net = world();
   history.replaceState(null, '', '?project=app');
   render(<Pane />);
-  await screen.findByText('No reviews yet');
+  await screen.findByText('No open reviews');
   const user = userEvent.setup();
   await user.selectOptions(screen.getByLabelText('Status'), 'closed');
   expect(net.count('GET api/inbox')).toBe(0);

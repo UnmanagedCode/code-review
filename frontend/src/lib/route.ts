@@ -64,12 +64,30 @@ export function parseLines(lines: string | undefined): { start: number; end: num
 }
 export const formatLines = (start: number, end: number): string => (start === end ? String(start) : `${start}-${end}`);
 
+// cc's `SCOPE_PARAMS` owns these names (cc docs/plugins.md, `menuItems`).
+export const MENU_PARAMS = { project: 'ccProject', worktree: 'ccWorktree' } as const;
+
+/** What a code-conductor row ⋮ "Show reviews" asks for: untrusted names, validated by the backend before any route is built. */
+export type MenuTarget = { project: string | null; worktree: string | null };
+
+/** null when the URL carries no menu param at all; an empty value counts as absent. */
+export function readMenuTarget(search = location.search): MenuTarget | null {
+  const q = new URLSearchParams(search);
+  if (!q.has(MENU_PARAMS.project) && !q.has(MENU_PARAMS.worktree)) return null;
+  return { project: q.get(MENU_PARAMS.project) || null, worktree: q.get(MENU_PARAMS.worktree) || null };
+}
+
 const listeners = new Set<() => void>();
 let cached: { search: string; route: Route } | null = null;
 const read = (): Route => {
+  // cc's navigate replaces the whole query with its menu params: the page keeps its route until `useMenuTarget` strips them
+  // and resolves the target, so an open review never unmounts while the click is pending and a failure changes nothing.
+  if (cached && cached.search !== location.search && readMenuTarget()) return cached.route;
   if (!cached || cached.search !== location.search) cached = { search: location.search, route: parseRoute(location.search) };
   return cached.route;
 };
+/** Test seam: forgets the parsed route, as a fresh page load would. */
+export const resetRoute = () => { cached = null; };
 
 /** Merge `patch` into the current route (`undefined` removes a key) and push it; `replace` swaps the entry instead. */
 export function navigate(patch: Route | ((r: Route) => Route), opts: { replace?: boolean } = {}): void {

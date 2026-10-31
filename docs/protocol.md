@@ -67,6 +67,7 @@ REST under `/api` (JSON), an SSE stream, and the cc MCP endpoint. Behaviour behi
 |---|---|---|---|
 | `GET /projects` | | `{projects:[{name}]}` (every cc project, local or on a System) | `CONDUCTOR_UNAVAILABLE` |
 | `GET /checkout` | `?project&worktree` (omit `worktree` for main) | `{checkout:{project, worktree, path, branch, headSha, dirty, exists}, forkPoints:[{ref,label,forkSha}], worktrees:[{worktreeName,branch}]}` | `INVALID_ARGUMENT`, `PROJECT_*`, `CHECKOUT_UNKNOWN`, `SYSTEM_UNREACHABLE` `GIT_TIMEOUT` `GIT_UNAVAILABLE` |
+| `GET /checkout/lookup` | `?project&worktree` (omit `worktree` for main) | `{checkout:{project, worktree}}` (`worktree: null` = main): names a checkout from cc's project and worktree records only (`lookupCheckout`): code-review runs no git for it (cc may filter its worktree records with `git worktree list` on a reachable System, and falls back to the records when the System refuses), so it answers while the checkout's System is down. Serves the row menu | `INVALID_ARGUMENT` (no `project`), `PROJECT_UNKNOWN`, `CHECKOUT_UNKNOWN`, `CONDUCTOR_UNAVAILABLE` |
 | `GET /checkout/commits` | `?project&worktree&limit` (default 50, max 500) | `{commits:[{sha, short, author, date, subject, merge}]}` | as above, `CHECKOUT_GONE` |
 | `GET /checkout/commit` | `?project&worktree&ref` (any ref, full or abbreviated sha, `HEAD`…) | `{commit:{sha, short, author, date, subject, merge}}`: the commit `ref` names | as above, `BAD_REF` (also for a missing `ref`), `REF_UNKNOWN`: the same ref validation as `POST /reviews` |
 | `GET /sessions` | `?project&worktree` | `{sessions:[Session]}` (all cc sessions; `attached` is relative to the checkout) | `INVALID_ARGUMENT`, `CONDUCTOR_UNAVAILABLE` |
@@ -181,7 +182,7 @@ All through `CONDUCTOR_URL`. Each GET attempt times out after `CODE_REVIEW_CC_TI
 
 ## UI routes
 
-The page keeps its state in the query string (`?…`, never the hash) and writes it with `history.pushState`; cc's `navigate` message arrives as `popstate`. Unknown parameters are dropped.
+The page keeps its state in the query string (`?…`, never the hash) and writes it with `history.pushState`; cc's `navigate` message arrives as `popstate`. Unknown parameters are dropped, except cc's row-menu params (see Row menu), which are read and then replaced.
 
 | Param | Meaning |
 |---|---|
@@ -221,6 +222,20 @@ The page keeps its state in the query string (`?…`, never the hash) and writes
 - `sha` selects One commit with the resolved full sha (reviewed against its first parent).
 - A link that cannot be used leaves the dialog's defaults (Range, nearest fork point) and shows an alert saying why: both `range` and `sha`, a `range` without `..`, an empty side, a `BAD_REF`/`REF_UNKNOWN` refusal, or a head other than HEAD. An unknown project or worktree shows its refusal and disables Open review.
 - `review` in the same URL wins (the review opens, not the dialog).
+
+**Row menu (code-conductor).** The manifest's `menuItems` put **Show reviews** in cc's project-row and worktree-row ⋮ menus (`label: "Show reviews"`, `scope: "project"` / `"worktree"`, `path: "/"`). A click opens the page with cc's params (cc's `SCOPE_PARAMS`; `MENU_PARAMS` in `frontend/src/lib/route.ts`):
+
+| Param | Meaning |
+|---|---|
+| `ccProject` | Project name; absent or empty = none named (refused with a toast, no request) |
+| `ccWorktree` | Worktree name; absent or empty = the main checkout (project row) |
+
+- Read on load and on every `popstate` (`useMenuTarget` in `frontend/src/features/layout/useMenuTarget.ts`); never route keys.
+- While they are in the URL the page keeps its current route (`read` in `route.ts`), then replaces them with that route (`replace`) before validating.
+- Validated through `GET /checkout/lookup`, with `GET /inbox` fetched in parallel; both are GETs and nothing else is requested or stored.
+- Landing (`menuLanding` in `frontend/src/lib/menuTarget.ts`), written with `replace` from the lookup's names: exactly one open inbox review of that checkout → `project`, `worktree`, `review`; else `project`, `worktree` (the Checkout tab, its list reset to This checkout / Open).
+- A refusal or failed request toasts (`menuFailure`) and keeps the route. Only the newest target lands when two overlap.
+- A navigation made while the requests are in flight (the URL no longer matches the one left by the strip: the user picks a checkout or opens a review, a link steers the page) abandons the click: it neither lands nor toasts, whether the requests then succeed or fail.
 
 **Open in code-git.** Built by `frontend/src/lib/codeGit.ts`; shown only when embedded (a bridge and a readable `window.top`) and `GET /integrations` names code-git.
 - Link: an `<a target="_top">` whose href is cc's current path and query plus `#plugin/<code-git id>/<subpath>`, so following it is a fragment navigation of cc's top document (no reload) that cc's hash router opens as code-git's view.

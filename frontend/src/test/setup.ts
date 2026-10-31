@@ -1,6 +1,7 @@
 import { cleanup } from '@testing-library/react';
 import { afterEach, vi } from 'vitest';
 import { resetCodeGit } from '@/lib/codeGit';
+import { resetRoute } from '@/lib/route';
 import { resetSse } from '@/lib/sse';
 import { resetDiffPrefs } from '@/state/diffPrefs';
 import { resetDrafts } from '@/state/drafts';
@@ -24,4 +25,5 @@ afterEach(() => {
   resetCodeGit();
   resetTop();
   history.replaceState(null, '', '?');
+  resetRoute();
 });

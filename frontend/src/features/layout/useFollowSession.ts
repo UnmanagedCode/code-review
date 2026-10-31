@@ -21,8 +21,10 @@ function remembered(): { project: string; worktree?: string } | null {
  * With a bridge, later session changes to a listed project switch the checkout. Inert without a bridge.
  * A session change while a review is open is dropped, never deferred: the route is not in the effect's deps, so leaving the
  * review does not replay it. Following keeps `view=inbox` and never touches `review`.
+ * `menuOnLoad`: this load came from cc's row menu, which picks the checkout, so neither the session nor the remembered
+ * checkout may race it; later session changes follow as usual.
  */
-export function useFollowSession(route: Route) {
+export function useFollowSession(route: Route, menuOnLoad = false) {
   const projects = useProjects();
   const session = useBridgeSession();
   const names = projects.data?.projects.map((p) => p.name);
@@ -38,7 +40,7 @@ export function useFollowSession(route: Route) {
     const first = !consumed.current;
     consumed.current = true;
     if (route.review) return; // an open review is never closed by following
-    if (first && routeProject) return; // a route-named checkout wins on load
+    if (first && (routeProject || menuOnLoad)) return; // a route-named or menu-named checkout wins on load
     const keep = route.view === 'inbox' ? { view: 'inbox' as const } : {};
     if (known && session) {
       if (session.project === routeProject && (session.worktree ?? undefined) === route.worktree) return;

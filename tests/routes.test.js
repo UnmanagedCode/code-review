@@ -9,6 +9,7 @@ import { tempStore } from './_store.js';
 import { start } from '../server.js';
 import { HTTP_STATUS } from '../src/refusals.js';
 import * as store from '../src/store.js';
+import { _clearLookups } from '../src/lookups.js';
 
 let dist;
 let server;
@@ -56,6 +57,31 @@ test('GET /projects lists every project, local or on a system; /checkout, /check
   const ss = (await req('GET', '/sessions?project=app&worktree=feature')).body.sessions;
   assert.deepEqual(ss.map((s) => [s.sessionId, s.attached]), [['s-author', true]]);
   assert.equal((await req('GET', '/checkout')).status, 400);
+});
+
+test('GET /checkout/lookup names a checkout from cc\'s data alone: no git, refusals for unknown names, no cached miss', async (t) => {
+  // Invariant: the row-menu arrival validates names against cc's location and worktree rows only, and an unknown answer never sticks.
+  const calls = w.cc.state.execCalls.length;
+  assert.deepEqual((await req('GET', '/checkout/lookup?project=app')).body, { ok: true, checkout: { project: 'app', worktree: null } });
+  assert.deepEqual((await req('GET', '/checkout/lookup?project=app&worktree=feature')).body, { ok: true, checkout: { project: 'app', worktree: 'feature' } });
+  const noProject = await req('GET', '/checkout/lookup?project=nope&worktree=feature');
+  assert.deepEqual([noProject.status, noProject.body.code], [404, 'PROJECT_UNKNOWN']);
+  const noWorktree = await req('GET', '/checkout/lookup?project=app&worktree=nope');
+  assert.deepEqual([noWorktree.status, noWorktree.body.code], [404, 'CHECKOUT_UNKNOWN']);
+  const missing = await req('GET', '/checkout/lookup?worktree=feature');
+  assert.deepEqual([missing.status, missing.body.code], [400, 'INVALID_ARGUMENT']);
+  assert.equal(w.cc.state.execCalls.length, calls, 'no git ran');
+
+  // With positive answers cached, a project or worktree cc adds after an unknown answer is found on the next call.
+  _clearLookups();
+  process.env.CODE_REVIEW_LOOKUP_TTL_MS = '600000';
+  t.after(() => { process.env.CODE_REVIEW_LOOKUP_TTL_MS = '0'; _clearLookups(); });
+  assert.equal((await req('GET', '/checkout/lookup?project=late')).body.code, 'PROJECT_UNKNOWN');
+  w.cc.state.projects.push({ name: 'late', path: '/late', system: 'local' });
+  assert.deepEqual((await req('GET', '/checkout/lookup?project=late')).body.checkout, { project: 'late', worktree: null });
+  assert.equal((await req('GET', '/checkout/lookup?project=app&worktree=fresh')).body.code, 'CHECKOUT_UNKNOWN');
+  w.cc.state.worktrees.app.push({ worktreeName: 'fresh', worktreePath: '/fresh', branch: 'br-fresh', baseBranch: 'main' });
+  assert.deepEqual((await req('GET', '/checkout/lookup?project=app&worktree=fresh')).body.checkout, { project: 'app', worktree: 'fresh' });
 });
 
 test('GET /sessions/:id/places lists the session own checkout then its owned workers', async () => {

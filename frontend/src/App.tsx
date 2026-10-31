@@ -2,16 +2,19 @@ import { Empty } from '@/features/common/States';
 import { ListPane } from '@/features/layout/ListPane';
 import { DesktopLayout, PhoneLayout } from '@/features/layout/layouts';
 import { useFollowSession } from '@/features/layout/useFollowSession';
+import { useMenuTarget } from '@/features/layout/useMenuTarget';
 import { NewReviewDialog } from '@/features/picker/NewReviewDialog';
 import { ReviewView } from '@/features/review/ReviewView';
 import { parsePrefill } from '@/lib/prefill';
 import { navigate, NEW_REVIEW_CLOSED, useRoute } from '@/lib/route';
 import { useMediaQuery, WIDE_QUERY } from '@/lib/useMediaQuery';
 
+// cc's row menus arrive as `?ccProject=&ccWorktree=`; `useMenuTarget` turns them into a route.
 export function App() {
   const route = useRoute();
   const wide = useMediaQuery(WIDE_QUERY);
-  const follow = useFollowSession(route);
+  const menu = useMenuTarget();
+  const follow = useFollowSession(route, menu.initial);
   if (route.review) return <ReviewView key={route.review} id={route.review} />;
 
   const dialog = route.view === 'new' && route.project && (
@@ -22,8 +25,8 @@ export function App() {
     />
   );
   if (!wide) {
-    return <><PhoneLayout><ListPane route={route} follow={follow} placeholder={<Empty title="Choose a project to review" />} /></PhoneLayout>{dialog}</>;
+    return <><PhoneLayout><ListPane route={route} follow={follow} arrival={menu.arrival} placeholder={<Empty title="Choose a project to review" />} /></PhoneLayout>{dialog}</>;
   }
   const centre = <Empty title={route.project || route.view === 'inbox' ? 'Select a review' : 'Choose a project to review'} />;
-  return <><DesktopLayout left={<ListPane route={route} follow={follow} />} center={centre} />{dialog}</>;
+  return <><DesktopLayout left={<ListPane route={route} follow={follow} arrival={menu.arrival} />} center={centre} />{dialog}</>;
 }

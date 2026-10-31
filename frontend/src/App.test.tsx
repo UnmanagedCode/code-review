@@ -14,6 +14,19 @@ import { installBridge } from './test/fakeBridge';
 import { diffFile, fileState, inboxItem, refusal, review } from './test/fixtures';
 import { stubFetch, type Call } from './test/stubFetch';
 
+// Counts App mounts: useMenuTarget is called by App alone, so its wrapper's mount effect runs once per App mount.
+const appMounts = vi.hoisted(() => ({ n: 0 }));
+vi.mock('@/features/layout/useMenuTarget', async (importOriginal) => {
+  const { useEffect } = await import('react');
+  const real = await importOriginal<typeof import('@/features/layout/useMenuTarget')>();
+  return {
+    useMenuTarget: () => {
+      useEffect(() => { appMounts.n += 1; }, []);
+      return real.useMenuTarget();
+    },
+  };
+});
+
 const src = path.dirname(fileURLToPath(import.meta.url));
 const frontend = path.dirname(src);
 
@@ -314,9 +327,10 @@ describe('menu', () => {
     onlyGets(calls);
   });
 
-  // Invariant: cc's navigate retargets the open page in place, replacing the entry: from an open review to another checkout's landing.
-  test('menu: a cc navigate while a review is open retargets to the other checkout without a new history entry', async () => {
+  // Invariant: cc's navigate retargets the open page in place (App stays mounted), replacing the entry: from an open review to another checkout's landing.
+  test('menu: a cc navigate while a review is open retargets to the other checkout in place, without a new history entry', async () => {
     const { calls } = menuWorld({ inbox: [inboxItem({ id: 'r-1', worktree: 'feature' }), inboxItem({ id: 'r-2', worktree: 'other-wt' })] });
+    appMounts.n = 0;
     await openOnReview();
     const length = history.length;
     navigateCc('?ccProject=app&ccWorktree=other-wt');
@@ -326,6 +340,7 @@ describe('menu', () => {
     expect(await screen.findByText('No open reviews')).toBeTruthy();
     expect(location.search).toBe('?project=app');
     expect(history.length).toBe(length);
+    expect(appMounts.n).toBe(1);
     onlyGets(calls);
   });
 
@@ -353,6 +368,29 @@ describe('menu', () => {
     onlyGets(calls);
   });
 
+  // Invariant: a navigation the user makes while the lookup is in flight wins: the landing is dropped, with no toast.
+  test('menu: picking another checkout while the lookup is pending keeps the user\'s choice', async () => {
+    let release!: () => void;
+    const held = new Promise<void>((r) => { release = r; });
+    const { calls, count } = menuWorld({
+      inbox: [inboxItem({ id: 'r-1', worktree: 'feature' })],
+      lookup: async (u) => { await held; return { ok: true, checkout: { project: 'app', worktree: u.searchParams.get('worktree') } }; },
+    });
+    const error = menuError();
+    history.replaceState(null, '', '?ccProject=app&ccWorktree=feature');
+    render(<App />);
+    await screen.findByRole('option', { name: 'other' });
+    await waitFor(() => expect(count('GET api/checkout/lookup')).toBe(1));
+    await userEvent.setup().selectOptions(screen.getByLabelText('Project'), 'other');
+    expect(location.search).toBe('?project=other');
+    await act(async () => { release(); await held; });
+    await act(async () => {});
+    expect(location.search).toBe('?project=other');
+    expect(screen.queryByRole('heading', { name: 'Review one' })).toBeNull();
+    expect(error).not.toHaveBeenCalled();
+    onlyGets(calls);
+  });
+
   // Invariant: the landing replaced the cc params, so a reload shows the landed route and never repeats the lookup.
   test('menu: a reload after the landing shows the landed route and asks nothing again', async () => {
     const { calls } = menuWorld({ inbox: [inboxItem({ id: 'r-1', worktree: 'feature' })] });
@@ -368,12 +406,23 @@ describe('menu', () => {
   });
 
   // Invariant: a load from the row menu is not raced by session following: the session's checkout is never visited; later session changes still follow.
+  // The lookup is held until the project list has loaded and session following has had its first run, so that run sees no
+  // route project: only the menu-load skip keeps it from writing the session's checkout (`?project=other`).
   test('menu: a load from the menu never navigates to the active session\'s checkout first; later session changes follow', async () => {
-    const { calls } = menuWorld();
+    let release!: () => void;
+    const held = new Promise<void>((r) => { release = r; });
+    const { calls, count } = menuWorld({
+      lookup: async (u) => { await held; return { ok: true, checkout: { project: 'app', worktree: u.searchParams.get('worktree') } }; },
+    });
     const bridge = installBridge({ sessionId: 's-1', project: 'other', worktree: null });
     const replace = vi.spyOn(history, 'replaceState');
     history.replaceState(null, '', '?ccProject=app&ccWorktree=feature');
     render(<App />);
+    await screen.findByRole('option', { name: 'other' });
+    await act(async () => {});
+    expect(count('GET api/projects')).toBe(1);
+    expect(location.search).toBe('');
+    await act(async () => { release(); await held; });
     expect(await screen.findByText('No open reviews')).toBeTruthy();
     await act(async () => {});
     expect(location.search).toBe('?project=app&worktree=feature');

@@ -20,18 +20,19 @@ export function useMenuTarget(): { initial: boolean; arrival: number } {
       // Strips cc's params before validating, keeping the page's own route (see `read` in lib/route.ts).
       navigate((r) => r, { replace: true });
       const seq = ++latest;
-      // Any navigation while the requests are in flight (the user's, a link's) wins over the landing.
+      // Any navigation while the requests are in flight (the user's, a link's) abandons the click: no landing, no toast.
       const at = location.search;
+      const current = () => live && seq === latest && location.search === at;
       if (t.project === null) {
         toast.error(menuFailure(t));
         return;
       }
       Promise.all([ep.checkoutLookup(t.project, t.worktree), ep.inbox()]).then(([lookup, inbox]) => {
-        if (!live || seq !== latest || location.search !== at) return;
+        if (!current()) return;
         navigateTo(menuLanding(lookup.checkout, inbox.reviews), { replace: true });
         setArrival((n) => n + 1);
       }, (e: unknown) => {
-        if (live && seq === latest) toast.error(menuFailure(t, e));
+        if (current()) toast.error(menuFailure(t, e));
       });
     };
     if (initial) consume(initial);

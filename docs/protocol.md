@@ -235,7 +235,7 @@ The page keeps its state in the query string (`?…`, never the hash) and writes
 - Validated through `GET /checkout/lookup`, with `GET /inbox` fetched in parallel; both are GETs and nothing else is requested or stored.
 - Landing (`menuLanding` in `frontend/src/lib/menuTarget.ts`), written with `replace` from the lookup's names: exactly one open inbox review of that checkout → `project`, `worktree`, `review`; else `project`, `worktree` (the Checkout tab, its list reset to This checkout / Open).
 - A refusal or failed request toasts (`menuFailure`) and keeps the route. Only the newest target lands when two overlap.
-- A navigation made while the requests are in flight (the URL no longer matches the one left by the strip: the user picks a checkout or opens a review, a link steers the page) wins: the landing is dropped, without a toast.
+- A navigation made while the requests are in flight (the URL no longer matches the one left by the strip: the user picks a checkout or opens a review, a link steers the page) abandons the click: it neither lands nor toasts, whether the requests then succeed or fail.
 
 **Open in code-git.** Built by `frontend/src/lib/codeGit.ts`; shown only when embedded (a bridge and a readable `window.top`) and `GET /integrations` names code-git.
 - Link: an `<a target="_top">` whose href is cc's current path and query plus `#plugin/<code-git id>/<subpath>`, so following it is a fragment navigation of cc's top document (no reload) that cc's hash router opens as code-git's view.

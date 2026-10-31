@@ -14,19 +14,6 @@ import { installBridge } from './test/fakeBridge';
 import { diffFile, fileState, inboxItem, refusal, review } from './test/fixtures';
 import { stubFetch, type Call } from './test/stubFetch';
 
-// Counts App mounts: useMenuTarget is called by App alone, so its wrapper's mount effect runs once per App mount.
-const appMounts = vi.hoisted(() => ({ n: 0 }));
-vi.mock('@/features/layout/useMenuTarget', async (importOriginal) => {
-  const { useEffect } = await import('react');
-  const real = await importOriginal<typeof import('@/features/layout/useMenuTarget')>();
-  return {
-    useMenuTarget: () => {
-      useEffect(() => { appMounts.n += 1; }, []);
-      return real.useMenuTarget();
-    },
-  };
-});
-
 const src = path.dirname(fileURLToPath(import.meta.url));
 const frontend = path.dirname(src);
 
@@ -327,10 +314,11 @@ describe('menu', () => {
     onlyGets(calls);
   });
 
-  // Invariant: cc's navigate retargets the open page in place (App stays mounted), replacing the entry: from an open review to another checkout's landing.
-  test('menu: a cc navigate while a review is open retargets to the other checkout in place, without a new history entry', async () => {
+  // Invariant: cc's navigate (a popstate) retargets an open page, replacing the entry: from an open review to another checkout's landing.
+  // This proves the route and history behaviour; that it happens in place, without a reload, is proven by golden.mjs's
+  // `window.__noReload` marker (step 20).
+  test('menu: a cc navigate while a review is open retargets to the other checkout without a new history entry', async () => {
     const { calls } = menuWorld({ inbox: [inboxItem({ id: 'r-1', worktree: 'feature' }), inboxItem({ id: 'r-2', worktree: 'other-wt' })] });
-    appMounts.n = 0;
     await openOnReview();
     const length = history.length;
     navigateCc('?ccProject=app&ccWorktree=other-wt');
@@ -340,7 +328,6 @@ describe('menu', () => {
     expect(await screen.findByText('No open reviews')).toBeTruthy();
     expect(location.search).toBe('?project=app');
     expect(history.length).toBe(length);
-    expect(appMounts.n).toBe(1);
     onlyGets(calls);
   });
 
@@ -387,6 +374,24 @@ describe('menu', () => {
     await act(async () => {});
     expect(location.search).toBe('?project=other');
     expect(screen.queryByRole('heading', { name: 'Review one' })).toBeNull();
+    expect(error).not.toHaveBeenCalled();
+    onlyGets(calls);
+  });
+
+  // Invariant: a click abandoned by a navigation is silent when it fails too: no toast, and the user's route stands.
+  test('menu: a lookup that fails after the user navigated away toasts nothing', async () => {
+    let release!: () => void;
+    const held = new Promise<void>((r) => { release = r; });
+    const { calls, count } = menuWorld({ lookup: async () => { await held; return refusal('CHECKOUT_UNKNOWN', 404); } });
+    const error = menuError();
+    history.replaceState(null, '', '?ccProject=app&ccWorktree=feature');
+    render(<App />);
+    await screen.findByRole('option', { name: 'other' });
+    await waitFor(() => expect(count('GET api/checkout/lookup')).toBe(1));
+    await userEvent.setup().selectOptions(screen.getByLabelText('Project'), 'other');
+    await act(async () => { release(); await held; });
+    await act(async () => {});
+    expect(location.search).toBe('?project=other');
     expect(error).not.toHaveBeenCalled();
     onlyGets(calls);
   });

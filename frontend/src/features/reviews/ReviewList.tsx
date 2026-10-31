@@ -7,6 +7,8 @@ import { useReviewList } from '@/state/reviewList';
 import { Empty, ErrorState, Loading } from '@/features/common/States';
 import { ReviewRow } from './ReviewRow';
 
+const EMPTY_TITLE: Record<string, string> = { open: 'No open reviews', closed: 'No closed reviews', all: 'No reviews yet' };
+
 /** Reviews of the chosen checkout, or of every checkout of the project. */
 export function ReviewList({ project, worktree }: { project: string; worktree: string | undefined }) {
   const [scope, setScope] = useState<'checkout' | 'project'>('checkout');
@@ -30,7 +32,7 @@ export function ReviewList({ project, worktree }: { project: string; worktree: s
       <div className="min-h-0 flex-1 overflow-y-auto">
         {list.loading && !list.data ? <Loading label="Loading reviews" />
           : list.error && !list.data ? <ErrorState error={list.error} onRetry={list.reload} />
-            : list.data && list.data.reviews.length === 0 ? <Empty title="No reviews yet">Start one with “New review”.</Empty>
+            : list.data && list.data.reviews.length === 0 ? <Empty title={EMPTY_TITLE[status] ?? 'No reviews yet'}>Start one with “New review”.</Empty>
               : <ul>{list.data?.reviews.map((r) => <ReviewRow key={r.id} review={r} showWorktree={scope === 'project'} />)}</ul>}
       </div>
       <div className="shrink-0 border-t p-3">

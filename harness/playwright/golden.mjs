@@ -928,6 +928,64 @@ try {
     assert.deepEqual(errors, []);
   }, { headless: true, viewport: { width: 1280, height: 800 } });
 
+  // 20: cc's row ⋮ "Show reviews" (`?ccProject=&ccWorktree=`): a checkout with one open review opens it, one with several
+  // lands on its list, an unknown name toasts and changes nothing, and cc's navigate (replaceState + popstate) retargets an
+  // open page in place. Every landing replaces the cc params.
+  await withPage(async (page) => {
+    const errors = watchErrors(page);
+    const shot = shotter(page);
+    const cc = (p) => `${world.url}/?${new URLSearchParams(p)}`;
+    const navigateCc = (p) => page.evaluate((search) => { history.replaceState(null, '', search); dispatchEvent(new PopStateEvent('popstate')); }, `?${new URLSearchParams(p)}`);
+    const toast = (text) => page.locator('[data-sonner-toast]').filter({ hasText: text });
+
+    // The syntax worktree has one open review: it opens.
+    await page.goto(cc({ ccProject: 'app', ccWorktree: 'syntax' }));
+    await page.getByRole('heading', { name: 'Syntax' }).waitFor();
+    await page.waitForFunction(() => !location.search.includes('cc'));
+    assert.deepEqual(params(page), { project: 'app', worktree: 'syntax', review: syntax });
+    await shot('20-menu-one-review');
+
+    // The feature worktree has several: its Checkout tab, This checkout / Open.
+    await page.goto(cc({ ccProject: 'app', ccWorktree: 'feature' }));
+    await page.getByRole('region', { name: 'Reviews' }).getByText('Feature work').waitFor();
+    assert.deepEqual(params(page), { project: 'app', worktree: 'feature' });
+    assert.equal(await page.getByLabel('Scope').inputValue(), 'checkout');
+    assert.equal(await page.getByLabel('Status').inputValue(), 'open');
+    await shot('20-menu-list');
+
+    // A project with no open review: the list says so.
+    await page.goto(cc({ ccProject: 'other' }));
+    await page.getByRole('region', { name: 'Reviews' }).getByText('No open reviews').waitFor();
+    assert.deepEqual(params(page), { project: 'other' });
+    await shot('20-menu-no-open-reviews');
+
+    // An unknown project: a toast naming it, the params stripped, nothing chosen.
+    await page.goto(cc({ ccProject: 'nope' }));
+    await toast('code-conductor lists no project “nope”').waitFor();
+    assert.deepEqual(params(page), {});
+    await shot('20-menu-unknown-project');
+
+    // With a review open, cc's navigate to an unknown worktree toasts and keeps the review; to the main checkout it
+    // retargets in place (no reload) onto that checkout's one open review.
+    await page.goto(q({ review: syntax }));
+    await page.getByRole('heading', { name: 'Syntax' }).waitFor();
+    await page.evaluate(() => { window.__noReload = true; });
+    const length = await page.evaluate(() => history.length);
+    await navigateCc({ ccProject: 'app', ccWorktree: 'gone' });
+    await toast('project “app” has no worktree “gone”').waitFor();
+    assert.deepEqual(params(page), { project: 'app', worktree: 'feature', review: syntax });
+    assert.ok(await page.getByRole('heading', { name: 'Syntax' }).isVisible(), 'the open review stays');
+    await shot('20-menu-retarget-refused');
+    await navigateCc({ ccProject: 'app' });
+    await page.getByRole('heading', { name: 'Main checkout tidy-up' }).waitFor();
+    assert.deepEqual(params(page), { project: 'app', review: main });
+    assert.equal(await page.evaluate(() => window.__noReload), true, 'retargeted without a reload');
+    assert.equal(await page.evaluate(() => history.length), length, 'no history entry added');
+    await shot('20-menu-retarget');
+    // The two unknown names answer 404 from the lookup, by design.
+    assert.deepEqual(errors.filter((e) => !/^404 .*\/api\/checkout\/lookup\?/.test(e)), []);
+  }, { headless: true, viewport: { width: 1280, height: 800 } });
+
   // 17: the inbox, with a stub cc bridge. From an open review, Inbox → the main checkout's row opens that review in its own
   // checkout; a session switch while it is open leaves it open; Back returns to the inbox. A destroyed worktree's row says
   // "checkout gone", and its Close closes the review. Runs last: it removes a worktree.

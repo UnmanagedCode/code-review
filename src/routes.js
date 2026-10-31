@@ -7,7 +7,7 @@ import * as rounds from './rounds.js';
 import * as compare from './compare.js';
 import * as threads from './threads.js';
 import * as submissions from './submissions.js';
-import { sessions, sessionPlaces, checkoutInfo, checkoutCommits, checkoutCommit } from './checkouts.js';
+import { lookupCheckout, sessions, sessionPlaces, checkoutInfo, checkoutCommits, checkoutCommit } from './checkouts.js';
 import { codeGitPlugin } from './integrations.js';
 import { handle as handleMcp } from './mcp.js';
 import { HTTP_STATUS, attempt, refuse } from './refusals.js';
@@ -57,6 +57,11 @@ export function apiRouter() {
     ok: true, projects: (await lookupScope().list()).map((p) => ({ name: p.name })),
   })));
   r.get('/checkout', route(withCheckout(async (co) => ({ ok: true, ...(await checkoutInfo(co)) }))));
+  // cc's data alone, no git: validates a row-menu target even while the checkout's System is down.
+  r.get('/checkout/lookup', route(withCheckout(async (co) => {
+    const c = await lookupCheckout(co);
+    return { ok: true, checkout: { project: c.project, worktree: c.worktree } };
+  })));
   r.get('/checkout/commits', route(withCheckout(async (co, req) => ({ ok: true, commits: await checkoutCommits({ ...co, limit: req.query.limit }) }))));
   r.get('/checkout/commit', route(withCheckout(async (co, req) => ({ ok: true, commit: await checkoutCommit({ ...co, ref: req.query.ref }) }))));
   r.get('/sessions', route(withCheckout(async (co) => ({ ok: true, sessions: await sessions(co) }))));

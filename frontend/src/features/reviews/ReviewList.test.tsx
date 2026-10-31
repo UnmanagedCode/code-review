@@ -14,15 +14,15 @@ test('queries worktree= for the main checkout, the name for a worktree, and omit
   const net = stubFetch({ 'GET api/reviews': { reviews: [] } });
   const user = userEvent.setup();
   const { unmount } = render(<ReviewList project="app" worktree={undefined} />);
-  await screen.findByText('No reviews yet');
+  await screen.findByText('No open reviews');
   expect(queries(net).at(-1)).toBe('?project=app&worktree=&status=open');
   await user.selectOptions(screen.getByLabelText('Scope'), 'project');
-  await screen.findByText('No reviews yet');
+  await screen.findByText('No open reviews');
   expect(queries(net).at(-1)).toBe('?project=app&status=open');
   unmount();
   const net2 = stubFetch({ 'GET api/reviews': { reviews: [] } });
   render(<ReviewList project="app" worktree="feature" />);
-  await screen.findByText('No reviews yet');
+  await screen.findByText('No open reviews');
   expect(queries(net2).at(-1)).toBe('?project=app&worktree=feature&status=open');
 });
 
@@ -73,8 +73,8 @@ test('New review follows the reviews, outside the list, and opens the New review
 test('New review follows the empty state', async () => {
   stubFetch({ 'GET api/reviews': { reviews: [] } });
   render(<ReviewList project="app" worktree="feature" />);
-  await screen.findByText('No reviews yet');
-  expect(screen.getByText('No reviews yet').compareDocumentPosition(screen.getByRole('button', { name: 'New review' })) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  await screen.findByText('No open reviews');
+  expect(screen.getByText('No open reviews').compareDocumentPosition(screen.getByRole('button', { name: 'New review' })) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 });
 
 // Invariant: the echo of a revision the list already shows (rev <= the row's) costs no fetch; a newer rev does.
@@ -89,4 +89,16 @@ test('an SSE event for a listed review at or below its shown rev is ignored; a n
   act(() => FakeEventSource.last!.emit({ id: 'r-1', rev: 4 }));
   await act(() => vi.advanceTimersByTimeAsync(300));
   expect(net.count('GET api/reviews')).toBe(2);
+});
+
+// Invariant: the empty state names the status filter, so an empty Open list does not read as "this checkout has no reviews".
+test('the empty title follows the status filter', async () => {
+  stubFetch({ 'GET api/reviews': { reviews: [] } });
+  const user = userEvent.setup();
+  render(<ReviewList project="app" worktree={undefined} />);
+  await screen.findByText('No open reviews');
+  await user.selectOptions(screen.getByLabelText('Status'), 'closed');
+  await screen.findByText('No closed reviews');
+  await user.selectOptions(screen.getByLabelText('Status'), 'all');
+  await screen.findByText('No reviews yet');
 });

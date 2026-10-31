@@ -28,6 +28,9 @@ export const projects = () => api<{ projects: { name: string }[] }>('api/project
 export const checkout = (project: string, worktree: string | null) =>
   api<{ checkout: CheckoutInfo; forkPoints: ForkPoint[]; worktrees: { worktreeName: string; branch: string | null }[] }>(
     `api/checkout${q({ project, worktree })}`);
+/** Names a checkout from cc's data alone (no git); refuses `PROJECT_UNKNOWN` / `CHECKOUT_UNKNOWN`. `worktree` null = main. */
+export const checkoutLookup = (project: string, worktree: string | null) =>
+  api<{ checkout: { project: string; worktree: string | null } }>(`api/checkout/lookup${q({ project, worktree })}`);
 export const checkoutCommits = (project: string, worktree: string | null, limit?: number) =>
   api<{ commits: Commit[] }>(`api/checkout/commits${q({ project, worktree, limit })}`);
 /** One commit of a checkout named by any ref or sha; refused as `POST api/reviews` refuses it (`BAD_REF`, `REF_UNKNOWN`). */

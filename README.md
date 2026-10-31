@@ -12,6 +12,7 @@ A [code-conductor](https://github.com/UnmanagedCode/code-conductor) (cc) plugin 
 Docs: [features](docs/features.md) · [protocol](docs/protocol.md) · [architecture](docs/architecture.md).
 
 - **Review UI:** [features](docs/features.md#review-ui).
+- **cc row menus:** Show reviews on a project or worktree row ([features](docs/features.md#review-ui), Open from code-conductor).
 - **Review API:** REST + SSE under `/api` ([protocol](docs/protocol.md)).
 - **MCP tools:** `open_review`, `get_review`, `list_threads`, `get_hunk`, `annotate`, `reply`, `refresh_review`.
 - **Skill:** `review-dialog` (`skills/review-dialog/SKILL.md`).
@@ -21,7 +22,7 @@ Docs: [features](docs/features.md) · [protocol](docs/protocol.md) · [architect
 
 - **Stack:** Node ≥ 24, Express 4 backend; React 19 + Vite + Tailwind v4 UI; shadcn/Radix components copied from cc on first use; lucide + sonner; prismjs (syntax highlighting, a lazily loaded chunk). Follows cc's `docs/plugin-ui.md` (host contract, security, reference setup).
 - **Backend:** `server.js` binds `127.0.0.1` only, honours `$PORT` (default `7400`). Order: `/health`, `/api` (reserved), CSP header, static `frontend/dist`. No SPA fallback, so `/pluginBridge.js` and `/pluginTheme.css` 404 standalone.
-- **Manifest:** `conductor.plugin.json` (id `code-review`, `pluginApi: 1`); `claudePlugin: "."` with `.claude-plugin/plugin.json` and `skills/`; an `mcp` block and one conductor-scope convention.
+- **Manifest:** `conductor.plugin.json` (id `code-review`, `pluginApi: 1`); `claudePlugin: "."` with `.claude-plugin/plugin.json` and `skills/`; an `mcp` block, one conductor-scope convention, and two row-menu items (`menuItems`, project and worktree: Show reviews).
 
 ```
 conductor.plugin.json  server.js  package.json

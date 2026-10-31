@@ -9,9 +9,12 @@ import type { useFollowSession } from './useFollowSession';
 /**
  * The side pane while no review is open: the Inbox and Checkout tabs. The tab is the route's `view` (`inbox`, absent = Checkout),
  * written with replace like the review pane's tab. The Checkout panel stays mounted (`hidden`) so the list's selects survive a
- * switch; the Inbox panel mounts only while shown, so it never fetches in the background.
+ * switch; the Inbox panel mounts only while shown, so it never fetches in the background. The list is keyed by `arrival`
+ * (`useMenuTarget`), so each cc row-menu landing resets it to This checkout / Open.
  */
-export function ListPane({ route, follow, placeholder }: { route: Route; follow: ReturnType<typeof useFollowSession>; placeholder?: ReactNode }) {
+export function ListPane({ route, follow, arrival, placeholder }: {
+  route: Route; follow: ReturnType<typeof useFollowSession>; arrival: number; placeholder?: ReactNode;
+}) {
   const tab = route.view === 'inbox' ? 'inbox' : 'checkout';
   const choose = (v: string) => navigate({ view: v === 'inbox' ? 'inbox' : undefined }, { replace: true });
   return (
@@ -23,7 +26,7 @@ export function ListPane({ route, follow, placeholder }: { route: Route; follow:
       <TabsContent value="inbox" className="flex min-h-0 flex-1 flex-col"><Inbox /></TabsContent>
       <TabsContent value="checkout" forceMount hidden={tab !== 'checkout'} className="flex min-h-0 flex-1 flex-col">
         <CheckoutBar route={route} {...follow} />
-        {route.project ? <ReviewList project={route.project} worktree={route.worktree} /> : placeholder}
+        {route.project ? <ReviewList key={arrival} project={route.project} worktree={route.worktree} /> : placeholder}
       </TabsContent>
     </Tabs>
   );

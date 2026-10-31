@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { toast } from 'sonner';
 import { expect, test, vi } from 'vitest';
@@ -28,7 +28,7 @@ test('without a bridge nothing follows and the route is untouched', async () => 
   world();
   history.replaceState(null, '', '?project=app');
   render(<App />);
-  await screen.findByText('No reviews yet');
+  await screen.findByText('No open reviews');
   expect(location.search).toBe('?project=app');
 });
 
@@ -39,7 +39,7 @@ test('a session in a local project switches the checkout, replacing the history 
   const replace = vi.spyOn(history, 'replaceState');
   history.replaceState(null, '', '?project=app');
   render(<App />);
-  await screen.findByText('No reviews yet');
+  await screen.findByText('No open reviews');
   act(() => bridge.emit({ sessionId: 's-1', project: 'other', worktree: 'feature' }));
   await waitFor(() => expect(location.search).toBe('?project=other&worktree=feature'));
   expect(replace).toHaveBeenCalledWith(null, '', '?project=other&worktree=feature');
@@ -51,7 +51,7 @@ test('a conductor or unlisted session leaves the route alone and says so', async
   const bridge = installBridge(undefined);
   history.replaceState(null, '', '?project=app');
   render(<App />);
-  await screen.findByText('No reviews yet');
+  await screen.findByText('No open reviews');
   act(() => bridge.emit({ sessionId: 's-c', project: '.conduct', worktree: null }));
   expect(await screen.findByText('Active session’s project isn’t reviewable here')).toBeTruthy();
   expect(location.search).toBe('?project=app');
@@ -63,7 +63,7 @@ test('a checkout named by the route wins over the session on load', async () => 
   installBridge({ sessionId: 's-1', project: 'other', worktree: null });
   history.replaceState(null, '', '?project=app&worktree=feature');
   render(<App />);
-  await screen.findByText('No reviews yet');
+  await screen.findByText('No open reviews');
   await act(async () => {});
   expect(location.search).toBe('?project=app&worktree=feature');
 });
@@ -116,7 +116,7 @@ test('a session change while a review is open is ignored, not deferred', async (
   expect(screen.getByRole('heading', { name: 'Open review' })).toBeTruthy();
 
   await userEvent.setup().click(screen.getByRole('link', { name: 'Reviews' }));
-  await screen.findByText('No reviews yet');
+  await screen.findByText('No open reviews');
   await act(async () => {});
   expect(location.search).toBe('?project=app&worktree=feature');
 
@@ -131,10 +131,11 @@ test('a session change on the inbox updates the checkout and keeps the inbox', a
   const bridge = installBridge({ sessionId: 's-0', project: 'app', worktree: null });
   history.replaceState(null, '', '?project=app&view=inbox');
   render(<App />);
-  await screen.findByText('No open reviews');
+  const inbox = () => within(screen.getByRole('tabpanel', { name: 'Inbox' }));
+  await waitFor(() => expect(inbox().getByText('No open reviews')).toBeTruthy());
   act(() => bridge.emit({ sessionId: 's-1', project: 'other', worktree: 'feature' }));
   await waitFor(() => expect(location.search).toBe('?project=other&worktree=feature&view=inbox'));
-  expect(screen.getByText('No open reviews')).toBeTruthy();
+  expect(inbox().getByText('No open reviews')).toBeTruthy();
 });
 
 // Invariant: the first-run checkout (from the session, or the last one used) fills in project and keeps view=inbox.

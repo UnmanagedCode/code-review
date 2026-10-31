@@ -74,3 +74,15 @@ test('the open_review schema has no recipient property and has author', () => {
   assert.equal('recipient' in props, false);
   assert.equal(props.author.type, 'string');
 });
+
+test('menuItems: one Show reviews entry per row scope, each {label, scope, path} only, path "/", and a frontend is declared', () => {
+  // Invariant: cc accepts the entries (its shape rules: exact keys, non-empty label, known scope, a path without a query, a frontend to open) and both rows land on the page root.
+  assert.ok(manifest.frontend?.path, 'cc only shows menu items of a plugin with a frontend');
+  assert.ok(Array.isArray(manifest.menuItems));
+  for (const item of manifest.menuItems) {
+    assert.deepEqual(Object.keys(item).sort(), ['label', 'path', 'scope']);
+    assert.equal(item.label.trim(), 'Show reviews');
+    assert.equal(item.path, '/');
+  }
+  assert.deepEqual(manifest.menuItems.map((m) => m.scope).sort(), ['project', 'worktree']);
+});

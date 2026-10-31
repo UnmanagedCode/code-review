@@ -11,6 +11,10 @@
     "path": "/",
     "navLabel": "Code Review"
   },
+  "menuItems": [
+    { "label": "Show reviews", "scope": "project", "path": "/" },
+    { "label": "Show reviews", "scope": "worktree", "path": "/" }
+  ],
   "claudePlugin": ".",
   "conventions": [
     {

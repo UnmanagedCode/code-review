@@ -54,7 +54,8 @@ export async function seed() {
     // code-git is enabled in cc: "Open in code-git" links show wherever the page is framed (golden step 18).
     w.cc.state.plugins.push({ id: 'code-git', name: 'Code Git', enabled: true, hasFrontend: true });
 
-    srv = await bootServer({ cwd: projectRoot, entry: 'server.js', silent: true, env: { CODE_REVIEW_STORE: w.store.dir, CONDUCTOR_URL: process.env.CONDUCTOR_URL } });
+    // PROJECTS_ROOT: '' because bootServer inherits process.env and the child runs main(), which would otherwise move the real legacy store.
+    srv = await bootServer({ cwd: projectRoot, entry: 'server.js', silent: true, env: { CONDUCTOR_PLUGIN_DATA_DIR: w.store.dir, PROJECTS_ROOT: '', CONDUCTOR_URL: process.env.CONDUCTOR_URL } });
     const call = async (method, p, body) => {
       const res = await fetch(`${srv.url}/api/${p}`, { method, headers: { 'content-type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) });
       const json = await res.json();

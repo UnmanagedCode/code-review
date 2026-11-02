@@ -1,6 +1,7 @@
 import { test, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { tempStore } from './_store.js';
 import { storeRoot } from '../src/paths.js';
@@ -86,41 +87,42 @@ test('ids that are not store-shaped never touch the filesystem', async () => {
   assert.equal((await store.mutate('../x', () => ({}))).code, 'REVIEW_UNKNOWN');
 });
 
-test('the default root is $PROJECTS_ROOT/.code-review', () => {
-  const saved = { s: process.env.CODE_REVIEW_STORE, p: process.env.PROJECTS_ROOT };
-  delete process.env.CODE_REVIEW_STORE;
-  process.env.PROJECTS_ROOT = '/some/projects';
-  try {
-    assert.equal(storeRoot(), path.join('/some/projects', '.code-review'));
-  } finally {
-    if (saved.s !== undefined) process.env.CODE_REVIEW_STORE = saved.s;
-    if (saved.p === undefined) delete process.env.PROJECTS_ROOT; else process.env.PROJECTS_ROOT = saved.p;
-  }
-});
+/** Runs fn with CONDUCTOR_PLUGIN_DATA_DIR (and the legacy vars) set to the given values; restores all after. */
+function withEnv(vars, fn) {
+  const names = ['CONDUCTOR_PLUGIN_DATA_DIR', 'CODE_REVIEW_STORE', 'PROJECTS_ROOT'];
+  const saved = Object.fromEntries(names.map((n) => [n, process.env[n]]));
+  for (const n of names) delete process.env[n];
+  Object.assign(process.env, vars);
+  const restore = () => { for (const n of names) { if (saved[n] === undefined) delete process.env[n]; else process.env[n] = saved[n]; } };
+  return Promise.resolve().then(fn).finally(restore);
+}
 
-test('an unset root refuses STORE_UNCONFIGURED', async () => {
-  const saved = { s: process.env.CODE_REVIEW_STORE, p: process.env.PROJECTS_ROOT };
-  delete process.env.CODE_REVIEW_STORE;
-  delete process.env.PROJECTS_ROOT;
-  try {
+test('storeRoot returns an absolute CONDUCTOR_PLUGIN_DATA_DIR unchanged', () => withEnv({ CONDUCTOR_PLUGIN_DATA_DIR: '/some/data/code-review' }, () => {
+  // Invariant: the data dir cc assigns is the store root, verbatim.
+  assert.equal(storeRoot(), '/some/data/code-review');
+}));
+
+for (const [label, value] of [['unset', undefined], ['empty', ''], ['relative', 'data/code-review']]) {
+  test(`a ${label} data dir refuses STORE_UNCONFIGURED`, () => withEnv(value === undefined ? {} : { CONDUCTOR_PLUGIN_DATA_DIR: value }, async () => {
+    // Invariant: only an absolute data dir configures the store; the store API surfaces the same refusal.
     assert.throws(() => storeRoot(), (e) => e instanceof Refusal && e.code === 'STORE_UNCONFIGURED');
     assert.equal((await attempt(() => store.list())).code, 'STORE_UNCONFIGURED');
-  } finally {
-    if (saved.s !== undefined) process.env.CODE_REVIEW_STORE = saved.s;
-    if (saved.p !== undefined) process.env.PROJECTS_ROOT = saved.p;
-  }
-});
+  }));
+}
 
-test('CODE_REVIEW_STORE takes precedence over $PROJECTS_ROOT', () => {
-  const saved = { s: process.env.CODE_REVIEW_STORE, p: process.env.PROJECTS_ROOT };
-  process.env.CODE_REVIEW_STORE = '/explicit/store';
-  process.env.PROJECTS_ROOT = '/some/projects';
-  try {
-    assert.equal(storeRoot(), '/explicit/store');
-  } finally {
-    if (saved.s === undefined) delete process.env.CODE_REVIEW_STORE; else process.env.CODE_REVIEW_STORE = saved.s;
-    if (saved.p === undefined) delete process.env.PROJECTS_ROOT; else process.env.PROJECTS_ROOT = saved.p;
-  }
+test('PROJECTS_ROOT and CODE_REVIEW_STORE alone never configure the store', () => withEnv({ PROJECTS_ROOT: '/some/projects', CODE_REVIEW_STORE: '/explicit/store' }, () => {
+  // Invariant: no legacy fallback in core code.
+  assert.throws(() => storeRoot(), (e) => e instanceof Refusal && e.code === 'STORE_UNCONFIGURED');
+}));
+
+test('a data dir that does not exist yet is created by the first write', () => {
+  // Invariant: cc never creates the data dir, so the store creates it (and missing parents) on write.
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'cr-nodir-'));
+  return withEnv({ CONDUCTOR_PLUGIN_DATA_DIR: path.join(tmp, 'a/b/code-review') }, () => {
+    const review = { id: 'r-000000000a', rev: 1 };
+    store.write(review);
+    assert.ok(fs.existsSync(path.join(tmp, 'a/b/code-review/reviews/r-000000000a.json')));
+  }).finally(() => fs.rmSync(tmp, { recursive: true, force: true }));
 });
 
 test('the change emitter has no listener cap, since every open SSE client is a listener', () => {

@@ -23,7 +23,7 @@ const GET_DELAY_MS = { '/api/projects': 800 };
 const WORKTREES_DELAY_MS = 100;
 
 const store = fs.mkdtempSync(path.join(os.tmpdir(), 'cr-bench-store-'));
-process.env.CODE_REVIEW_STORE = store;
+process.env.CONDUCTOR_PLUGIN_DATA_DIR = store;
 const HUMAN = { kind: 'human' };
 const must = (res, what) => { if (!res.ok) throw new Error(`${what}: ${res.code} ${res.reason}`); return res; };
 

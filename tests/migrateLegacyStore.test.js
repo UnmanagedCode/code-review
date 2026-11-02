@@ -85,12 +85,11 @@ test('an empty target dir is replaced by the legacy store', (t) => {
 /** Asserts a refusal that names both paths, leaves the legacy dir byte-identical and puts nothing in the target. */
 function refuses(opts, match) {
   const before = snapshot(legacy);
-  const err = assert.throws(() => migrateLegacyStore({ env, ...opts }), (e) => {
+  assert.throws(() => migrateLegacyStore({ env, ...opts }), (e) => {
     assert.ok(e.message.includes(legacy) && e.message.includes(target), e.message);
     assert.match(e.message, match);
     return true;
   });
-  assert.equal(err, undefined);
   assert.deepEqual(snapshot(legacy), before);
 }
 
@@ -127,6 +126,20 @@ test('a legacy symlink to a dir refuses', () => {
     assert.throws(() => migrateLegacyStore({ env }), (e) => e.message.includes(legacy) && e.message.includes(target) && /is not a directory/.test(e.message));
     assert.equal(fs.existsSync(target), false);
     assert.ok(fs.existsSync(real));
+  } finally {
+    fs.rmSync(real, { recursive: true, force: true });
+  }
+});
+
+test('a target that is a symlink to a dir refuses and changes neither dir', () => {
+  // Invariant: a symlinked target is not a replaceable empty dir, so neither the pointee nor the legacy store is touched.
+  const real = fs.mkdtempSync(path.join(os.tmpdir(), 'cr-legacy-real-'));
+  try {
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    fs.symlinkSync(real, target);
+    refuses({}, /is not a directory/);
+    assert.equal(fs.lstatSync(target).isSymbolicLink(), true);
+    assert.deepEqual(fs.readdirSync(real), []);
   } finally {
     fs.rmSync(real, { recursive: true, force: true });
   }

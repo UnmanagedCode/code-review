@@ -47,7 +47,7 @@ PORT=7400 npm start    # http://127.0.0.1:7400/
 npm run dev            # Vite dev server, /api proxied to PLUGIN_BACKEND (default http://127.0.0.1:7400)
 ```
 
-The review store is `$CONDUCTOR_PLUGIN_DATA_DIR` (an absolute path; cc sets it to `<projects root>/.code-conductor/plugins/data/code-review`). A standalone run must export it; without it the API answers 503 `STORE_UNCONFIGURED` and the page still loads. Standalone the page follows the OS light/dark scheme; the two host URLs 404 and log the only expected console errors.
+The review store is `$CONDUCTOR_PLUGIN_DATA_DIR` (an absolute path; cc sets it to `<projects root>/.code-conductor/plugins/data/code-review`). A legacy store at `$PROJECTS_ROOT/.code-review` is moved into the data dir on start only when `PROJECTS_ROOT` is also set (with it unset the legacy store stays put and the data dir starts empty; see Migrations in [docs/architecture.md](docs/architecture.md#migrations)). A standalone run must export it; without it the API answers 503 `STORE_UNCONFIGURED` and the page still loads. Standalone the page follows the OS light/dark scheme; the two host URLs 404 and log the only expected console errors.
 
 ### Diagnostics
 

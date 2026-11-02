@@ -1,6 +1,6 @@
 /** Wording for backend refusal codes (`HTTP_STATUS` in src/refusals.js) and cc bridge codes: the one place UI copy for them lives. */
 const BACKEND: Record<string, string> = {
-  STORE_UNCONFIGURED: "Review store isn't configured: set CODE_REVIEW_STORE or PROJECTS_ROOT",
+  STORE_UNCONFIGURED: "Review store isn't configured: CONDUCTOR_PLUGIN_DATA_DIR must be an absolute path (cc sets it)",
   CONDUCTOR_UNAVAILABLE: "Can't reach code-conductor; project and session lists are unavailable",
   PROJECT_UNKNOWN: 'Project unknown',
   CHECKOUT_UNKNOWN: 'That worktree no longer exists',

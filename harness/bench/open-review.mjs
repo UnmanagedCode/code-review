@@ -39,7 +39,7 @@ async function measure(label, args, bump) {
   for (let i = 0; i < runs; i++) {
     bump(i);
     const store = fs.mkdtempSync(path.join(os.tmpdir(), 'cr-bench-store-'));
-    process.env.CODE_REVIEW_STORE = store;
+    process.env.CONDUCTOR_PLUGIN_DATA_DIR = store;
     cc.state.execCalls = [];
     const t0 = performance.now();
     const res = await reviews.openReview(args, { kind: 'human' });

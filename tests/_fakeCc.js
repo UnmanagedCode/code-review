@@ -126,7 +126,7 @@ function run(state, spec, req, res) {
  * `state.execDelayMs` delays every exec answer; `state.execInFlight` counts exec requests not yet answered and
  * `state.execMaxInFlight` the most there ever were at once.
  * Sets `CODE_REVIEW_CC_RETRY_MS` to 1 unless already set, so retries are instant, `CODE_REVIEW_LOOKUP_TTL_MS` to 0 unless
- * already set, so every request asks this fake afresh, and, when `CODE_REVIEW_STORE` is unset, points it at a temp dir
+ * already set, so every request asks this fake afresh, and, when `CONDUCTOR_PLUGIN_DATA_DIR` is unset, points it at a temp dir
  * so the operator log never lands in a real store; `close()` restores them and removes only a dir it made.
  */
 export async function fakeCc(fixture = {}) {
@@ -191,12 +191,12 @@ export async function fakeCc(fixture = {}) {
   await new Promise((r) => server.listen(0, '127.0.0.1', r));
   const prev = process.env.CONDUCTOR_URL;
   const prevRetry = process.env.CODE_REVIEW_CC_RETRY_MS;
-  const prevStore = process.env.CODE_REVIEW_STORE;
+  const prevStore = process.env.CONDUCTOR_PLUGIN_DATA_DIR;
   const prevTtl = process.env.CODE_REVIEW_LOOKUP_TTL_MS;
   if (prevRetry === undefined) process.env.CODE_REVIEW_CC_RETRY_MS = '1';
   if (prevTtl === undefined) process.env.CODE_REVIEW_LOOKUP_TTL_MS = '0';
   const ownStore = prevStore === undefined ? fs.mkdtempSync(path.join(os.tmpdir(), 'cr-fakecc-')) : null;
-  if (ownStore) process.env.CODE_REVIEW_STORE = ownStore;
+  if (ownStore) process.env.CONDUCTOR_PLUGIN_DATA_DIR = ownStore;
   process.env.CONDUCTOR_URL = `http://127.0.0.1:${server.address().port}`;
   return {
     state,
@@ -205,7 +205,7 @@ export async function fakeCc(fixture = {}) {
       if (prevRetry === undefined) delete process.env.CODE_REVIEW_CC_RETRY_MS;
       if (prevTtl === undefined) delete process.env.CODE_REVIEW_LOOKUP_TTL_MS;
       if (ownStore) {
-        if (process.env.CODE_REVIEW_STORE === ownStore) delete process.env.CODE_REVIEW_STORE;
+        if (process.env.CONDUCTOR_PLUGIN_DATA_DIR === ownStore) delete process.env.CONDUCTOR_PLUGIN_DATA_DIR;
         fs.rmSync(ownStore, { recursive: true, force: true });
       }
       for (const s of sockets) s.destroy();

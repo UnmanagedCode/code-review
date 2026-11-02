@@ -283,16 +283,14 @@ test('an unknown /api path is still a 404 JSON; malformed JSON is a 400 JSON', a
 });
 
 test('with the store unconfigured the API answers 503 STORE_UNCONFIGURED while /health still works', async () => {
-  const saved = { s: process.env.CODE_REVIEW_STORE, p: process.env.PROJECTS_ROOT };
-  delete process.env.CODE_REVIEW_STORE;
-  delete process.env.PROJECTS_ROOT;
+  const saved = process.env.CONDUCTOR_PLUGIN_DATA_DIR;
+  delete process.env.CONDUCTOR_PLUGIN_DATA_DIR;
   try {
     const res = await req('GET', '/reviews');
     assert.deepEqual([res.status, res.body.code], [503, 'STORE_UNCONFIGURED']);
     assert.equal((await fetch(base.replace('/api', '/health'))).status, 200);
   } finally {
-    process.env.CODE_REVIEW_STORE = saved.s;
-    if (saved.p !== undefined) process.env.PROJECTS_ROOT = saved.p;
+    process.env.CONDUCTOR_PLUGIN_DATA_DIR = saved;
   }
 });
 

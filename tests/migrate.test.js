@@ -112,13 +112,9 @@ test('an unparsable file is logged and left byte-identical; the other reviews ar
 
 test('an unconfigured store is a silent no-op', async (t) => {
   // Invariant: STORE_UNCONFIGURED from storeRoot is swallowed, so startup never fails on it.
-  const saved = { store: process.env.CODE_REVIEW_STORE, root: process.env.PROJECTS_ROOT };
-  delete process.env.CODE_REVIEW_STORE;
-  delete process.env.PROJECTS_ROOT;
-  t.after(() => {
-    process.env.CODE_REVIEW_STORE = saved.store;
-    if (saved.root !== undefined) process.env.PROJECTS_ROOT = saved.root;
-  });
+  const saved = process.env.CONDUCTOR_PLUGIN_DATA_DIR;
+  delete process.env.CONDUCTOR_PLUGIN_DATA_DIR;
+  t.after(() => { process.env.CONDUCTOR_PLUGIN_DATA_DIR = saved; });
   await migrateStore();
 });
 

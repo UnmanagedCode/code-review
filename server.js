@@ -4,6 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { apiRouter } from './src/routes.js';
 import { migrateStore } from './src/migrate.js';
+import { migrateLegacyStore } from './src/migrateLegacyStore.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const dist = path.join(here, 'frontend', 'dist');
@@ -36,7 +37,13 @@ export async function start({ port = Number(process.env.PORT) || DEFAULT_PORT, .
   });
 }
 
+/** Production boot: moves a legacy store into the data dir, then start(). Only this entry reads PROJECTS_ROOT, so tests that call start() can never move a real store. */
+export async function main(opts) {
+  migrateLegacyStore({ env: process.env });
+  return start(opts);
+}
+
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  const server = await start();
+  const server = await main();
   console.log(`code-review listening on http://127.0.0.1:${server.address().port}`);
 }

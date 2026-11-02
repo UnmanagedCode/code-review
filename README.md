@@ -47,7 +47,7 @@ PORT=7400 npm start    # http://127.0.0.1:7400/
 npm run dev            # Vite dev server, /api proxied to PLUGIN_BACKEND (default http://127.0.0.1:7400)
 ```
 
-The review store is `$CODE_REVIEW_STORE`, else `$PROJECTS_ROOT/.code-review`; without either the API answers 503 `STORE_UNCONFIGURED` and the page still loads. Standalone the page follows the OS light/dark scheme; the two host URLs 404 and log the only expected console errors.
+The review store is `$CONDUCTOR_PLUGIN_DATA_DIR` (an absolute path; cc sets it to `<projects root>/.code-conductor/plugins/data/code-review`). A standalone run must export it; without it the API answers 503 `STORE_UNCONFIGURED` and the page still loads. Standalone the page follows the OS light/dark scheme; the two host URLs 404 and log the only expected console errors.
 
 ### Diagnostics
 

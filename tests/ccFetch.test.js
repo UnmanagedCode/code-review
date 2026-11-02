@@ -224,16 +224,14 @@ test('the log rotates past LOG_MAX_BYTES', () => {
 });
 
 test('a log write failure never changes the refusal', async () => {
-  const saved = { s: process.env.CODE_REVIEW_STORE, p: process.env.PROJECTS_ROOT };
-  delete process.env.CODE_REVIEW_STORE;
-  delete process.env.PROJECTS_ROOT;
+  const saved = process.env.CONDUCTOR_PLUGIN_DATA_DIR;
+  delete process.env.CONDUCTOR_PLUGIN_DATA_DIR;
   cc.state.mode = 'error';
   try {
     assert.equal(await code(projects()), 'CONDUCTOR_UNAVAILABLE');
     assert.ok(console.error.mock.calls.some((c) => /could not write the operator log/.test(String(c.arguments[0]))));
   } finally {
-    process.env.CODE_REVIEW_STORE = saved.s;
-    if (saved.p !== undefined) process.env.PROJECTS_ROOT = saved.p;
+    process.env.CONDUCTOR_PLUGIN_DATA_DIR = saved;
   }
 });
 

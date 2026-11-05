@@ -20,10 +20,10 @@ export const reviewLink = (review) => link(reviewRoute(review));
 
 /**
  * Link to the route that shows `thread` in place: live threads at their file, outdated ones in the round they last sat in,
- * review threads in the Threads pane.
+ * review and group threads in the Threads pane.
  */
 export function threadLink(review, { id, status, anchor }) {
-  if (anchor.kind === 'review') return link({ ...reviewRoute(review), view: 'threads', thread: id });
+  if (anchor.kind === 'review' || anchor.kind === 'group') return link({ ...reviewRoute(review), view: 'threads', thread: id });
   const base = { ...reviewRoute(review), file: anchor.file, thread: id };
   if (anchor.kind === 'file') return link(status === 'outdated' ? { ...base, round: String(anchor.round) } : base);
   if (status !== 'outdated') return link({ ...base, side: anchor.side });

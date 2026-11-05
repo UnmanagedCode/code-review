@@ -52,9 +52,13 @@ export function makeAnchor({ file, side, startLine, endLine, round, fileLines, h
   return anchor;
 }
 
+/** True for an anchor that sits in a file: `lines` (a hunk anchor is stored as one) or `file`. */
+export const onFile = (a) => a.kind === 'lines' || a.kind === 'file';
+
 /** The positional part of an anchor: what the API shows and what a thread keeps of each earlier round. */
 export function anchorView(a) {
   if (a.kind === 'review') return { kind: a.kind, round: a.round };
+  if (a.kind === 'group') return { kind: a.kind, groupId: a.groupId, round: a.round };
   if (a.kind === 'file') return { kind: a.kind, file: a.file, round: a.round };
   const { kind, file, side, startLine, endLine, hunkId, round, linesHash, drifted } = a;
   return { kind, file, side, startLine, endLine, hunkId, round, linesHash, drifted };
@@ -63,6 +67,7 @@ export function anchorView(a) {
 /** Where a thread sits, in words: `a.js#L2-L4`, `a.js (whole file)` or `the review`. The file is not cleaned. */
 export function anchorLabel(a) {
   if (a.kind === 'review') return 'the review';
+  if (a.kind === 'group') return `group ${a.groupId}`;
   if (a.kind === 'file') return `${a.file} (whole file)`;
   return `${a.file}#L${a.startLine}${a.endLine > a.startLine ? `-L${a.endLine}` : ''}`;
 }

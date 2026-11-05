@@ -1,4 +1,4 @@
-import { anchorView, locate, makeAnchor } from './anchor.js';
+import { anchorView, locate, makeAnchor, onFile } from './anchor.js';
 
 /**
  * Moves each non-outdated thread to where its lines now sit in `snap`.
@@ -8,7 +8,7 @@ import { anchorView, locate, makeAnchor } from './anchor.js';
  * their `lines` and `linesHash` are re-read from that round's snapshot. On a range review (always a move to a new round)
  * the old anchor is kept in `pastAnchors` first, so the thread's position in every earlier round stays known; uncommitted
  * reviews have no past-round views and keep none.
- * A file anchor follows its file (a rename included) wherever it is in `snap`, binary or not; a review anchor never moves.
+ * A file anchor follows its file (a rename included) wherever it is in `snap`, binary or not; a review or group anchor never moves here (groups carry in grouping.js).
  */
 export async function followThreads(review, snap, mode, { renames = {}, round }) {
   const report = { moved: 0, drifted: 0, outdated: 0, dropped: 0 };
@@ -24,7 +24,7 @@ export async function followThreads(review, snap, mode, { renames = {}, round })
     if (mode === 'volatile') { gone.add(t.id); report.dropped++; } else { t.status = 'outdated'; report.outdated++; }
   };
   for (const t of review.threads) {
-    if (t.status === 'outdated' || t.anchor.kind === 'review') continue;
+    if (t.status === 'outdated' || !onFile(t.anchor)) continue;
     const a = t.anchor;
     const file = toNew.get(a.file) ?? a.file;
     const f = snap.files.find((x) => x.path === file);

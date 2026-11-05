@@ -6,6 +6,7 @@ import * as inbox from './inbox.js';
 import * as rounds from './rounds.js';
 import * as compare from './compare.js';
 import * as threads from './threads.js';
+import * as groups from './groups.js';
 import * as submissions from './submissions.js';
 import { lookupCheckout, sessions, sessionPlaces, checkoutInfo, checkoutCommits, checkoutCommit } from './checkouts.js';
 import { codeGitPlugin } from './integrations.js';
@@ -85,12 +86,14 @@ export function apiRouter() {
   r.get('/reviews/:id/file', route((req) => reviews.fileLines(req.params.id, req.query)));
 
   r.put('/reviews/:id/hunks/:hunkId/verdict', route((req) => reviews.setVerdict(req.params.id, req.params.hunkId, req.body?.verdict)));
+  r.put('/reviews/:id/groups/:groupId/verdict', route((req) => groups.setGroupVerdict(req.params.id, req.params.groupId, req.body?.verdict)));
   r.post('/reviews/:id/accept-file', route((req) => reviews.acceptFile(req.params.id, req.body?.file, req.body?.hunkIds)));
   r.post('/reviews/:id/threads', route((req) => threads.annotate(req.params.id, HUMAN, req.body ?? {})));
   r.post('/reviews/:id/threads/:tid/messages', route((req) => threads.reply(req.params.id, HUMAN, req.params.tid, req.body ?? {})));
   r.patch('/reviews/:id/threads/:tid', route((req) => threads.setThreadStatus(req.params.id, req.params.tid, req.body ?? {})));
   r.post('/reviews/:id/refresh', route((req) => reviews.refreshReview(req.params.id, HUMAN)));
   r.post('/reviews/:id/submissions', route((req) => submissions.composeSubmission(req.params.id)));
+  r.post('/reviews/:id/guide', route((req) => submissions.composeGuide(req.params.id)));
   r.post('/reviews/:id/submissions/:sid/result', route((req) => submissions.recordResult(req.params.id, req.params.sid, req.body ?? {})));
   r.post('/reviews/:id/read', route((req) => threads.markRead(req.params.id, req.body ?? {})));
 

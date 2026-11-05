@@ -33,7 +33,7 @@ function placeCopy(c, files) {
  * The threads of rounds `from` (A) and `to` (B) placed in the comparison's `files`: a from-copy of each thread live in
  * A (as of A, on the old side) and a to-copy of each thread live in B (as of B, on the new side).
  * `unplaced` has one entry per thread with no placed copy: its to-copy if it has one, else its from-copy.
- * Review threads sit on no file and are not compared.
+ * Review and group threads sit on no file and are not compared.
  */
 export function placeThreads({ review, from, to, files }) {
   const stored = new Map(review.threads.map((t) => [t.id, t]));

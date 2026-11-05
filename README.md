@@ -14,7 +14,7 @@ Docs: [features](docs/features.md) · [protocol](docs/protocol.md) · [architect
 - **Review UI:** [features](docs/features.md#review-ui).
 - **cc row menus:** Show reviews on a project or worktree row ([features](docs/features.md#review-ui), Open from code-conductor).
 - **Review API:** REST + SSE under `/api` ([protocol](docs/protocol.md)).
-- **MCP tools:** `open_review`, `get_review`, `list_threads`, `get_hunk`, `annotate`, `reply`, `refresh_review`.
+- **MCP tools:** `open_review`, `get_review`, `list_threads`, `get_hunk`, `annotate`, `reply`, `propose_groups`, `refresh_review`.
 - **Skill:** `review-dialog` (`skills/review-dialog/SKILL.md`).
 - **Conductor convention:** opt-in `review-in-code-review` (`conventions/conductor-review.md`).
 

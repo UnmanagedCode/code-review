@@ -219,7 +219,7 @@ test('refresh_review by an agent is agent activity: agentSeq advances when it ad
 });
 
 test('the tool set is exactly the expected list, and mcp.js never references setVerdict', () => {
-  const expected = ['annotate', 'get_hunk', 'get_review', 'list_threads', 'open_review', 'refresh_review', 'reply'];
+  const expected = ['annotate', 'get_hunk', 'get_review', 'list_threads', 'open_review', 'propose_groups', 'refresh_review', 'reply'];
   assert.deepEqual([..._toolNames()].sort(), expected);
   assert.deepEqual(manifest.mcp.tools.map((t) => t.name).sort(), expected);
   assert.doesNotMatch(fs.readFileSync(new URL('../src/mcp.js', import.meta.url), 'utf8'), /setVerdict/);
@@ -345,4 +345,58 @@ test('get_review text has a review threads line once the review has any', async 
   await result('annotate', { review: review.id, anchor: 'review', kind: 'comment', body: 'two' });
   assert.equal((await threads.setThreadStatus(review.id, a.thread.id, { status: 'resolved' })).ok, true);
   assert.match((await call('get_review', { review: review.id })).text, /^review threads: 1 open\/1 resolved$/m);
+});
+
+// ---- Groups ----
+
+const hunkIdsOf = async (id) => (await reviews.diff(id, {})).files[0].hunks.map((h) => h.id);
+
+test('propose_groups without a calling session is CALLER_UNKNOWN and writes nothing', async () => {
+  // Invariant: the only gate on a proposal is knowing the caller (it takes no role).
+  const { review } = await reviewOnFeature();
+  const [h1] = await hunkIdsOf(review.id);
+  const body = await call('propose_groups', { review: review.id, groups: [{ title: 't', description: 'd', hunks: [h1] }] }, {});
+  assert.equal(body.result.code, 'CALLER_UNKNOWN');
+  assert.deepEqual(store.read(review.id).groups, []);
+});
+
+test('get_review lists the groups, their verdicts and hunk ids and the ungrouped hunks in text and meta', async () => {
+  // Invariant: the agent sees what the human's Guided view shows: group order, verdict, hunks, ungrouped, guideMe.
+  const { review } = await reviewOnFeature();
+  const [h1, h2] = await hunkIdsOf(review.id);
+  const first = await call('get_review', { review: review.id });
+  assert.match(first.text, /groups: 0 \(0 accepted, 0 rejected, 0 pending\) · ungrouped hunks: 2 · guide me: offered/);
+  assert.equal(first.meta.guide.guideMe, true);
+  const res = await result('propose_groups', { review: review.id, groups: [{ title: 'Top edit', description: 'the **top**', hunks: [h1] }] });
+  assert.deepEqual([res.ok, res.groups, res.ungrouped], [true, [{ id: 'g1', order: 1, title: 'Top edit', hunkIds: [h1], verdict: 'pending' }], [h2]]);
+  const got = await call('get_review', { review: review.id });
+  assert.match(got.text, new RegExp(`groups: 1 \\(0 accepted, 0 rejected, 1 pending\\) · ungrouped hunks: 1 · guide me: no`));
+  assert.ok(got.text.includes(`1. [g1] pending · Top edit · h:${h1}`));
+  assert.ok(got.text.includes(`ungrouped: a.js h:${h2}`));
+  assert.deepEqual(got.meta.guide, {
+    groups: [{ id: 'g1', order: 1, title: 'Top edit', hunkIds: [h1], verdict: 'pending' }], ungrouped: [h2], guideMe: false,
+  });
+});
+
+test('get_hunk shows the groups a hunk sits in, in text and meta', async () => {
+  // Invariant: every hunk read names its groups, so an agent sees a shared hunk's memberships.
+  const { review } = await reviewOnFeature();
+  const [h1, h2] = await hunkIdsOf(review.id);
+  await result('propose_groups', { review: review.id, groups: [{ title: 'a', description: 'd', hunks: [h1, h2] }, { title: 'b', description: 'd', hunks: [h1] }] });
+  const got = await call('get_hunk', { review: review.id, hunk: h1 });
+  assert.match(got.text.split('\n')[0], /· groups g1, g2/);
+  assert.deepEqual(got.meta.hunks[0].groups, ['g1', 'g2']);
+  assert.deepEqual((await call('get_hunk', { review: review.id, hunk: h2 })).meta.hunks[0].groups, ['g1']);
+});
+
+test('list_threads names a group thread `group g1` with anchor kind group in meta', async () => {
+  // Invariant: a group thread lists with its group, and its link opens the Threads pane at the thread.
+  const { review } = await reviewOnFeature();
+  const [h1] = await hunkIdsOf(review.id);
+  await result('propose_groups', { review: review.id, groups: [{ title: 'a', description: 'd', hunks: [h1] }] });
+  const t = await result('annotate', { review: review.id, anchor: 'group', group: 'g1', kind: 'question', body: 'why together?' });
+  const got = await call('list_threads', { review: review.id });
+  assert.match(got.text, /\[t1\] question · open · group g1 · by reviewer/);
+  assert.equal(got.meta.threads[0].anchor, 'group');
+  assert.deepEqual(routeOf(got.meta.threads[0].link), { project: 'app', worktree: 'feature', review: review.id, thread: t.thread.id, view: 'threads' });
 });

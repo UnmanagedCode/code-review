@@ -4,6 +4,8 @@ import { world, HUMAN, agent, editLines } from './_world.js';
 import * as reviews from '../src/reviews.js';
 import * as threads from '../src/threads.js';
 import * as submissions from '../src/submissions.js';
+import * as groups from '../src/groups.js';
+import * as store from '../src/store.js';
 
 let w;
 beforeEach(async () => { w = await world(); w.session('s-author', { worktree: 'feature' }); });
@@ -253,4 +255,119 @@ test('every control character in a file path is stripped from the prompt, tabs a
   const text = ok(await submissions.composeSubmission(review.id)).submission.text;
   assert.ok(text.includes('sneaky[31m.js'));
   assert.ok(text.split('\n').every((l) => !/[\u0000-\u001f\u007f-\u009f]/.test(l)));
+});
+
+// ---- Groups ----
+
+const grouped = async () => {
+  const t = await twoHunks();
+  const spec = (title, ...hunks) => ({ title, description: `about ${title}`, hunks });
+  ok(await groups.proposeGroups(t.review.id, author, [spec('first', t.h1.id), spec('second', t.h2.id)]));
+  return t;
+};
+
+test('the round prompt lists the groups decided since the last delivered round submission and does not repeat a rejected group\'s hunks', async () => {
+  // Invariant: groups with verdict.seq > since are listed (accepted by title and size, rejected with their hunks); their hunks are not also under Rejected hunks.
+  const { review, h1, h2 } = await grouped();
+  ok(await groups.setGroupVerdict(review.id, 'g1', 'accepted'));
+  ok(await groups.setGroupVerdict(review.id, 'g2', 'rejected'));
+  const { submission } = ok(await submissions.composeSubmission(review.id));
+  assert.match(submission.text, /Accepted groups:\n- \[g1\] first \(1 hunk\)/);
+  assert.match(submission.text, new RegExp(`Rejected groups:\\n- \\[g2\\] second\\n  - a\\.js .* \\(h:${h2.id}\\)`));
+  assert.ok(!submission.text.includes('Rejected hunks:'));
+  assert.ok(!submission.text.includes(`h:${h1.id}`));
+  ok(await submissions.recordResult(review.id, submission.id, { ok: true }));
+  ok(await reviews.setVerdict(review.id, h1.id, 'rejected'));
+  const next = ok(await submissions.composeSubmission(review.id)).submission.text;
+  assert.ok(!next.includes('Accepted groups:') && !next.includes('Rejected groups:'), 'only what changed since');
+  assert.match(next, /Rejected hunks:/);
+});
+
+test('Guide me composes a guide submission to the recipient that stamps no submittedAt and does not move the round baseline', async () => {
+  // Invariant: only delivered round submissions set submittedAt and the "since" baseline.
+  const { review, h1 } = await grouped();
+  ok(await reviews.setVerdict(review.id, h1.id, 'rejected'));
+  const { submission: guide } = ok(await submissions.composeGuide(review.id));
+  assert.deepEqual([guide.kind, guide.recipient, guide.status], ['guide', 's-author', 'pending']);
+  ok(await submissions.recordResult(review.id, guide.id, { ok: true }));
+  assert.equal(store.read(review.id).rounds[0].submittedAt, null);
+  const { submission } = ok(await submissions.composeSubmission(review.id));
+  assert.equal(submission.kind, 'round');
+  assert.ok(submission.text.includes(`h:${h1.id}`), 'the earlier verdict is still new to the round prompt');
+  ok(await submissions.recordResult(review.id, submission.id, { ok: true }));
+  assert.notEqual(store.read(review.id).rounds[0].submittedAt, null);
+});
+
+test('the guide prompt states the groups and closes by the recipient\'s role', async () => {
+  // Invariant: author and reviewer recipients are told to call propose_groups; a conductor is told to relay it to the author.
+  const { review, h1, h2 } = await twoHunks();
+  const none = ok(await submissions.composeGuide(review.id)).submission.text;
+  assert.match(none, /Please group this round's diff into review steps\.\nIt has no groups yet\./);
+  assert.match(none, /you are the author/);
+  assert.match(none, /call propose_groups with every group of the round/);
+  ok(await groups.proposeGroups(review.id, author, [{ title: 'one', description: 'd', hunks: [h1.id] }]));
+  const some = ok(await submissions.composeGuide(review.id)).submission.text;
+  assert.match(some, new RegExp('\n1 group; 1 hunk in no group\\.\n'));
+  assert.ok(!some.includes(h2.id));
+});
+
+test('a conductor recipient is told to relay the guide to the author; a reviewer recipient to propose', async () => {
+  // Invariant: the closing line follows the recipient's role, as the round prompt's does.
+  w.session('s-cond', { project: '.conduct' });
+  w.session('s-worker', { worktree: 'feature' });
+  w.session('s-rev', { worktree: 'feature' });
+  w.addWorktree().commit({ 'a.js': editLines({ 2: 'top-edit' }) });
+  const { review } = ok(await reviews.openReview({ project: 'app', worktree: 'feature', author: 's-worker' }, agent('s-cond', '.conduct')));
+  const { text } = ok(await submissions.composeGuide(review.id)).submission;
+  assert.match(text, /Relay this to the author \(session s-worker\): tell it to group review=r-[0-9a-f]+ with propose_groups\./);
+  ok(await reviews.patchReview(review.id, { recipient: 's-rev' }));
+  const rev = ok(await submissions.composeGuide(review.id)).submission.text;
+  assert.match(rev, /you are the reviewer/);
+  assert.match(rev, /call propose_groups/);
+});
+
+test('Guide me is refused NO_GROUPS on an uncommitted review, NO_RECIPIENT without a recipient and REVIEW_CLOSED when closed', async () => {
+  // Invariant: the refusals of composeGuide, none of which stores a submission.
+  const other = w.addWorktree('other');
+  other.write('a.js', editLines({ 2: 'edit' }));
+  const u = ok(await reviews.openReview({ project: 'app', worktree: 'other', kind: 'uncommitted' }, agent('s-author'))).review;
+  assert.equal(codeOf(await submissions.composeGuide(u.id)), 'NO_GROUPS');
+  const { review } = await twoHunks({});
+  ok(await reviews.patchReview(review.id, { recipient: null }));
+  assert.equal(codeOf(await submissions.composeGuide(review.id)), 'NO_RECIPIENT');
+  ok(await reviews.patchReview(review.id, { status: 'closed' }));
+  assert.equal(codeOf(await submissions.composeGuide(review.id)), 'REVIEW_CLOSED');
+  assert.deepEqual([store.read(u.id).submissions, store.read(review.id).submissions], [[], []]);
+});
+
+test('composing a guide or a round supersedes any undelivered submission of either kind', async () => {
+  // Invariant: compose supersedes every pending or failed submission, so the last one is the live one.
+  const { review } = await twoHunks();
+  const first = ok(await submissions.composeGuide(review.id)).submission;
+  const second = ok(await submissions.composeSubmission(review.id)).submission;
+  const third = ok(await submissions.composeGuide(review.id)).submission;
+  const status = Object.fromEntries(store.read(review.id).submissions.map((s) => [s.id, s.status]));
+  assert.deepEqual(status, { [first.id]: 'superseded', [second.id]: 'superseded', [third.id]: 'pending' });
+});
+
+test('recording a result returns the submission\'s kind, round or guide', async () => {
+  // Invariant: recordResult's submission carries `kind`, as the protocol documents.
+  const { review } = await twoHunks();
+  const guide = ok(await submissions.composeGuide(review.id)).submission;
+  assert.equal(ok(await submissions.recordResult(review.id, guide.id, { ok: true })).submission.kind, 'guide');
+  const round = ok(await submissions.composeSubmission(review.id)).submission;
+  assert.equal(ok(await submissions.recordResult(review.id, round.id, { ok: false, code: 'SEND_FAILED' })).submission.kind, 'round');
+});
+
+test('a group verdict that writes no hunk is still new human activity and is listed under Accepted groups', async () => {
+  // Invariant: a group verdict takes its own humanSeq, so the next round is submittable and lists the group even when every hunk was already accepted.
+  const { review, h1, h2 } = await twoHunks();
+  ok(await reviews.setVerdict(review.id, h1.id, 'accepted'));
+  ok(await reviews.setVerdict(review.id, h2.id, 'accepted'));
+  ok(await groups.proposeGroups(review.id, author, [{ title: 'both', description: 'd', hunks: [h1.id, h2.id] }]));
+  await deliver(review.id);
+  const set = ok(await groups.setGroupVerdict(review.id, 'g1', 'accepted'));
+  assert.deepEqual(set.hunks, []);
+  const { submission } = ok(await submissions.composeSubmission(review.id));
+  assert.match(submission.text, /Accepted groups:\n- \[g1\] both \(2 hunks\)/);
 });

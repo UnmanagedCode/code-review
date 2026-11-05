@@ -1,9 +1,15 @@
 import * as reviews from './reviews.js';
 import * as threads from './threads.js';
+import * as groups from './groups.js';
 import { sessionCheckout, isConductorProject } from './checkouts.js';
 import { Refusal, attempt } from './refusals.js';
 import { reviewLink, threadLink } from './links.js';
 import { renderRollup, renderThreads, renderHunk } from './render.js';
+
+const guideMeta = (g) => ({
+  groups: g.groups.map((x) => ({ id: x.id, order: x.order, title: x.title, hunkIds: x.hunks.map((h) => h.id), verdict: x.verdict })),
+  ungrouped: g.ungrouped && g.ungrouped.map((h) => h.id), guideMe: g.guideMe.offered,
+});
 
 // Every handler returns a service result: a refusal, `{ok:true, ...}`, or `{text, meta}` for prose tools.
 const needCaller = (caller) => {
@@ -28,7 +34,10 @@ const handlers = {
 
   get_review: async (a) => {
     const res = await reviews.getReview(a.review);
-    return res.ok ? { text: renderRollup(res.review, res.files, res.reviewThreads), meta: { ...res.review, link: reviewLink(res.review) } } : res;
+    return res.ok ? {
+      text: renderRollup(res.review, res.files, res.reviewThreads, res.guide),
+      meta: { ...res.review, link: reviewLink(res.review), guide: res.guide && guideMeta(res.guide) },
+    } : res;
   },
 
   list_threads: async (a) => {
@@ -44,18 +53,20 @@ const handlers = {
     if (!res.ok) return res;
     return {
       text: res.hunks.map((h) => renderHunk(res.file, h)).join('\n\n'),
-      meta: { file: res.file, hunks: res.hunks.map((h) => ({ id: h.hunk.id, verdict: h.verdict, threadIds: h.threadIds })) },
+      meta: { file: res.file, hunks: res.hunks.map((h) => ({ id: h.hunk.id, verdict: h.verdict, threadIds: h.threadIds, groups: h.groups })) },
     };
   },
 
   annotate: (a, caller) => attempt(async () => {
     const actor = needCaller(caller);
     // `threads.annotate` checks the combination, for this surface and REST alike.
-    const anchor = { kind: a.anchor, file: a.file, side: a.side, startLine: a.startLine, endLine: a.endLine, hunkId: a.hunk };
+    const anchor = { kind: a.anchor, file: a.file, side: a.side, startLine: a.startLine, endLine: a.endLine, hunkId: a.hunk, groupId: a.group };
     return threads.annotate(a.review, actor, { anchor, kind: a.kind, severity: a.severity, body: a.body });
   }),
 
   reply: (a, caller) => attempt(async () => threads.reply(a.review, needCaller(caller), a.thread, { body: a.body, resolve: a.resolve === true, disposition: a.disposition })),
+
+  propose_groups: (a, caller) => attempt(() => groups.proposeGroups(a.review, needCaller(caller), a.groups)),
 
   refresh_review: (a, caller) => attempt(async () => reviews.refreshReview(a.review, needCaller(caller))),
 };

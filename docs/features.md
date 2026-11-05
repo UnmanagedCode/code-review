@@ -27,53 +27,75 @@ A **review** is a persisted discussion about one checkout (a project's main chec
 - Renaming a file gives all its hunks new ids (the path is part of the hash).
 - **Accept file** accepts the listed pending hunks of one file in one write, each recorded exactly like a per-hunk accept. Hunks that already have a verdict (rejected ones included) keep it. The request names hunk ids, so a hunk added since the UI loaded stays pending, and an id that left the round refuses the whole request. There is no whole-file reject or undo; per-hunk Pending clears.
 
+## Groups (guided review)
+
+A **group** is a set of hunks, possibly across files, with a title and a markdown description. The human walks a range or commit review as an ordered list of groups, gives each one verdict and comments on it as a whole. Uncommitted reviews have no groups (`NO_GROUPS`).
+
+- **Who makes them.** An agent calls `propose_groups` (the author on its own initiative, or any session when asked). The human presses **Guide me** to ask the recipient for them (see Submitting a round). A proposal sets the round's whole list, in reading order; it never writes a verdict.
+- **Membership.** A hunk may sit in several groups. Hunks in no group are the ungrouped bucket, listed with the review so nothing goes unreviewed.
+- **Group verdicts.** Accept group, Reject group and Pending (reopen) each write the group's own verdict and then its hunks:
+  - **Accept** accepts each hunk whose every group is accepted, whatever its verdict was; other hunks are untouched.
+  - **Reject** rejects every hunk of the group.
+  - **Pending** on a group with a verdict sets the group and its hunks pending, except a hunk another rejected group holds (it stays rejected). Pending on a group that is already pending writes nothing, whatever its hunks' verdicts; an accepted or rejected verdict applied again to a group that already has it re-runs its hunk writes.
+  - A group action never changes another group's verdict, so the outcome does not depend on the order of actions.
+- **Direct hunk verdicts win.** A per-hunk verdict (and Accept file) clears, to pending, the verdict of every group holding that hunk whose verdict differs from the new hunk verdict, and writes no other hunk. Accepting a hunk directly while its group is pending changes no group. The response lists the cleared ids (`clearedGroups`).
+- **Invariant:** every hunk of a rejected group is rejected, on every path.
+- **Re-proposal in the same round** replaces the list. A proposed group with exactly the hunks of a current group keeps its id, verdict and threads and takes the new title, description and order. Every other current group is retired: its verdict stays as history and no longer counts, its threads go `outdated` (still repliable). No hunk verdict changes.
+- **Refresh** carries a group only when every one of its hunks is unchanged (same hunk ids): same id, order, text, verdict and threads (the thread's `anchor.round` advances). Other groups are retired with reason `refresh`. Hunk verdicts carry as without groups, and a refresh never accepts code: a carried accepted group can hold a hunk that is still pending (it was waiting on a dropped group); accepting the group again accepts it.
+- **Guide me is offered** when the round has no groups, a refresh dropped groups since the last proposal, or a hunk a refresh added since the last proposal is in no group (even if that refresh was several rounds ago). A proposal resets the last two. The backend does not refuse Guide me when it is not offered; the flag only guides the UI.
+- **Group threads.** A group can be commented on (`anchor` `group`). They count toward the review's thread counts, unread and `mergeBlockers`, but sit on no file: they are in no per-file list, past-round view or comparison. They appear in `list_threads`, the `guide.threads` of the review detail, the thread counts and unread.
+- **Activity** (inbox ordering) includes groups proposed and a group verdict set or cleared.
+
 ## Threads
 
 - **Kinds:** `comment`, `question`, `suggestion`, `finding`. A `finding` requires a `severity` (`blocker|major|minor|nit`).
-- **Anchors:** a thread sits on one of four things:
+- **Anchors:** a thread sits on one of five things:
   - a line range on the old or new side; lines outside any hunk (context, expanded context) are allowed;
   - a whole hunk (stored as a line range over the hunk);
   - a whole file, any file in the diff (binary and too-large ones included);
+  - a group of a range or commit review (see Groups);
   - the review itself (cross-cutting issues).
-- **File and review threads over time.** A file thread follows its file: through a rename on a range refresh (`moved`); when the file leaves the diff it goes `outdated` on a range review and is dropped (`THREAD_DROPPED`) on an uncommitted one, like a line thread in that file. A review thread is never moved, outdated or dropped, and keeps its creation round.
+- **File and review threads over time.** A file thread follows its file: through a rename on a range refresh (`moved`); when the file leaves the diff it goes `outdated` on a range review and is dropped (`THREAD_DROPPED`) on an uncommitted one, like a line thread in that file. A review thread is never moved, outdated or dropped, and keeps its creation round. A group thread follows its group: it moves to the new round with a carried group and goes `outdated` when its group is retired.
 - **Resolve.** The human resolves or reopens any thread; a finding is resolved only with a disposition (`fixed` or `dismissed`). An agent's `reply` with `resolve: true` closes an open thread it opened itself; a conductor's closes any open thread an agent opened. Closing a finding needs `disposition` (`fixed` or `dismissed`), and the call is refused `INVALID_ARGUMENT` without one. Only open threads close: anything else (a user-opened thread, an already resolved one, or an outdated one) is marked as proposing resolution, so an agent never overrides a human's close; outdated threads never change status, because earlier rounds read a thread's status from its `resolution`. A reply without `resolve` never changes status.
 - **Outdated.** After a refresh, a thread whose lines cannot be found becomes `outdated` (still repliable, no longer re-anchored).
 - **Limits.** A message body is capped (`BODY_TOO_LARGE`). Prompts carry file paths with control characters removed.
 - **Citations.** `path#L10-L20` in a message body (relative to the checkout root) is parsed; agents see the cited lines inlined at the message's round.
 - **Unread.** A thread's unread count is the agent messages the human has not read; a review opened by an agent starts unseen. The human replying or marking read clears it.
 - **Roles** are derived per review and frozen on each message: a caller from project `.conduct` is `conductor`; the review's stored `author`, else its recipient, is `author` on a range/commit review; every other agent is `reviewer`. The summary's `recipientRole` is `conductor` when the recipient is the conductor session that opened the review. On an uncommitted review the human is the author, so no agent is: a non-conductor agent is a `reviewer`.
-- **`mergeBlockers`** = rejected hunks + open `question` threads, whatever the thread's anchor (open questions only on uncommitted reviews).
+- **`mergeBlockers`** = rejected hunks + open `question` threads, whatever the thread's anchor, group threads included (open questions only on uncommitted reviews).
 
 ## Rounds and refresh
 
 - A **round** is one snapshot epoch; messages record the round they were written in.
-- `refresh` on a range review pins the new HEAD (and merge-base) as round n+1: verdicts of surviving hunks are kept, the rest reset to pending; threads follow their lines (`moved`), re-anchor by surrounding context (`drifted`), or go `outdated`. An unchanged HEAD reports `unchanged` and adds no round.
+- `refresh` on a range review pins the new HEAD (and merge-base) as round n+1: verdicts of surviving hunks are kept, the rest reset to pending; threads follow their lines (`moved`), re-anchor by surrounding context (`drifted`), or go `outdated`. An unchanged HEAD reports `unchanged` and adds no round. The report counts the groups carried and dropped (`groups: {kept, dropped}`); see Groups for the carry rule.
 - `headMoved` on a range review means the checkout's HEAD differs from the pinned one: the UI's "refresh available" cue.
 - **Past rounds** (range reviews only) are viewable read-only, rebuilt from the round's pinned base and head. A range refresh records each thread's previous anchor (uncommitted reviews record none):
   - each thread sits at the anchor it had in that round (its file path then, its drift flag then);
   - messages written in later rounds are hidden and counted (`laterMessages`);
   - threads opened in a later round are absent;
   - a thread outdated in a later round shows the status it had before it went outdated; one outdated by then is outdated, at its last located anchor;
-  - open/resolved is otherwise the thread's current status, and there are no verdicts, no unread counts and no proposed resolutions.
+  - open/resolved is otherwise the thread's current status, and there are no verdicts, no unread counts and no proposed resolutions;
+  - groups and group threads are not shown.
 - **Comparing rounds** (range reviews only, read-only): round A's head against round B's head, A before B.
   - **Files:** those changed between the two heads that either round reviews (`path` in round B's diff, or `oldPath ?? path` in round A's). Upstream churn merged in between stays out; a file reverted to base in B stays in. Inside a kept file every line that differs between the heads shows, upstream edits included.
   - **Threads:** each thread live in round A sits on the left (old side) at its round-A lines, as of round A (later replies hidden and counted); each thread live in round B on the right at its round-B lines, as of B. Notes say "round A L… · outdated in round k" or "… · still applies in round B" (left copies) and "round B L…" (right copies).
   - **One card per row:** when both copies of a thread fall under one row (a context line, or a deleted/added pair in split), it shows once, as its round-B copy, noted with both positions.
   - **Not in diff:** base-side threads, threads in files unchanged between the rounds, and threads on binary/too-large files are listed under the Threads tab's Not in diff filter with the reason.
   - **Inline / phone:** one combined diff. Deleted lines are round A's, added lines round B's, context lines both; a thread on a changed line shows twice (under its deleted and its added line), one on an unchanged line once.
-  - Threads outdated by round A, or opened after round B, are not in the comparison (the round-A view lists the former).
+  - Threads outdated by round A, or opened after round B, are not in the comparison (the round-A view lists the former). Groups and group threads are not compared.
 - **Uncommitted anchors are volatile.** Every read and write re-locates threads in the live working tree. A pure line shift moves the thread with its lines; changed or vanished lines delete the thread, and a later reply gets `THREAD_DROPPED`. Edits elsewhere in the same hunk never touch it.
 
 ## Submitting a round
 
-- The human's activity since the last delivered submission is composed into a prompt for the **recipient** session (`POST …/submissions`): verdict tally, rejected hunks, threads with new human messages or status changes. Uncommitted reviews ask the recipient to review the changed files instead. A conductor recipient is asked to relay the round to the author (range/commit) or to brief a reviewer (uncommitted).
+- The human's activity since the last delivered submission is composed into a prompt for the **recipient** session (`POST …/submissions`): verdict tally, groups accepted or rejected since then (a rejected group's hunks are listed under it, not again as rejected hunks), the other rejected hunks, threads with new human messages or status changes. Uncommitted reviews ask the recipient to review the changed files instead. A conductor recipient is asked to relay the round to the author (range/commit) or to brief a reviewer (uncommitted).
+- **Guide me** (`POST …/guide`, range and commit reviews) composes a different submission, kind `guide`, that asks the recipient to group the round (a conductor recipient is asked to relay it to the author). It goes through the same pending → delivered path, but only delivered **round** submissions stamp `submittedAt`, set the "since" baseline and count for `NOTHING_TO_SUBMIT`. Composing either kind supersedes every undelivered submission. A delivered guide puts the turn on the agent; `propose_groups` hands it back.
 - The prompt is stored `pending`; the UI sends it through the cc bridge and reports the outcome. `delivered` stamps the round's `submittedAt`; a failure keeps it re-sendable; composing again supersedes undelivered ones. A first submission is always allowed; later ones need new human activity (`NOTHING_TO_SUBMIT`).
 - **Recipient.** An agent-opened review: the opening session. A human-opened one: the explicit session, else the single live session attached to the checkout, else none (`NO_RECIPIENT` on submit until set).
 - **Author.** A conductor opening a range/commit review names the worker with `author`; the stored session takes the author role while the conductor stays recipient and relays the rounds.
 
 ## Agent surface
 
-- **MCP tools** (`code-review__<tool>`): `open_review`, `get_review`, `list_threads`, `get_hunk`, `annotate`, `reply`, `refresh_review`. Review and thread results carry a `link` that opens them in the plugin view. Schemas and results: [protocol.md](protocol.md#mcp).
+- **MCP tools** (`code-review__<tool>`): `open_review`, `get_review`, `list_threads`, `get_hunk`, `annotate`, `reply`, `propose_groups`, `refresh_review`. Review and thread results carry a `link` that opens them in the plugin view. Schemas and results: [protocol.md](protocol.md#mcp).
 - **Skill** `review-dialog` (`skills/review-dialog/SKILL.md`): how an author or reviewer session works a review.
 - **Conductor convention** `review-in-code-review` (`conventions/conductor-review.md`, scope `conductor`, opt-in per task): open a review on the worker's checkout naming the worker as author, relay its rounds to the worker, have reviewer lenses post findings, hold `merge_worktree` while `mergeBlockers` is above 0.
 
@@ -85,7 +107,7 @@ The plugin page. Wire calls are in [protocol.md](protocol.md); module layout in 
 - **Inbox.** Every open review of every project and checkout, latest activity first (ties: newer id first). Closed reviews are not listed.
   - A row shows the title (else the target label), `project · worktree` (`main checkout` for the main one), whose turn it is, the kind, the round, a "new" badge until the human has seen the review, and the unread badge. Picking a row opens that review in its own checkout (a history entry: Back returns to the inbox).
   - **Waiting on agent:** the newest submission was delivered, and no agent has replied, annotated or refreshed into a new round since it was composed. **Your turn:** anything else: nothing submitted yet, the newest submission is pending or failed (it needs Re-send or Mark as sent), or an agent acted after it. The human's own comments, verdicts and refreshes while waiting keep it on the agent.
-  - **Activity** (what orders the list): every message, verdict set or cleared, thread resolve or reopen, submission composed, submission result recorded, and refresh that adds a round. Marking read, renaming, changing the recipient, closing/reopening and an unchanged refresh are not activity.
+  - **Activity** (what orders the list): every message, verdict set or cleared, thread resolve or reopen, submission composed, submission result recorded, groups proposed, a group verdict set or cleared, and refresh that adds a round. Marking read, renaming, changing the recipient, closing/reopening and an unchanged refresh are not activity.
   - **Checkout gone:** a row whose project or worktree cc no longer lists gets a "checkout gone" badge and a **Close** button (closes the review; it leaves the inbox). When cc cannot be reached the rows show no badge. The inbox runs no git, so it never marks a System that is down; opening the review shows that.
   - **Live updates:** any review event refetches it. A worktree cc removes with no review activity is marked on the next refetch (the next review event, or reopening the inbox).
 - **Open from code-conductor.** The ⋮ menus of cc's project and worktree rows have **Show reviews** (grouped under Code Review). The project row means its main checkout. Contract: [protocol](protocol.md#ui-routes), Row menu.

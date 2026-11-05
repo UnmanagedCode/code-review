@@ -95,3 +95,10 @@ test('the round view of a thread shows the positional anchor only', () => {
 test('the anchor chain lists earlier positions oldest first, then the current anchor without its lines', () => {
   assert.deepEqual(anchorChain(thread({ pastAnchors: [pos(1, 5), pos(2, 6)], anchor: stored(3, 7) })), [pos(1, 5), pos(2, 6), pos(3, 7)]);
 });
+
+test('threadsAt omits group threads, in every round', () => {
+  // Invariant: a group exists in one round, so past-round views and comparisons never show its threads.
+  const group = thread({ id: 't2', anchor: { kind: 'group', groupId: 'g1', round: 2 }, messages: [msg(1)] });
+  const line = thread();
+  for (const n of [1, 2, 3]) assert.deepEqual(at([group, line], n).map((t) => t.id), ['t1']);
+});

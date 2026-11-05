@@ -69,7 +69,8 @@ export function summarize(review, files, live) {
     mergeBlockers: mergeBlockers(review, files),
     unread: review.threads.reduce((n, t) => n + unreadOf(t), 0),
     seenByHuman: review.seenByHuman, rev: review.rev, createdAt: review.createdAt, createdBy: review.createdBy,
-    lastSubmission: last ? { id: last.id, status: last.status, code: last.code, round: last.round } : null,
+    groups: live.groups,
+    lastSubmission: last ? { id: last.id, status: last.status, code: last.code, round: last.round, kind: last.kind } : null,
   };
 }
 

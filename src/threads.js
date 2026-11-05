@@ -1,4 +1,4 @@
-import { makeAnchor } from './anchor.js';
+import { makeAnchor, onFile } from './anchor.js';
 import { attempt, Refusal } from './refusals.js';
 import { authorFor, assertOpen, currentRound, inReview, viewReview } from './context.js';
 import { threadView, tally, liveSig } from './rollup.js';
@@ -41,9 +41,10 @@ const ANCHOR_KINDS = {
   hunk: { takes: ['hunkId'], needs: ['hunkId'] },
   file: { takes: ['file'], needs: ['file'] },
   review: { takes: [], needs: [] },
+  group: { takes: ['groupId'], needs: ['groupId'] },
 };
 // Spec keys in domain words, so one refusal reads the same over REST and MCP and never names a key.
-const WORDS = { file: 'a file', side: 'a side', startLine: 'a start line', endLine: 'an end line', hunkId: 'a hunk' };
+const WORDS = { file: 'a file', side: 'a side', startLine: 'a start line', endLine: 'an end line', hunkId: 'a hunk', groupId: 'a group' };
 const list = (w) => (w.length > 1 ? `${w.slice(0, -1).join(', ')} and ${w.at(-1)}` : w[0]);
 
 /**
@@ -61,10 +62,15 @@ function checkSpec(spec) {
   if (lacking.length) throw invalid(`a ${spec.kind} anchor needs ${list(lacking.map((k) => WORDS[k]))}`);
 }
 
-// A checked spec -> a complete anchor; `snap` (the current snapshot) is null for a review anchor, which reads none.
+// A checked spec -> a complete anchor; `snap` (the current snapshot) is null for a review or group anchor, which read none.
 async function buildAnchor(review, snap, spec) {
   const round = currentRound(review).n;
   if (spec.kind === 'review') return { kind: 'review', round };
+  if (spec.kind === 'group') {
+    if (review.kind === 'uncommitted') throw new Refusal('NO_GROUPS', 'uncommitted reviews have no groups');
+    if (typeof spec.groupId !== 'string' || !review.groups.some((g) => g.id === spec.groupId)) throw new Refusal('GROUP_UNKNOWN', `no such group in round ${round}: ${spec.groupId}`);
+    return { kind: 'group', groupId: spec.groupId, round };
+  }
   if (spec.kind === 'file') {
     const f = snap.files.find((x) => x.path === spec.file);
     if (!f) throw new Refusal('FILE_NOT_IN_DIFF', `${spec.file} is not in the diff`);
@@ -99,10 +105,10 @@ async function buildAnchor(review, snap, spec) {
 /**
  * `{path, sig}` of the thread's file in the live diff after a write, from a snapshot this request already has
  * (uncommitted: the sweep's; committed: this process's cached one, else read). Never fails the write: `sig` null.
- * A review thread is on no file: null.
+ * A review or group thread is on no file: null.
  */
 async function sigAfterWrite(review, env, thread) {
-  if (thread.anchor.kind === 'review') return null;
+  if (!onFile(thread.anchor)) return null;
   const path = thread.anchor.file;
   let snap = null;
   try {
@@ -124,15 +130,15 @@ function message(review, actor, body, extra = {}) {
   };
 }
 
-/** Starts a thread on lines, a whole hunk, a whole file or the review. */
+/** Starts a thread on lines, a whole hunk, a whole file, a group or the review. */
 export const annotate = (id, actor, { anchor, kind, severity, body }) => attempt(() => inReview(id, async (review, env) => {
   assertOpen(review);
   if (!KINDS.includes(kind)) throw invalid(`kind must be one of ${KINDS.join(', ')}`);
   if (kind === 'finding' && !SEVERITIES.includes(severity)) throw new Refusal('SEVERITY_REQUIRED', `a finding needs a severity: ${SEVERITIES.join(', ')}`);
   needBody(body);
   checkSpec(anchor);
-  // Only a review anchor reads no snapshot, so it can be written while the diff is unreadable.
-  const snap = anchor.kind === 'review' ? null : await env.snapshot();
+  // Only a review or group anchor reads no snapshot, so it can be written while the diff is unreadable.
+  const snap = anchor.kind === 'review' || anchor.kind === 'group' ? null : await env.snapshot();
   const built = await buildAnchor(review, snap, anchor);
   const first = message(review, actor, body);
   const thread = {
@@ -141,7 +147,7 @@ export const annotate = (id, actor, { anchor, kind, severity, body }) => attempt
     humanReadSeq: actor.kind === 'human' ? first.seq : 0, createdAt: now(), messages: [first],
   };
   review.threads.push(thread);
-  return { ok: true, thread: threadView(thread), fileSig: built.kind === 'review' ? null : liveSig(review, snap, built.file) };
+  return { ok: true, thread: threadView(thread), fileSig: onFile(built) ? liveSig(review, snap, built.file) : null };
 }));
 
 /** Adds a message. `resolve` closes a thread the caller may close (`mayClose`), otherwise it proposes resolution. */

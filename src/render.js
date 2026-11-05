@@ -8,8 +8,23 @@ const sid8 = (a) => clean(a.sessionId.slice(0, 8));
 export const who = (a) => (a.kind === 'human' ? 'human' : `${a.role} ${sid8(a)}`);
 
 
-/** Per-file rollup of a ReviewSummary + FileStates, with a line for the review threads when there are any. */
-export function renderRollup(s, files, reviewThreads = []) {
+const hunkIds = (ids) => ids.map((h) => `h:${h}`).join(' ');
+
+// The guide block of the rollup: a header, one line per group, then the ungrouped hunks by file.
+function renderGuide(guide) {
+  const n = (v) => guide.groups.filter((g) => g.verdict === v).length;
+  const out = [`groups: ${guide.groups.length} (${n('accepted')} accepted, ${n('rejected')} rejected, ${n('pending')} pending) · ungrouped hunks: ${guide.ungrouped ? guide.ungrouped.length : 'unknown'} · guide me: ${guide.guideMe.offered ? 'offered' : 'no'}`];
+  for (const g of guide.groups) out.push(`${g.order}. [${g.id}] ${g.verdict} · ${clean(g.title)} · ${hunkIds(g.hunks.map((h) => h.id))}`);
+  if (guide.ungrouped?.length) {
+    const byFile = new Map();
+    for (const h of guide.ungrouped) byFile.set(h.file, [...(byFile.get(h.file) ?? []), h.id]);
+    out.push(`ungrouped: ${[...byFile].map(([file, ids]) => `${clean(file)} ${hunkIds(ids)}`).join('; ')}`);
+  }
+  return out;
+}
+
+/** Per-file rollup of a ReviewSummary + FileStates, with a line for the review threads when there are any, and the groups when `guide` is set. */
+export function renderRollup(s, files, reviewThreads = [], guide = null) {
   const out = [
     `${clean(s.id)} · ${clean(s.label)} · round ${s.round} · ${s.status}`,
     `recipient: ${s.recipient ? `${clean(s.recipient)} (${s.recipientRole})` : 'none'}${s.author ? ` · author: ${clean(s.author)}` : ''} · mergeBlockers: ${s.mergeBlockers} · unread: ${s.unread}`,
@@ -19,6 +34,7 @@ export function renderRollup(s, files, reviewThreads = []) {
     const open = reviewThreads.filter((t) => t.status === 'open').length;
     out.push(`review threads: ${open} open/${reviewThreads.length - open} resolved`);
   }
+  if (guide) out.push(...renderGuide(guide));
   if (s.snapshotError) out.push(`diff unavailable: ${clean(s.snapshotError)}`);
   for (const f of files) {
     const v = f.verdicts ? `hunks ${f.verdicts.pending} pending/${f.verdicts.accepted} accepted/${f.verdicts.rejected} rejected` : `hunks ${f.hunks}`;
@@ -49,8 +65,8 @@ export function renderThreads(threads) {
 
 /** One hunk with `old new` line-number gutters. */
 export function renderHunk(path, entry) {
-  const { hunk, verdict, threadIds } = entry;
-  const head = `${clean(path)} ${hunk.kind === 'text' ? clean(hunk.header) : '(file-level change)'} (h:${hunk.id})${verdict ? ` · ${verdict}` : ''}${threadIds.length ? ` · threads ${threadIds.join(', ')}` : ''}`;
+  const { hunk, verdict, threadIds, groups } = entry;
+  const head = `${clean(path)} ${hunk.kind === 'text' ? clean(hunk.header) : '(file-level change)'} (h:${hunk.id})${verdict ? ` · ${verdict}` : ''}${threadIds.length ? ` · threads ${threadIds.join(', ')}` : ''}${groups.length ? ` · groups ${groups.join(', ')}` : ''}`;
   const num = (n) => (n === null ? '    ' : String(n).padStart(4));
   const sign = { ctx: ' ', add: '+', del: '-' };
   return [head, ...hunk.lines.map((l) => `${num(l.old)} ${num(l.new)} ${sign[l.t]}${l.text}`)].join('\n');

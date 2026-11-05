@@ -28,9 +28,24 @@ function anchorKinds(review) {
   }
 }
 
+/** Gives a review the group fields it lacks. */
+function groupFields(review) {
+  review.groups ??= [];
+  review.retiredGroups ??= [];
+  review.nextGroup ??= 1;
+  review.sinceProposal ??= { dropped: 0, newHunkIds: [] };
+}
+
+/** Marks every submission with no `kind` as a round submission. */
+function submissionKinds(review) {
+  for (const s of review.submissions) if (s.kind === undefined) s.kind = 'round';
+}
+
 const upgrade = (review) => {
   backfill(review);
   anchorKinds(review);
+  groupFields(review);
+  submissionKinds(review);
 };
 
 /**

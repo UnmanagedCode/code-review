@@ -15,9 +15,9 @@ REST under `/api` (JSON), an SSE stream, and the cc MCP endpoint. Behaviour behi
 
 | Status | Codes |
 |---|---|
-| 400 | `INVALID_ARGUMENT` `BAD_REF` `BASE_REQUIRED` `LINE_OUT_OF_RANGE` `SEVERITY_REQUIRED` `CALLER_UNKNOWN` |
-| 404 | `PROJECT_UNKNOWN` `CHECKOUT_UNKNOWN` `REF_UNKNOWN` `REVIEW_UNKNOWN` `THREAD_UNKNOWN` `HUNK_UNKNOWN` `FILE_NOT_IN_DIFF` `SUBMISSION_UNKNOWN` `COMMIT_NOT_IN_RANGE` `RECIPIENT_UNKNOWN` `ROUND_UNKNOWN` `AUTHOR_UNKNOWN` (MCP only) |
-| 409 | `CHECKOUT_GONE` `NO_COMMON_ANCESTOR` `UNBORN_HEAD` `IMMUTABLE_TARGET` `NO_VERDICTS` `REVIEW_CLOSED` `BINARY_FILE` `NO_RECIPIENT` `NOTHING_TO_SUBMIT` `SUBMISSION_NOT_PENDING` `THREAD_DROPPED` |
+| 400 | `INVALID_ARGUMENT` `BAD_REF` `BASE_REQUIRED` `LINE_OUT_OF_RANGE` `SEVERITY_REQUIRED` `CALLER_UNKNOWN` `GROUP_EMPTY` (a proposed group with no hunks) |
+| 404 | `PROJECT_UNKNOWN` `CHECKOUT_UNKNOWN` `REF_UNKNOWN` `REVIEW_UNKNOWN` `THREAD_UNKNOWN` `HUNK_UNKNOWN` `FILE_NOT_IN_DIFF` `SUBMISSION_UNKNOWN` `COMMIT_NOT_IN_RANGE` `RECIPIENT_UNKNOWN` `ROUND_UNKNOWN` `AUTHOR_UNKNOWN` (MCP only) `GROUP_UNKNOWN` (not a group of the current round; retired ids included) |
+| 409 | `CHECKOUT_GONE` `NO_COMMON_ANCESTOR` `UNBORN_HEAD` `IMMUTABLE_TARGET` `NO_VERDICTS` `NO_GROUPS` (an uncommitted review has no groups) `REVIEW_CLOSED` `BINARY_FILE` `NO_RECIPIENT` `NOTHING_TO_SUBMIT` `SUBMISSION_NOT_PENDING` `THREAD_DROPPED` |
 | 410 | `SNAPSHOT_GONE` (a pinned sha was garbage-collected) |
 | 413 | `DIFF_TOO_LARGE` (a diff, or a working-tree file read, over `MAX_DIFF_BYTES` in `src/git.js`) `BODY_TOO_LARGE` |
 | 415 | `UNSUPPORTED_MEDIA_TYPE` |
@@ -27,7 +27,8 @@ REST under `/api` (JSON), an SSE stream, and the cc MCP endpoint. Behaviour behi
 
 ## Shapes
 
-- **ReviewSummary:** `id, project, worktree, branch, kind, target, label, title, status, recipient, author|null, recipientRole, round, headSha, baseSha, headMoved, dirty, checkoutGone, counts:{files, hunks, threads:{open,resolved,outdated}}, mergeBlockers, unread, seenByHuman, rev, createdAt, createdBy, lastSubmission:{id,status,code,round}|null`.
+- **ReviewSummary:** `id, project, worktree, branch, kind, target, label, title, status, recipient, author|null, recipientRole, round, headSha, baseSha, headMoved, dirty, checkoutGone, counts:{files, hunks, threads:{open,resolved,outdated}}, mergeBlockers, unread, seenByHuman, rev, createdAt, createdBy, lastSubmission:{id,status,code,round,kind}|null, groups`.
+  - `groups` is `{total, accepted, rejected, pending, ungrouped, guideMe}` (the current round's groups; `ungrouped` counts hunks in no group, `null` while the snapshot is unreadable; `guideMe` is a boolean), or `null` on uncommitted reviews.
   - `counts.hunks` is `{pending,accepted,rejected}`, or `{total}` for uncommitted reviews.
   - `snapshotError` (`CHECKOUT_GONE|SNAPSHOT_GONE|DIFF_TOO_LARGE|TEMP_UNUSABLE|SYSTEM_UNREACHABLE|GIT_TIMEOUT|GIT_UNAVAILABLE`) is present when the diff is unreadable; `counts.files` and `counts.hunks` are then `null`. With `TEMP_UNUSABLE` or one of the last three the system could not serve the read: `checkoutGone` and `dirty` are then `false`, never a claim that the checkout is missing.
 - **InboxItem** (`GET /inbox`): `id, project, worktree, branch, kind, label, title, round, unread, seenByHuman, lastActivityAt, turn, checkoutGone`.
@@ -38,7 +39,7 @@ REST under `/api` (JSON), an SSE stream, and the cc MCP endpoint. Behaviour behi
   - `sig`: an opaque 20-hex string. Within one view (live, a past round, a comparison, a commit filter), equal `sig`s mean the file's whole response is identical: content (hunk texts, blob ids, the round's shas), its FileState fields, its hunks' verdicts and its threads as that view renders them, replies, `unread` and status included. A FileState's `sig` equals the same file's DiffFile `sig` in the matching diff (`GET /reviews/:id` ↔ `diff`, `rounds/:n` ↔ `diff?round=n`).
 - **DiffFile** (`diff`, `diff?round=`, `diff?commit=`, `compare`): FileState + `hunks:[Hunk], threads:[Thread], lineCount:{old, new}, sig`.
   - `lineCount.old` / `.new`: each side's `total` as `GET /reviews/:id/file` reports it in that response's round (compare: old = round A's head, new = round B's head); `null` for a side the file lacks (`added` → old, `deleted` → new) and both `null` for binary or `tooLarge` files. An empty side is `0` (which `GET …/file` cannot window). Exception: an uncommitted file whose working-tree bytes differ from what git diffs (a clean filter such as git-lfs, a symlink) gets the count of the content the diff shows.
-- **fileSig** (on `POST …/threads`, `POST …/messages`, `PATCH …/threads/:tid`, `PUT …/verdict`, `POST …/accept-file`, and MCP `annotate`/`reply` results): `{path, sig}`, the `sig` the live `diff?file=<path>` shows after the write; `sig` is `null` when the path is not in the current diff or the snapshot is unreadable (the write itself still succeeds). A thread write on a review-anchored thread returns `fileSig: null` (it touches no file).
+- **fileSig** (on `POST …/threads`, `POST …/messages`, `PATCH …/threads/:tid`, `PUT …/verdict`, `POST …/accept-file`, and MCP `annotate`/`reply` results): `{path, sig}`, the `sig` the live `diff?file=<path>` shows after the write; `sig` is `null` when the path is not in the current diff or the snapshot is unreadable (the write itself still succeeds). A thread write on a review- or group-anchored thread returns `fileSig: null` (it touches no file).
 - **Hunk:** text `{id, kind:'text', header, oldStart, oldLines, newStart, newLines, lines:[{t:'ctx'|'add'|'del', old, new, text, noEol?}], verdict}`; file-level `{id, kind:'file', lines:[], verdict}`. `verdict` is `null` for uncommitted reviews, in the commit filter view, in past-round views and in round comparisons.
 - **Thread:** `id, kind, severity, status (open|resolved|outdated), disposition, resolveProposed, anchor, openedBy, unread, messages:[{id, author, body, at, round, proposeResolve, citations:[{raw,path,startLine,endLine}]}]`.
 - **`anchor`**, by `anchor.kind`:
@@ -47,16 +48,30 @@ REST under `/api` (JSON), an SSE stream, and the cc MCP endpoint. Behaviour behi
   |---|---|---|
   | `lines` | `kind, file, side, startLine, endLine, hunkId, round, linesHash, drifted` | lines of one side (a thread started on a hunk is a `lines` anchor over the hunk, with its `hunkId`) |
   | `file` | `kind, file, round` | the whole file `file` (the snapshot's new path); binary and too-large files included |
+  | `group` | `kind, groupId, round` | a group of the current round; `round` is the last round the group was in (advances with a carried group) |
   | `review` | `kind, round` | the review itself; `round` is the creation round and never advances |
 
-  Per-file lists (`DiffFile.threads`, FileState counts, `fileSig`, `list_threads file=`) match on `anchor.file`, so they hold `lines` and `file` threads, never `review` ones. `counts.threads`, `unread` and `mergeBlockers` count every thread whatever its anchor.
+  Per-file lists (`DiffFile.threads`, FileState counts, `fileSig`, `list_threads file=`) match on `anchor.file`, so they hold `lines` and `file` threads, never `review` or `group` ones; neither are in `outdatedThreads`, `reviewThreads`, past-round views or comparisons (group threads are in `guide.threads`). `counts.threads`, `unread` and `mergeBlockers` count every thread whatever its anchor.
 - **`anchor.round`:** the round whose snapshot the anchor's `lines` and `linesHash` come from (a file anchor: the round its file was last found in): the round the thread was created in, advanced to the new round whenever a refresh re-anchors it; a review anchor's never advances. On a range review the anchor it had in each earlier round is kept and past-round views show it. A message's own `round` never changes.
 - **Thread in a past-round view** (`GET /reviews/:id/rounds/:n`, `diff?round=`): the same shape as of round n, plus `laterMessages` (messages written after round n, not included). `messages` stop at round n; `unread` is 0; `resolveProposed` is false; `status` is its current one, except that a thread outdated after round n shows `resolved` if it carries a resolution, else `open`. Past rounds are views of range reviews only.
 - **Thread in a round comparison** (`GET /reviews/:id/compare`): a copy of a thread, in the past-round Thread shape, plus `placement` and `outdatedIn`. A thread live in round A (`from`) gets a `placement:'from'` copy as of A; one live in round B (`to`) a `placement:'to'` copy as of B; a thread live in both gets both. `outdatedIn` (from-copies only, else `null`): the round it went outdated in when that is ≤ B. Threads outdated by A, or opened after B, are absent.
   - **Coordinates:** the comparison's old side is round A's head and its new side round B's head. A placed copy's anchor has `file` = the comparison file's path, `side` = `old` (from) or `new` (to), its round's `startLine`/`endLine` unchanged, and `hunkId` = the comparison hunk holding it (`null` on context); `round`, `linesHash` and `drifted` stay its round's. A `file` anchor's copy is placed on its comparison file by the same file match (binary or too large included) and keeps `{kind, file: <comparison path>, round}`.
   - **Unplaced copy:** `+ reason`, anchor unchanged. `base-side` (a `side:'old'` anchor has no place between two heads), `unchanged-file` (no comparison file holds it: from-copies match `oldPath ?? path` and skip `added` files, to-copies match `path` and skip `deleted` ones), `no-lines` (a `lines` anchor on a binary or too-large file).
+  - Group threads are in no past-round view or comparison.
   - Review threads are not compared: they are in neither the files, `unplaced` nor `counts`, only in the response's `reviewThreads`.
 - **`anchor.drifted`:** true only if the latest re-anchoring found the thread by surrounding context; finding the exact lines again clears it.
+- **GuideView** (`GET /reviews/:id` → `guide`; `null` on uncommitted reviews):
+  ```
+  { round,
+    groups: [{id, order, title, description, hunks:[{id, file, verdict}], verdict: pending|accepted|rejected,
+              proposedBy: Author, threads:{open,resolved,outdated}, unread}],
+    ungrouped: [{id, file, verdict}] | null,   // diff order; null while the snapshot is unreadable (a group's hunk `file` is then null)
+    threads: [Thread],                          // every group-anchored thread, any status, in thread-number order
+    retired: [{id, title, retiredIn, reason: 'refresh'|'reproposal'}],
+    guideMe: {offered, noGroups, droppedGroups, newUngrouped} }
+  ```
+  `groups` is the current round's. A hunk's `verdict` is its own, so a carried accepted group can list a pending hunk.
+- **Submission** adds `kind: 'round'|'guide'` (in `GET /reviews/:id` `submissions`, and the composed and recorded results).
 - **Author:** `{kind:'human'}` or `{kind:'session', sessionId, role: author|reviewer|conductor}`.
 - **Session:** `sessionId, project, worktree, label, status, live, conductor, conducted, attached`. `label` is cc's `displayLabel`, else its `title`, else `null`; the UI then shows the session id.
 - **SessionPlace:** `project, main, worktrees` — `main`: a live row of the session is on the project's main checkout, or a spawn-history entry records no worktrees; `worktrees`: sorted names.
@@ -86,13 +101,15 @@ REST under `/api` (JSON), an SSE stream, and the cc MCP endpoint. Behaviour behi
 | `GET /reviews/:id/compare` | `?from&to`: range reviews; two stored rounds, `from` < `to` (the current one included) | `{readOnly:true, from:Round, to:Round, files:[DiffFile with compared Threads], counts:{open,resolved,outdated}, unplaced:[unplaced Thread], reviewThreads:[Thread] (as of round B)}`: `git diff <from head> <to head>`, keeping a file iff its `path` is in round B's diff or its `oldPath ?? path` in round A's; hunk and file verdicts `null`, `unread` 0. `counts`: the compared threads as of B. Per-file `threads` and `unplaced` are in thread-number order; `unplaced` holds each thread with no placed copy once (its to-copy if it has one) | `INVALID_ARGUMENT` (other kinds, a non-positive-integer round, `from` ≥ `to`) `ROUND_UNKNOWN` `SNAPSHOT_GONE` `CHECKOUT_GONE` `DIFF_TOO_LARGE` `REVIEW_UNKNOWN` |
 | `GET /reviews/:id/commits` | | `{commits}` of the current round (range: `baseSha..headSha`; commit: that one; uncommitted: none) | |
 | `GET /reviews/:id/file` | `?path&side=old|new&start&end&round` (`round`: range reviews, read that round instead of the current one; refusals as for `diff?round`) | `{path, side, total, lines:[{n,text}]}` | `LINE_OUT_OF_RANGE` `FILE_NOT_IN_DIFF` (path absent on that side) `BINARY_FILE` (the snapshot's binary flag, so `-diff` attributes count) |
-| `PUT /reviews/:id/hunks/:hunkId/verdict` | `{verdict: pending|accepted|rejected}` (`pending` clears) | `{hunkId, verdict, fileSig, review}` | `NO_VERDICTS` `HUNK_UNKNOWN` `REVIEW_CLOSED` `INVALID_ARGUMENT` |
-| `POST /reviews/:id/accept-file` | `{file, hunkIds:[id]}` (ids of that file's hunks, as shown pending) | `{file, accepted:[hunkId], fileSig, review}` (`accepted` = ids that changed; ids with a verdict are skipped) | `NO_VERDICTS` `FILE_NOT_IN_DIFF` `HUNK_UNKNOWN` (any id not in that file this round; nothing written) `REVIEW_CLOSED` `INVALID_ARGUMENT` |
-| `POST /reviews/:id/threads` | `{anchor, kind, severity?, body}`; `anchor` is `{kind:'lines', file, side?, startLine, endLine?}`, `{kind:'hunk', hunkId}`, `{kind:'file', file}` or `{kind:'review'}` | `{thread, fileSig}` (human-authored; `fileSig` null for a review anchor) | `LINE_OUT_OF_RANGE` `FILE_NOT_IN_DIFF` `BINARY_FILE` (lines and hunk anchors only) `HUNK_UNKNOWN` `SEVERITY_REQUIRED` `INVALID_ARGUMENT` (anchor checks below) `REVIEW_CLOSED` |
+| `PUT /reviews/:id/hunks/:hunkId/verdict` | `{verdict: pending|accepted|rejected}` (`pending` clears) | `{hunkId, verdict, clearedGroups:[groupId], fileSig, review}` (`clearedGroups`: groups holding the hunk whose verdict differed and was cleared) | `NO_VERDICTS` `HUNK_UNKNOWN` `REVIEW_CLOSED` `INVALID_ARGUMENT` |
+| `PUT /reviews/:id/groups/:groupId/verdict` | `{verdict: pending|accepted|rejected}` (`pending` reopens) | `{groupId, verdict, hunks:[{id, verdict}] (the hunks whose verdict changed), fileSigs:[{path, sig}] (one per touched file), guide:GuideView, review}`; writes the group's verdict and its hunks' (see [features](features.md#groups-guided-review)); `pending` on an already pending group writes nothing; another unchanged verdict re-runs its hunk writes and writes nothing when none changes | `NO_GROUPS` `GROUP_UNKNOWN` `REVIEW_CLOSED` `INVALID_ARGUMENT` |
+| `POST /reviews/:id/accept-file` | `{file, hunkIds:[id]}` (ids of that file's hunks, as shown pending) | `{file, accepted:[hunkId], clearedGroups, fileSig, review}` (`accepted` = ids that changed; ids with a verdict are skipped) | `NO_VERDICTS` `FILE_NOT_IN_DIFF` `HUNK_UNKNOWN` (any id not in that file this round; nothing written) `REVIEW_CLOSED` `INVALID_ARGUMENT` |
+| `POST /reviews/:id/threads` | `{anchor, kind, severity?, body}`; `anchor` is `{kind:'lines', file, side?, startLine, endLine?}`, `{kind:'hunk', hunkId}`, `{kind:'file', file}`, `{kind:'group', groupId}` or `{kind:'review'}` | `{thread, fileSig}` (human-authored; `fileSig` null for a review or group anchor) | `LINE_OUT_OF_RANGE` `FILE_NOT_IN_DIFF` `BINARY_FILE` (lines and hunk anchors only) `HUNK_UNKNOWN` `GROUP_UNKNOWN` `NO_GROUPS` `SEVERITY_REQUIRED` `INVALID_ARGUMENT` (anchor checks below) `REVIEW_CLOSED` |
 | `POST /reviews/:id/threads/:tid/messages` | `{body}` | `{thread, fileSig}` | `THREAD_UNKNOWN` `THREAD_DROPPED` `REVIEW_CLOSED` |
 | `PATCH /reviews/:id/threads/:tid` | `{status: resolved|open, disposition?: fixed|dismissed}` | `{thread, fileSig}` | `INVALID_ARGUMENT` (finding without disposition, outdated thread) `THREAD_*` |
-| `POST /reviews/:id/refresh` | | `{unchanged, round, hunks:{kept,reset,new}, threads:{moved,drifted,outdated,dropped}}`; `unchanged:true` carries only `round` | `IMMUTABLE_TARGET` `CHECKOUT_GONE` `REVIEW_CLOSED` `REF_UNKNOWN` `NO_COMMON_ANCESTOR` |
-| `POST /reviews/:id/submissions` | | `{submission:{id, round, recipient, text, status}}` | `NO_RECIPIENT` `NOTHING_TO_SUBMIT` `REVIEW_CLOSED` |
+| `POST /reviews/:id/refresh` | | `{unchanged, round, hunks:{kept,reset,new}, threads:{moved,drifted,outdated,dropped}, groups:{kept,dropped}}` (`threads.outdated` counts group threads of dropped groups); `unchanged:true` carries only `round` | `IMMUTABLE_TARGET` `CHECKOUT_GONE` `REVIEW_CLOSED` `REF_UNKNOWN` `NO_COMMON_ANCESTOR` |
+| `POST /reviews/:id/submissions` | | `{submission:{id, round, recipient, text, status, kind:'round'}}` | `NO_RECIPIENT` `NOTHING_TO_SUBMIT` `REVIEW_CLOSED` |
+| `POST /reviews/:id/guide` | | `{submission:{id, round, recipient, text, status, kind:'guide'}}`: the Guide me prompt; delivered through the same `…/submissions/:sid/result` | `NO_GROUPS` `NO_RECIPIENT` `REVIEW_CLOSED` |
 | `POST /reviews/:id/submissions/:sid/result` | `{ok, code?}` | `{submission}` | `SUBMISSION_UNKNOWN` `SUBMISSION_NOT_PENDING` `INVALID_ARGUMENT` |
 | `POST /reviews/:id/read` | `{threadId?}` (none = whole review) | `{review}` | `THREAD_UNKNOWN` |
 | `GET /events` | | SSE | |
@@ -107,9 +124,10 @@ One implementation (`buildAnchor` in `src/threads.js`) serves `POST …/threads`
 | `lines` | `file side startLine endLine` | `file startLine` | `side` defaults to `new`, `endLine` to `startLine`; `FILE_NOT_IN_DIFF` `BINARY_FILE` `LINE_OUT_OF_RANGE` |
 | `hunk` | `hunkId` | `hunkId` | stored as `lines` over the hunk; `HUNK_UNKNOWN` `BINARY_FILE` |
 | `file` | `file` | `file` | `FILE_NOT_IN_DIFF`; any file in the diff, binary and too large included |
+| `group` | `groupId` | `groupId` | a group of the current round: `GROUP_UNKNOWN`, `NO_GROUPS` on an uncommitted review; reads no snapshot |
 | `review` | nothing | nothing | reads no snapshot, so it is written even while the diff is unreadable |
 
-- Refused: no anchor; a `kind` missing or not one of the four; any key besides `kind` and what the kind takes, unknown keys included (present = not `undefined`; the refusal says what the kind takes); a key it needs missing (the refusal names only the missing ones).
+- Refused: no anchor; a `kind` missing or not one of the five; any key besides `kind` and what the kind takes, unknown keys included (present = not `undefined`; the refusal says what the kind takes); a key it needs missing (the refusal names only the missing ones).
 - MCP passes its `side` through undefined when absent and the `annotate` schema declares no default for it, so `side` on a `file` anchor is refused rather than defaulted.
 
 ### SSE
@@ -125,22 +143,23 @@ One implementation (`buildAnchor` in `src/threads.js`) serves `POST …/threads`
 
 ## MCP
 
-- Endpoint `/api/mcp`; tools are namespaced `code-review__<tool>` by cc. Schemas are flat (`type`, `enum`, `minLength`, `minimum`, `default`, `description`); the definitions are in `conductor.plugin.json`.
+- Endpoint `/api/mcp`; tools are namespaced `code-review__<tool>` by cc. Schemas are flat (`type`, `enum`, `minLength`, `minimum`, `default`, `description`; an array's `items` carries only `type` and `description`, so `propose_groups` checks each group's shape itself); the definitions are in `conductor.plugin.json`.
 - Envelope `{tool, arguments, caller:{sessionId, project}}`: missing `tool` → 400; unknown tool → `200 {error}`; a refusal → `200 {result:{ok:false, code, reason}}`; an exception → `200 {error}`.
 - Header fields in text results (paths, labels, thread locations, hunk headers) have control characters stripped; code lines and message bodies are verbatim.
-- Writes (`open_review`, `annotate`, `reply`, `refresh_review`) refuse `CALLER_UNKNOWN` without `caller.sessionId`.
-- No tool sets a verdict.
+- Writes (`open_review`, `annotate`, `reply`, `propose_groups`, `refresh_review`) refuse `CALLER_UNKNOWN` without `caller.sessionId`.
+- No tool sets a hunk or group verdict.
 - **Trust:** `caller` comes from cc over unauthenticated loopback, so any local process can forge an agent identity, including posing as a thread's opener to close it (a question, clearing `mergeBlockers`, or a finding with a disposition), or a forged conductor identity (`caller.project` `.conduct`) that closes any open agent-opened thread, findings included. This is no wider than the REST surface, which already acts as the human. There is no token; one would need a cc change.
 
 | Tool | Required | Result |
 |---|---|---|
 | `open_review` | | `{result:{ok, review:ReviewSummary & {link}, reused}}`. Checkout: `project`+`worktree`; without `project`, `worktree` must be absent and the checkout is the caller's (`CHECKOUT_UNKNOWN` if cc does not know the caller); a conductor caller must name `project` (`INVALID_ARGUMENT`). Recipient: the caller. `author`: conductor callers only, range/commit only (else `INVALID_ARGUMENT`); `AUTHOR_UNKNOWN` if cc does not know the session. A reused review is returned unchanged. The creator is the caller; `seenByHuman:false`. |
-| `get_review` | `review` | `{text: per-file table, meta: ReviewSummary & {link}}` |
-| `list_threads` | `review` | `{text, meta:{review, count, counts, threads:[{id, anchor, link}]}}` (`threads` in the text's order; `anchor` = the thread's `anchor.kind`); a file thread's header names `<path> (whole file)` and a review thread's `the review`, with no code fence; `status` default `open`; `owner` (`user` = human-opened, `agents` = agent-opened; absent = both; else `INVALID_ARGUMENT`); `counts` is the whole review's; cited code inlined as `path#L… @<short sha | working tree>`, ≤ 80 lines then `… (truncated)`, unresolvable ones `(unresolved: …)` |
-| `get_hunk` | `review` + `hunk` or `file` | `{text: hunk with old/new line gutters, meta:{file, hunks:[{id, verdict, threadIds}]}}`; `file`+`line` picks the hunk covering that new-side line |
-| `annotate` | `review anchor kind body` | `{result:{ok, thread, fileSig}}`; `anchor`: `lines` (`file`+`startLine`[+`endLine`, `side`]), `hunk` (`hunk`), `file` (`file`), `review` (nothing else); the anchor checks below; `severity` required for a finding |
+| `get_review` | `review` | `{text: per-file table, then the groups (header, one line per group, the ungrouped hunks by file; not on uncommitted reviews), meta: ReviewSummary & {link, guide}}`; `meta.guide` is `{groups:[{id, order, title, hunkIds, verdict}], ungrouped:[hunkId]|null, guideMe}` or `null` |
+| `list_threads` | `review` | `{text, meta:{review, count, counts, threads:[{id, anchor, link}]}}` (`threads` in the text's order; `anchor` = the thread's `anchor.kind`); a file thread's header names `<path> (whole file)`, a group thread's `group g3` and a review thread's `the review`, with no code fence; `status` default `open`; `owner` (`user` = human-opened, `agents` = agent-opened; absent = both; else `INVALID_ARGUMENT`); `counts` is the whole review's; cited code inlined as `path#L… @<short sha | working tree>`, ≤ 80 lines then `… (truncated)`, unresolvable ones `(unresolved: …)` |
+| `get_hunk` | `review` + `hunk` or `file` | `{text: hunk with old/new line gutters (its head ends `· groups g1, g3` when it is in any), meta:{file, hunks:[{id, verdict, threadIds, groups}]}}`; `file`+`line` picks the hunk covering that new-side line |
+| `annotate` | `review anchor kind body` | `{result:{ok, thread, fileSig}}`; `anchor`: `lines` (`file`+`startLine`[+`endLine`, `side`]), `hunk` (`hunk`), `file` (`file`), `group` (`group`: a group id), `review` (nothing else); the anchor checks below; `severity` required for a finding |
 | `reply` | `review thread body` | `{result:{ok, thread, fileSig}}`; with `resolve:true`: `thread.resolveProposed:true` = proposed, `false` = closed (a resolved, outdated or user-opened thread never closes from an agent); a reply without `resolve` leaves the status alone. `disposition` only with `resolve` on a finding the caller opened, or any finding for a conductor (`INVALID_ARGUMENT` otherwise, and when a reply that closes a finding has none); nothing is posted on a refusal |
-| `refresh_review` | `review` | `{result:{ok, round, unchanged, hunks, threads}}` |
+| `propose_groups` | `review groups` | `{result:{ok, groups:[{id, order, title, hunkIds, verdict}], kept, retired, threadsOutdated, ungrouped:[hunkId]}}`; `groups` is `[{title, description, hunks:[hunk id]}]` in reading order and replaces the round's list (`kept`: groups that matched an existing one by hunk set; `retired`: the others). Any session may call it (only `CALLER_UNKNOWN` without a caller); the proposer is recorded with its role. Refusals write nothing: `NO_GROUPS` `REVIEW_CLOSED` `HUNK_UNKNOWN` `GROUP_EMPTY` `BODY_TOO_LARGE` `INVALID_ARGUMENT` (not a list, a malformed or blank group, an unknown key, a hunk twice in a group, two groups with the same hunks) |
+| `refresh_review` | `review` | `{result:{ok, round, unchanged, hunks, threads, groups}}` |
 
 ## cc routes consumed
 
@@ -213,6 +232,7 @@ The page keeps its state in the query string (`?…`, never the hash) and writes
 | `file` | open, resolved | `file`, `thread` |
 | `file` | outdated | `round=R`, `file`, `thread` (the round view it last sat in) |
 | `review` | any | `view=threads`, `thread` |
+| `group` | any | `view=threads`, `thread` (as `review`) |
 
 **New review links.** A link opens the New review dialog prefilled; the human still picks the recipient and clicks Open review (nothing is created from a link, and no URL key sets the recipient).
 - Format: `#plugin/code-review/?project=<P>[&worktree=<W>]&view=new&range=<BASE>...<HEAD>` (`..` means the same) or `…&view=new&sha=<COMMIT>`. `project` is required; values are encoded as `URLSearchParams` does, keys in the route serialiser's order (`project, worktree, …, view, range, sha`).

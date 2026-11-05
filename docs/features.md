@@ -36,14 +36,14 @@ A **group** is a set of hunks, possibly across files, with a title and a markdow
 - **Group verdicts.** Accept group, Reject group and Pending (reopen) each write the group's own verdict and then its hunks:
   - **Accept** accepts each hunk whose every group is accepted, whatever its verdict was; other hunks are untouched.
   - **Reject** rejects every hunk of the group.
-  - **Pending** sets the group and its hunks pending, except a hunk another rejected group holds (it stays rejected). A pending group written again writes nothing.
+  - **Pending** on a group with a verdict sets the group and its hunks pending, except a hunk another rejected group holds (it stays rejected). Pending on a group that is already pending writes nothing, whatever its hunks' verdicts; a verdict applied again to a group that already has it re-runs its hunk writes.
   - A group action never changes another group's verdict, so the outcome does not depend on the order of actions.
 - **Direct hunk verdicts win.** A per-hunk verdict (and Accept file) clears, to pending, the verdict of every group holding that hunk whose verdict differs from the new hunk verdict, and writes no other hunk. Accepting a hunk directly while its group is pending changes no group. The response lists the cleared ids (`clearedGroups`).
 - **Invariant:** every hunk of a rejected group is rejected, on every path.
 - **Re-proposal in the same round** replaces the list. A proposed group with exactly the hunks of a current group keeps its id, verdict and threads and takes the new title, description and order. Every other current group is retired: its verdict stays as history and no longer counts, its threads go `outdated` (still repliable). No hunk verdict changes.
 - **Refresh** carries a group only when every one of its hunks is unchanged (same hunk ids): same id, order, text, verdict and threads (the thread's `anchor.round` advances). Other groups are retired with reason `refresh`. Hunk verdicts carry as without groups, and a refresh never accepts code: a carried accepted group can hold a hunk that is still pending (it was waiting on a dropped group); accepting the group again accepts it.
 - **Guide me is offered** when the round has no groups, a refresh dropped groups since the last proposal, or a hunk a refresh added since the last proposal is in no group (even if that refresh was several rounds ago). A proposal resets the last two. The backend does not refuse Guide me when it is not offered; the flag only guides the UI.
-- **Group threads.** A group can be commented on (`anchor` `group`). They count toward the review's thread counts, unread and `mergeBlockers`, and appear in the Threads list, but sit on no file: they are in no per-file list, past-round view or comparison.
+- **Group threads.** A group can be commented on (`anchor` `group`). They count toward the review's thread counts, unread and `mergeBlockers`, but sit on no file: they are in no per-file list, past-round view or comparison. They appear in `list_threads`, the `guide.threads` of the review detail, the thread counts and unread.
 - **Activity** (inbox ordering) includes groups proposed and a group verdict set or cleared.
 
 ## Threads

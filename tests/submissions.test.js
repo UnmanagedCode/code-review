@@ -349,3 +349,25 @@ test('composing a guide or a round supersedes any undelivered submission of eith
   const status = Object.fromEntries(store.read(review.id).submissions.map((s) => [s.id, s.status]));
   assert.deepEqual(status, { [first.id]: 'superseded', [second.id]: 'superseded', [third.id]: 'pending' });
 });
+
+test('recording a result returns the submission\'s kind, round or guide', async () => {
+  // Invariant: recordResult's submission carries `kind`, as the protocol documents.
+  const { review } = await twoHunks();
+  const guide = ok(await submissions.composeGuide(review.id)).submission;
+  assert.equal(ok(await submissions.recordResult(review.id, guide.id, { ok: true })).submission.kind, 'guide');
+  const round = ok(await submissions.composeSubmission(review.id)).submission;
+  assert.equal(ok(await submissions.recordResult(review.id, round.id, { ok: false, code: 'SEND_FAILED' })).submission.kind, 'round');
+});
+
+test('a group verdict that writes no hunk is still new human activity and is listed under Accepted groups', async () => {
+  // Invariant: a group verdict takes its own humanSeq, so the next round is submittable and lists the group even when every hunk was already accepted.
+  const { review, h1, h2 } = await twoHunks();
+  ok(await reviews.setVerdict(review.id, h1.id, 'accepted'));
+  ok(await reviews.setVerdict(review.id, h2.id, 'accepted'));
+  ok(await groups.proposeGroups(review.id, author, [{ title: 'both', description: 'd', hunks: [h1.id, h2.id] }]));
+  await deliver(review.id);
+  const set = ok(await groups.setGroupVerdict(review.id, 'g1', 'accepted'));
+  assert.deepEqual(set.hunks, []);
+  const { submission } = ok(await submissions.composeSubmission(review.id));
+  assert.match(submission.text, /Accepted groups:\n- \[g1\] both \(2 hunks\)/);
+});

@@ -45,7 +45,8 @@ export const setGroupVerdict = (id, groupId, verdict) => attempt(async () => {
     const group = review.groups.find((g) => g.id === groupId);
     if (!group) throw new Refusal('GROUP_UNKNOWN', `no such group in round ${currentRound(review).n}: ${groupId}`);
     const snap = await env.snapshot();
-    const writes = groupVerdictWrites(review, group, verdict);
+    // Pending on a pending group writes nothing, even when it holds a hunk rejected some other way.
+    const writes = verdictName(group) === 'pending' && verdict === 'pending' ? [] : groupVerdictWrites(review, group, verdict);
     if (verdictName(group) === verdict && !writes.length) return { ok: true, hunks: [], fileSigs: [], guide: guideView(review, snap.files) };
     const seq = bump(review);
     review.humanSeq = seq;

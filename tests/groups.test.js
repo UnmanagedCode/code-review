@@ -1,5 +1,8 @@
 import { test, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
+import { execFileSync } from 'node:child_process';
 import { world, HUMAN, agent, editLines } from './_world.js';
 import * as reviews from '../src/reviews.js';
 import * as threads from '../src/threads.js';
@@ -30,10 +33,10 @@ const conductor = agent('s-cond', '.conduct');
  * Four hunks over three files: a1 and a2 (a.js lines 2 and 18), f (f.js) and c (c.js). The review's recipient is s-author.
  * `h` names the ids, `g` proposes groups by hunk names.
  */
-async function setup() {
+async function setup(kind = 'range') {
   const wt = w.addWorktree();
   wt.commit({ 'a.js': editLines({ 2: 'top-edit', 18: 'bottom-edit' }), 'f.js': 'f1\nf2\n', 'c.js': 'c1\nc2\n' });
-  const { review } = ok(await reviews.openReview({ project: 'app', worktree: 'feature', recipient: 's-author' }, HUMAN));
+  const { review } = ok(await reviews.openReview({ project: 'app', worktree: 'feature', recipient: 's-author', kind }, HUMAN));
   const id = review.id;
   const ids = async () => {
     const files = ok(await reviews.diff(id, {})).files;
@@ -123,6 +126,7 @@ test('re-proposing keeps a same-hunk group with its id, verdict and threads and 
   assert.deepEqual(stored.verdicts, verdictsBefore);
   assert.deepEqual(stored.groups.map((g) => [g.id, g.order, g.title, g.verdict?.verdict ?? null]), [['g3', 1, 'renamed', null], ['g1', 2, 'first again', 'accepted']]);
   assert.deepEqual(stored.groups[1].hunkIds, [s.h.a2, s.h.a1]);
+  assert.equal(stored.groups[1].description, 'about first again');
   assert.deepEqual(stored.retiredGroups.map((g) => [g.id, g.reason, g.retiredIn, g.verdict.verdict]), [['g2', 'reproposal', 1, 'rejected']]);
   const status = (t) => stored.threads.find((x) => x.id === t.id).status;
   assert.deepEqual([status(kept), status(gone)], ['open', 'outdated']);
@@ -336,9 +340,12 @@ test('a carried group sharing a hunk with a dropped one keeps its verdict while 
 });
 
 test('Guide me is offered with no groups, after a drop, and while a refresh-added hunk is ungrouped; a proposal clears the latter two', async () => {
-  // Invariant: guideMe = no groups, or groups dropped since the last proposal, or a hunk added since then in no group.
+  // Invariant: guideMe = no groups, or groups dropped since the last proposal, or a hunk added since then in no group; a proposal resets both counters.
   const s = await setup();
-  const offered = async () => (await s.view()).guide.guideMe;
+  const view = async () => (await s.view()).guide;
+  const offered = async () => (await view()).guideMe;
+  const allIds = async () => ok(await reviews.diff(s.id, {})).files.flatMap((f) => f.hunks.map((x) => x.id));
+  const idsOf = async (file) => ok(await reviews.diff(s.id, { file })).files[0].hunks.map((x) => x.id);
   assert.deepEqual(await offered(), { offered: true, noGroups: true, droppedGroups: 0, newUngrouped: 0 });
   await s.propose([s.spec('all', 'a1', 'a2', 'f', 'c')]);
   assert.equal((await offered()).offered, false);
@@ -350,14 +357,17 @@ test('Guide me is offered with no groups, after a drop, and while a refresh-adde
   ok(await reviews.refreshReview(s.id, HUMAN));
   assert.equal((await offered()).newUngrouped, 2, 'a hunk added two refreshes ago still counts');
   assert.equal((await s.view()).review.groups.guideMe, true);
-
-  await s.propose([s.spec('all', 'a1', 'a2', 'f', 'c'), { title: 'new', description: 'd', hunks: store.read(s.id).sinceProposal.newHunkIds }]);
+  const [n1] = await idsOf('n1.js');
+  const [n2] = await idsOf('n2.js');
+  await s.propose([s.spec('all', 'a1', 'a2', 'f', 'c'), { title: 'new', description: 'd', hunks: [n1, n2] }]);
   assert.deepEqual(await offered(), { offered: false, noGroups: false, droppedGroups: 0, newUngrouped: 0 });
 
   s.wt.commit({ 'f.js': 'f1\nchanged\n' });
   ok(await reviews.refreshReview(s.id, HUMAN));
-  assert.equal((await offered()).droppedGroups, 1);
-  assert.equal((await offered()).offered, true);
+  assert.deepEqual(await offered(), { offered: true, noGroups: false, droppedGroups: 1, newUngrouped: 1 });
+  await s.propose([{ title: 'everything', description: 'd', hunks: await allIds() }]);
+  assert.deepEqual(await offered(), { offered: false, noGroups: false, droppedGroups: 0, newUngrouped: 0 });
+  assert.deepEqual(store.read(s.id).sinceProposal, { dropped: 0, newHunkIds: [] });
 });
 
 // ---- Group threads ----
@@ -372,6 +382,7 @@ test('REST and MCP annotate store a group anchor with no file sig; bad group anc
   assert.equal(out.ok, true, JSON.stringify(out));
   assert.equal(out.fileSig, null);
   assert.deepEqual(store.read(s.id).threads.map((t) => t.anchor), [{ kind: 'group', groupId: 'g1', round: 1 }, { kind: 'group', groupId: 'g1', round: 1 }]);
+  assert.deepEqual((await s.view()).guide.threads.map((t) => t.anchor), [{ kind: 'group', groupId: 'g1', round: 1 }, { kind: 'group', groupId: 'g1', round: 1 }]);
   assert.equal(codeOf(await note(s.id, 'g9')), 'GROUP_UNKNOWN');
   assert.equal(codeOf(await threads.annotate(s.id, HUMAN, { anchor: { kind: 'group', groupId: 'g1', file: 'a.js' }, kind: 'comment', body: 'x' })), 'INVALID_ARGUMENT');
 });
@@ -414,4 +425,89 @@ test('group threads reach guide.threads, counts, unread and list_threads, and no
   const cmp = ok(await compareRounds(s.id, { from: 1, to: 2 }));
   assert.deepEqual([cmp.counts, cmp.unplaced, cmp.reviewThreads], [{ open: 0, resolved: 0, outdated: 0 }, [], []]);
   assert.ok(cmp.files.every((f) => f.threads.length === 0));
+});
+
+test('a pending group holding a directly rejected hunk: Pending on it writes nothing', async () => {
+  // Invariant D5: Pending on a pending group short-circuits; the hunk stays rejected and rev does not move.
+  const s = await setup();
+  await s.propose([s.spec('one', 'a1', 'a2')]);
+  ok(await reviews.setVerdict(s.id, s.h.a1, 'rejected'));
+  const rev = store.read(s.id).rev;
+  const res = ok(await groups.setGroupVerdict(s.id, 'g1', 'pending'));
+  assert.deepEqual([res.hunks, res.fileSigs], [[], []]);
+  assert.equal(store.read(s.id).rev, rev);
+  assert.equal(s.verdictOf('a1'), 'rejected');
+});
+
+test('a direct accept of a hunk held by an accepted and a rejected group clears only the rejected one', async () => {
+  // Invariant D1: only groups whose verdict differs from the new hunk verdict are cleared.
+  const s = await setup();
+  await s.propose([s.spec('one', 'a1', 'f'), s.spec('two', 'f', 'c')]);
+  ok(await groups.setGroupVerdict(s.id, 'g1', 'accepted'));
+  ok(await groups.setGroupVerdict(s.id, 'g2', 'rejected'));
+  assert.equal(s.verdictOf('f'), 'rejected');
+  const res = ok(await reviews.setVerdict(s.id, s.h.f, 'accepted'));
+  assert.deepEqual(res.clearedGroups, ['g2']);
+  assert.deepEqual([s.groupVerdict('g1'), s.groupVerdict('g2'), s.verdictOf('c')], ['accepted', 'pending', 'rejected']);
+});
+
+test('a retired group\'s thread leaves outdatedThreads but stays in guide.threads as outdated', async () => {
+  // Invariant: group threads are never in outdatedThreads; guide.threads lists them in any status.
+  const s = await setup();
+  await s.propose([s.spec('one', 'a1'), s.spec('two', 'f')]);
+  const t = ok(await note(s.id, 'g1', HUMAN, 'question')).thread;
+  s.wt.commit({ 'a.js': editLines({ 2: 'top-edit-again', 18: 'bottom-edit' }) });
+  ok(await reviews.refreshReview(s.id, HUMAN));
+  const detail = await s.view();
+  assert.deepEqual(detail.guide.retired.map((g) => [g.id, g.reason]), [['g1', 'refresh']]);
+  assert.deepEqual(detail.outdatedThreads, []);
+  assert.deepEqual(detail.guide.threads.map((x) => [x.id, x.status]), [[t.id, 'outdated']]);
+});
+
+test('groups work on a commit review: propose, group verdict and annotate', async () => {
+  // Invariant: groups exist on commit reviews as on range reviews.
+  const s = await setup('commit');
+  await s.propose([s.spec('one', 'a1', 'f')]);
+  ok(await groups.setGroupVerdict(s.id, 'g1', 'accepted'));
+  assert.deepEqual([s.verdictOf('a1'), s.verdictOf('f')], ['accepted', 'accepted']);
+  ok(await note(s.id, 'g1'));
+  assert.equal((await s.view()).guide.groups[0].threads.open, 1);
+});
+
+test('the guide names its round, each group\'s proposer, and the summary the last submission\'s kind', async () => {
+  // Invariant: guide.round is the current round; proposedBy is the proposer's author record; lastSubmission.kind follows the newest submission.
+  const s = await setup();
+  await s.propose([s.spec('one', 'a1')], reviewer);
+  let guide = (await s.view()).guide;
+  assert.equal(guide.round, 1);
+  assert.deepEqual(guide.groups[0].proposedBy, { kind: 'session', sessionId: 's-rev', role: 'reviewer' });
+  s.wt.commit({ 'b.js': 'x\n' });
+  ok(await reviews.refreshReview(s.id, HUMAN));
+  assert.equal((await s.view()).guide.round, 2);
+  assert.equal((await s.view()).review.lastSubmission, null);
+  ok(await submissions.composeGuide(s.id));
+  assert.equal((await s.view()).review.lastSubmission.kind, 'guide');
+  ok(await submissions.composeSubmission(s.id));
+  assert.equal((await s.view()).review.lastSubmission.kind, 'round');
+});
+
+test('with the diff unreadable, ungrouped is null in the summary and the guide, and the guide prompt omits the ungrouped count', async () => {
+  // Invariant: an unreadable snapshot gives ungrouped null (unknown), never 0 or a guess.
+  const s = await setup();
+  await s.propose([s.spec('one', 'a1')]);
+  const known = ok(await submissions.composeGuide(s.id)).submission.text;
+  assert.match(known, /\n1 group; 3 hunks in no group\.\n/);
+  const bin = fs.mkdtempSync(path.join(path.dirname(w.repo.dir), 'bin-'));
+  for (const tool of ['sh', 'ls', 'awk', 'wc', 'cp', 'touch', 'mkdir', 'rm', 'cat', 'realpath', 'readlink']) {
+    fs.symlinkSync(execFileSync('sh', ['-c', `command -v ${tool}`], { encoding: 'utf8' }).trim(), path.join(bin, tool));
+  }
+  w.cc.state.execEnv = { PATH: bin };
+  const detail = await s.view();
+  assert.equal(detail.review.snapshotError, 'GIT_UNAVAILABLE');
+  assert.equal(detail.review.groups.ungrouped, null);
+  assert.equal(detail.guide.ungrouped, null);
+  assert.equal(detail.guide.groups[0].hunks[0].file, null);
+  const unknown = ok(await submissions.composeGuide(s.id)).submission.text;
+  assert.match(unknown, /\n1 group\.\n/);
+  assert.ok(!unknown.includes('in no group'));
 });

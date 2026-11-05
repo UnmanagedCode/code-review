@@ -129,5 +129,5 @@ export const recordResult = (id, sid, { ok, code } = {}) => attempt(() => inRevi
     sub.code = code;
   }
   touch(review);
-  return { ok: true, submission: { id: sub.id, round: sub.round, recipient: sub.recipient, text: sub.text, status: sub.status, code: sub.code } };
+  return { ok: true, submission: { id: sub.id, round: sub.round, recipient: sub.recipient, text: sub.text, status: sub.status, code: sub.code, kind: sub.kind } };
 }));

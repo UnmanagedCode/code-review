@@ -1,5 +1,5 @@
 import { ArrowLeftIcon, ChevronLeftIcon, ChevronRightIcon, MessageSquarePlusIcon } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { byFile, guideSteps, stepAt, type Step } from '@/lib/guide';
 import type { GuideGroup } from '@/lib/types';
@@ -43,10 +43,24 @@ function StepBody({ step, steps, onBack }: { step: Step; steps: Step[]; onBack?:
   const forced = useMemo(() => new Set<string>(), []);
   const collapse = useCollapse({ settled, forced, pinned: route.thread ? `t:${route.thread}` : null, resetKey: `${ctx.id}:${step.key}`, keepOpen: () => false });
   useEffect(() => { setComposing(false); }, [step.key]);
+  // The file headings pin just below this header, whose height varies as it wraps: publish it as a CSS variable.
+  const rootRef = useRef<HTMLDivElement>(null);
+  const headerRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const root = rootRef.current;
+    const header = headerRef.current;
+    if (!root || !header) return;
+    const set = () => root.style.setProperty('--step-header-h', `${header.offsetHeight}px`);
+    set();
+    if (typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(set);
+    ro.observe(header);
+    return () => ro.disconnect();
+  }, [step.key]);
   const hunks = group ? group.hunks : (step as Extract<Step, { kind: 'other' }>).hunks;
   return (
-    <div className="flex min-w-0 flex-col">
-      <div className="sticky top-0 z-10 flex flex-wrap items-center gap-2 border-b bg-background px-3 py-2">
+    <div ref={rootRef} className="flex min-w-0 flex-col">
+      <div ref={headerRef} className="sticky top-0 z-10 flex flex-wrap items-center gap-2 border-b bg-background px-3 py-2">
         {onBack && <Button variant="ghost" size="icon-sm" aria-label="Back to steps" onClick={onBack}><ArrowLeftIcon /></Button>}
         <span className="text-xs text-muted-foreground">Step {step.n} of {steps.length}</span>
         <h2 className="min-w-0 flex-1 basis-40 break-words text-sm font-semibold">{group ? group.title : 'Other changes'}</h2>

@@ -31,7 +31,7 @@ function LoadedSection({ path, hunkIds, stepKey }: { path: string; hunkIds: stri
   const collapse = useCollapse({ settled, forced, pinned: route.thread ? `t:${route.thread}` : null, resetKey: `${ctx.id}:${stepKey}:${path}`, keepOpen: () => false });
   return (
     <section aria-label={path} className="border-t">
-      <h3 className="sticky top-0 truncate bg-muted/50 px-3 py-1 font-mono text-xs font-medium" title={path}>{path}</h3>
+      <h3 className="sticky top-[var(--step-header-h,0px)] z-[5] truncate border-b bg-muted px-3 py-1 font-mono text-xs font-medium" title={path}>{path}</h3>
       {!file ? (entry.error ? <ErrorState error={entry.error} onRetry={entry.reload} /> : <Loading label={`Loading ${path}`} rows={3} />)
         : shown.map(({ id, hunk }) => (hunk
           ? <GuideHunk key={id} file={file} hunk={hunk} collapse={collapse} />

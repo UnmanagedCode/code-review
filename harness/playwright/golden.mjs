@@ -938,6 +938,26 @@ try {
     const steps = page.getByRole('navigation', { name: 'Steps' }).getByRole('button');
     const step = (title) => page.getByRole('navigation', { name: 'Steps' }).getByRole('button', { name: new RegExp(title) });
     const groupBar = page.getByRole('group', { name: 'Group verdict' });
+    // Scrolls the step's container until `path`'s file heading would sit under the sticky step header, and checks the heading
+    // is pinned just below that header instead (visible, not covered).
+    const scrollPastHeading = async (path, name) => {
+      // A short viewport makes the step tall enough to scroll, whatever the screen.
+      const size = page.viewportSize();
+      await page.setViewportSize({ width: size.width, height: 480 });
+      const heading = page.getByRole('region', { name: path }).getByRole('heading', { name: path });
+      await heading.evaluate((h) => {
+        const header = h.closest('[class*="flex-col"]').firstElementChild;
+        let scroller = h.parentElement;
+        while (scroller && !(scroller.scrollHeight > scroller.clientHeight && /auto|scroll/.test(getComputedStyle(scroller).overflowY))) scroller = scroller.parentElement;
+        scroller.scrollTop += h.getBoundingClientRect().top - header.getBoundingClientRect().bottom + 60;
+      });
+      await page.waitForTimeout(100);
+      const [h, header] = await Promise.all([heading.boundingBox(), page.getByRole('heading', { level: 2 }).first().evaluate((e) => e.closest('.sticky').getBoundingClientRect().bottom)]);
+      assert.ok(Math.abs(h.y - header) <= 2, `${path}'s heading is pinned below the step header (heading ${h.y}, header bottom ${header})`);
+      await shot(name);
+      await page.evaluate(() => document.querySelector('main').scrollTo(0, 0));
+      await page.setViewportSize(size);
+    };
     const pressed = (bar) => bar.locator('[aria-pressed="true"]').allTextContents();
 
     // 1. The Guided tab lists the steps (three groups and Other changes); nothing is offered to ask for yet.
@@ -971,6 +991,7 @@ try {
     await g1.getByRole('grid').waitFor();
     await g2.getByRole('grid').waitFor();
     await shot('21-3-step-one');
+    await scrollPastHeading('g1.js', '21-3-scrolled-heading');
     await page.getByRole('button', { name: 'Accept group' }).click();
     await page.getByRole('button', { name: ACCEPTED_SUMMARY }).first().waitFor();
     assert.equal(await page.getByRole('button', { name: ACCEPTED_SUMMARY }).count(), 2, 'both hunks are accepted and collapsed');
@@ -1079,6 +1100,10 @@ try {
     await page.goto(gq({ view: 'guided' }));
     await steps.first().waitFor();
     await shot('21-14-phone-steps');
+    await step('Rename').click();
+    await page.getByRole('region', { name: 'g2.js' }).getByRole('grid').waitFor();
+    await scrollPastHeading('g1.js', '21-14-phone-scrolled-heading');
+    await page.getByRole('button', { name: 'Back to steps' }).click();
     await step('Tidy').click();
     await page.getByRole('heading', { name: 'Tidy the tail <b>of g1</b>', level: 2 }).waitFor();
     await page.getByRole('button', { name: 'Back to steps' }).waitFor();

@@ -215,9 +215,10 @@ The page keeps its state in the query string (`?…`, never the hash) and writes
 | `commit` | Range reviews: commit-filter view (read-only) |
 | `round` | Range reviews: past-round view (read-only), a positive integer; ignored with `commit`, dropped when it names the current round or a later one. Focusing a thread there marks nothing read |
 | `compare` | Range reviews: round comparison (read-only), `A..B` of positive integers. Ignored with `commit`; beats `round` (which is dropped); dropped when the review is not a range review, `A` ≥ `B`, or `B` is past the current round. There `side=old` means round A's lines and `new` round B's |
+| `step` | With `view=guided`: a group id of the current round or a retired one (`g<n>`), or `other` (the hunks in no group); absent = the first step. Anything else is dropped by the parser. Step moves (Next, Previous, a step-list click, a retired group) use `pushState`, so Back returns to the previous step; tab switches stay `replace`. An id naming no step is replaced out. Pane state like `view`: leaving the open file keeps it, a review-scoped reset clears it |
 | `range` | With `view=new`: prefill a range review, `<BASE>...<HEAD>` or `<BASE>..<HEAD>` (see New review links). Kept raw by the parser; cleared with the dialog and by every review-scoped reset |
 | `sha` | With `view=new`: prefill a one-commit review of that ref or sha. As `range` otherwise |
-| `view` | Outside a review: `new` (New review dialog) or `inbox` (the side pane's Inbox tab; absent = Checkout, written with `replace`; session following keeps it). Inside one, the side pane's tab: `threads` or `history` (History only on range reviews; elsewhere it shows Files); absent = Files. Tab clicks write it with `replace`; every other in-review navigation keeps it; opening or leaving a review clears it |
+| `view` | Outside a review: `new` (New review dialog) or `inbox` (the side pane's Inbox tab; absent = Checkout, written with `replace`; session following keeps it). Inside one, the side pane's tab: `guided`, `threads` or `history` (History only on range reviews; Guided only where the review has a live guide with groups or an offer, so not on uncommitted reviews or in a round view, comparison or commit filter; elsewhere each shows Files); absent = Files. Tab clicks write it with `replace`; every other in-review navigation keeps it; opening or leaving a review clears it |
 
 **Links.** MCP results carry absolute links on cc's fake host `http://cc.internal` (`CC_ORIGIN` in `src/links.js`). cc opens each one in its plugin view, or in the plugin dock when that is showing. Each link opens the review or a thread.
 - Format: `http://cc.internal/#plugin/<manifest id>/?<route>`; values are encoded as `URLSearchParams` does, keys follow the route serialiser's order.
@@ -232,10 +233,10 @@ The page keeps its state in the query string (`?…`, never the hash) and writes
 | `file` | open, resolved | `file`, `thread` |
 | `file` | outdated | `round=R`, `file`, `thread` (the round view it last sat in) |
 | `review` | any | `view=threads`, `thread` |
-| `group` | any | `view=threads`, `thread` (as `review`) |
+| `group` | any | `view=guided`, `step=<groupId>`, `thread` (a retired group's id lands on its retired view; an open file and any `round`/`compare`/`commit` are left) |
 
 **New review links.** A link opens the New review dialog prefilled; the human still picks the recipient and clicks Open review (nothing is created from a link, and no URL key sets the recipient).
-- Format: `#plugin/code-review/?project=<P>[&worktree=<W>]&view=new&range=<BASE>...<HEAD>` (`..` means the same) or `…&view=new&sha=<COMMIT>`. `project` is required; values are encoded as `URLSearchParams` does, keys in the route serialiser's order (`project, worktree, …, view, range, sha`).
+- Format: `#plugin/code-review/?project=<P>[&worktree=<W>]&view=new&range=<BASE>...<HEAD>` (`..` means the same) or `…&view=new&sha=<COMMIT>`. `project` is required; values are encoded as `URLSearchParams` does, keys in the route serialiser's order (`project, worktree, …, view, step, range, sha`).
 - `range` splits at the first `...`, else the first `..` (`parsePrefill` in `frontend/src/lib/prefill.ts`). Either form is a range review of `BASE..HEAD` diffed from `merge-base(BASE, HEAD)`. Each side is a ref or a full or abbreviated sha, resolved through `GET /checkout/commit`.
 - `<HEAD>` must resolve to the checkout's current HEAD: a range review always ends there.
 - A base equal to one of the checkout's fork-point refs selects that radio, so the review's base stays the ref; any other base selects Another commit with the resolved full sha.

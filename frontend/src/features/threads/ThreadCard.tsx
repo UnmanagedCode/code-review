@@ -2,9 +2,10 @@ import { useEffect, useRef, type ReactNode } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { groupLabel } from '@/lib/guide';
 import { anchorLabel, lineSpan, rangeLabel } from '@/lib/ranges';
-import { formatLines, navigate, useRoute, type Route } from '@/lib/route';
-import type { ComparedThread, Thread } from '@/lib/types';
+import { formatLines, LEAVE_FILE, navigate, useRoute, type Route } from '@/lib/route';
+import type { ComparedThread, GuideView, Thread } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import { useReviewCtx } from '@/state/reviewContext';
 import { useReviewActions } from '@/state/threads';
@@ -21,10 +22,12 @@ import { ResolveControls } from './ResolveControls';
  * `lines=` (its range rail marks it; the wash is for citations) and a stale one is cleared; an outdated thread keeps
  * `lines=`, which the read-only excerpt needs when its file is not in that comparison.
  * A file thread has no side or lines: an outdated one opens the round it last sat in. A review thread lives in the Threads
- * pane, beside whatever file is open. `src/links.js` `threadLink` mirrors this.
+ * pane, beside whatever file is open. A group thread opens its Guided step, whatever its status: groups live only in the
+ * current round, so it leaves every read-only view and the open file. `src/links.js` `threadLink` mirrors this.
  */
 export const threadPlace = (t: Thread): Route => {
   if (t.anchor.kind === 'review') return { view: 'threads', thread: t.id };
+  if (t.anchor.kind === 'group') return { ...LEAVE_FILE, commit: undefined, round: undefined, compare: undefined, view: 'guided', step: t.anchor.groupId, thread: t.id };
   if (t.anchor.kind === 'file') {
     const { file, round } = t.anchor;
     const place = { file, side: undefined, lines: undefined, thread: t.id };
@@ -50,9 +53,10 @@ export function cardRange(thread: Thread, { dropped = false, compare }: { droppe
  * links in one file never share a name; a file thread's names the whole file and a review thread's the review. In a
  * comparison a copy's side is a round's head, so it names the round.
  */
-const linkText = (t: Thread, compare?: { from: number; to: number }): string => {
+const linkText = (t: Thread, guide: GuideView | null, compare?: { from: number; to: number }): string => {
   const a = t.anchor;
   if (a.kind === 'review') return anchorLabel(a);
+  if (a.kind === 'group') return guide ? groupLabel(guide, a.groupId) : `Group ${a.groupId}`;
   const placement = (t as Partial<ComparedThread>).placement;
   if (!compare || !placement) return `${a.file} · ${anchorLabel(a)}`;
   const round = `round ${placement === 'from' ? compare.from : compare.to}`;
@@ -62,11 +66,12 @@ const linkText = (t: Thread, compare?: { from: number; to: number }): string => 
 /** An outdated card's note on where the thread last sat. */
 const wasAt = (t: Thread): string => (t.anchor.kind === 'lines'
   ? `outdated · was ${rangeLabel(t.anchor)} at round ${t.anchor.round}`
-  : `outdated · its file left the diff after round ${t.anchor.round}`);
+  : t.anchor.kind === 'group' ? `outdated · its group was retired after round ${t.anchor.round}`
+    : `outdated · its file left the diff after round ${t.anchor.round}`);
 
 /** One thread. `unplaced`: a comparison has no place for it, so Focus never moves the file position. `dropped`: a session-local tombstone of an uncommitted thread whose lines changed. `note`: shown under the header. */
 export function ThreadCard({ thread, dropped = false, showLocation = false, unplaced = false, note }: { thread: Thread; dropped?: boolean; showLocation?: boolean; unplaced?: boolean; note?: ReactNode }) {
-  const { readOnly, compare } = useReviewCtx();
+  const { readOnly, compare, guide } = useReviewCtx();
   const actions = useReviewActions();
   const route = useRoute();
   const ref = useRef<HTMLElement>(null);
@@ -85,7 +90,10 @@ export function ThreadCard({ thread, dropped = false, showLocation = false, unpl
   };
   const range = cardRange(thread, { dropped, compare });
   // A review thread is shown in the pane, so Focus opens it there; a file-bound one opens its file unless that is open.
-  const elsewhere = thread.anchor.kind === 'review' ? route.view !== 'threads' : thread.anchor.file !== route.file;
+  const a = thread.anchor;
+  const elsewhere = a.kind === 'review' ? route.view !== 'threads'
+    : a.kind === 'group' ? route.view !== 'guided' || route.step !== a.groupId
+      : a.file !== route.file;
   return (
     <article
       ref={ref}
@@ -101,7 +109,7 @@ export function ThreadCard({ thread, dropped = false, showLocation = false, unpl
         {showLocation && !dropped ? (
           <Button variant="link" size="sm" className="h-auto p-0 font-mono text-xs"
             onClick={jump}>
-            {linkText(thread, compare)}
+            {linkText(thread, guide, compare)}
           </Button>
         ) : range && <span className="font-mono text-xs text-muted-foreground">{range}</span>}
         {!dropped && !focused && <Button variant="ghost" size="sm" className="ml-auto h-6 px-2 text-xs" onClick={() => (!unplaced && (outdated || elsewhere) ? jump() : navigate({ thread: thread.id }))}>Focus</Button>}

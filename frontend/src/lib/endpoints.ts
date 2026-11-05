@@ -1,7 +1,7 @@
 import { api } from './api';
 import type {
   CheckoutInfo, Commit, ComparedThread, DiffFile, FileState, ForkPoint, InboxItem, Kind, RefreshReport, ReviewSummary, Round, Session, SessionPlace,
-  FileSig, Severity, Submission, Thread, ThreadAnchorInput, ThreadCounts, ThreadKind, UnplacedThread, Verdict,
+  FileSig, GuideView, Severity, Submission, Thread, ThreadAnchorInput, ThreadCounts, ThreadKind, UnplacedThread, Verdict,
 } from './types';
 
 /** One typed function per REST call in docs/protocol.md; the only place `api/…` paths are built. */
@@ -14,7 +14,7 @@ const q = (params: Record<string, string | number | null | undefined>): string =
 const json = (method: string, body?: unknown): RequestInit => ({ method, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
 const r = (id: string) => `api/reviews/${encodeURIComponent(id)}`;
 
-export interface ReviewDetail { review: ReviewSummary; files: FileState[]; rounds: Round[]; submissions: Submission[]; outdatedThreads: Thread[]; reviewThreads: Thread[] }
+export interface ReviewDetail { review: ReviewSummary; files: FileState[]; rounds: Round[]; submissions: Submission[]; outdatedThreads: Thread[]; reviewThreads: Thread[]; guide: GuideView | null }
 /** A past round of a range review, read-only: its files, the counts of its threads, its outdated and its review threads. */
 export interface RoundView { readOnly: true; round: Round; files: FileState[]; counts: ThreadCounts; outdatedThreads: Thread[]; reviewThreads: Thread[] }
 /** `reviewThreads` are round B's; `counts` covers only the compared (file-bound) threads. */
@@ -67,9 +67,12 @@ export const compare = (id: string, from: number, to: number) => api<CompareView
 export const fileLines = (id: string, path: string, side: 'old' | 'new', start: number, end: number, round?: number) =>
   api<FileLines>(`${r(id)}/file${q({ path, side, start, end, round })}`);
 export const setVerdict = (id: string, hunkId: string, verdict: Verdict) =>
-  api<{ hunkId: string; verdict: Verdict; review: ReviewSummary; fileSig: FileSig }>(`${r(id)}/hunks/${encodeURIComponent(hunkId)}/verdict`, json('PUT', { verdict }));
+  api<{ hunkId: string; verdict: Verdict; clearedGroups: string[]; review: ReviewSummary; fileSig: FileSig }>(`${r(id)}/hunks/${encodeURIComponent(hunkId)}/verdict`, json('PUT', { verdict }));
 export const acceptFile = (id: string, file: string, hunkIds: string[]) =>
-  api<{ file: string; accepted: string[]; review: ReviewSummary; fileSig: FileSig }>(`${r(id)}/accept-file`, json('POST', { file, hunkIds }));
+  api<{ file: string; accepted: string[]; clearedGroups: string[]; review: ReviewSummary; fileSig: FileSig }>(`${r(id)}/accept-file`, json('POST', { file, hunkIds }));
+export const setGroupVerdict = (id: string, groupId: string, verdict: Verdict) =>
+  api<{ groupId: string; verdict: Verdict; hunks: { id: string; verdict: Verdict }[]; fileSigs: FileSig[]; guide: GuideView; review: ReviewSummary }>(
+    `${r(id)}/groups/${encodeURIComponent(groupId)}/verdict`, json('PUT', { verdict }));
 export const createThread = (id: string, input: { anchor: ThreadAnchorInput; kind: ThreadKind; severity?: Severity; body: string }) =>
   api<{ thread: Thread; fileSig: FileSig | null }>(`${r(id)}/threads`, json('POST', input));
 export const replyThread = (id: string, tid: string, body: string) =>
@@ -78,6 +81,7 @@ export const setThreadStatus = (id: string, tid: string, status: 'open' | 'resol
   api<{ thread: Thread; fileSig: FileSig | null }>(`${r(id)}/threads/${encodeURIComponent(tid)}`, json('PATCH', { status, ...(disposition ? { disposition } : {}) }));
 export const refresh = (id: string) => api<RefreshReport>(`${r(id)}/refresh`, json('POST'));
 export const compose = (id: string) => api<{ submission: Submission }>(`${r(id)}/submissions`, json('POST'));
+export const guideMe = (id: string) => api<{ submission: Submission }>(`${r(id)}/guide`, json('POST'));
 export const submissionResult = (id: string, sid: string | number, result: { ok: boolean; code?: string }) =>
   api<{ submission: Submission }>(`${r(id)}/submissions/${encodeURIComponent(String(sid))}/result`, json('POST', result));
 export const markRead = (id: string, threadId?: string) =>

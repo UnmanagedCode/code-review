@@ -16,7 +16,7 @@ const HOST_URLS = /pluginBridge\.js|pluginTheme\.css/;
 const VIEWPORTS = { desktop: { width: 1280, height: 800 }, phone: { width: 390, height: 844 } };
 
 const world = await seed();
-const { range, uncommitted, conducted, syntax } = world.ids;
+const { range, uncommitted, conducted, syntax, guided } = world.ids;
 const q = (o) => `${world.url}/?${new URLSearchParams({ project: 'app', worktree: 'feature', ...o })}`;
 // Threads on a whole file (a text one and the binary one) and on the review itself; snap only, so golden's counts stay seed.mjs's.
 await world.call('POST', `reviews/${range}/threads`, { anchor: { kind: 'file', file: 'c.js' }, kind: 'finding', severity: 'minor', body: 'This file needs a header comment explaining **why** the extra lines exist.' });
@@ -135,6 +135,16 @@ try {
           await shot('diff-syntax-split');
           await page.getByRole('group', { name: 'Diff view' }).getByRole('button', { name: 'Inline' }).click();
           await page.setViewportSize(size);
+        }
+
+        // Guided review: the pane's step list beside step 1 (a phone shows the step on its own, and its list on a screen of its own).
+        const guidedStep = page.getByRole('heading', { name: 'Rename the starting values', level: 2 });
+        await open(q({ worktree: 'guided', review: guided, view: 'guided', step: 'g1' }), guidedStep);
+        await page.getByRole('region', { name: 'g2.js' }).getByRole('grid').waitFor();
+        await shot('guided');
+        if (vp === 'phone') {
+          await open(q({ worktree: 'guided', review: guided, view: 'guided' }), page.getByRole('navigation', { name: 'Steps' }));
+          await shot('guided-steps');
         }
 
         await open(q({ review: range, file: 'logo.bin' }), page.getByText('Binary file changed'));

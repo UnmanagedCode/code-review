@@ -92,3 +92,19 @@ test('REVIEW_SCOPED and NEW_REVIEW_CLOSED drop range and sha', () => {
   navigate(NEW_REVIEW_CLOSED);
   expect(parseRoute(location.search)).toEqual({ project: 'p', worktree: 'w' });
 });
+
+// Invariant: `step` is a group id or `other`; anything else is dropped, and a `view=guided` URL parses.
+test('step accepts a group id or other, drops the rest; view=guided parses', () => {
+  for (const v of ['g12', 'g1', 'other']) expect(parseRoute(toSearch({ review: 'r-1', view: 'guided', step: v })), v).toEqual({ review: 'r-1', view: 'guided', step: v });
+  for (const v of ['g0', 'x', '12', 'g01', 'other2']) expect(parseRoute(`?review=r-1&step=${v}`), v).toEqual({ review: 'r-1' });
+});
+
+// Invariant: a new review never inherits the previous one's step; leaving the open file keeps it (pane state, like view).
+test('REVIEW_SCOPED clears step, LEAVE_FILE keeps it, and toSearch writes it right after view', () => {
+  history.replaceState(null, '', toSearch({ project: 'app', review: 'r-1', view: 'guided', step: 'g2', file: 'a.js' }));
+  navigate(LEAVE_FILE);
+  expect(parseRoute(location.search)).toEqual({ project: 'app', review: 'r-1', view: 'guided', step: 'g2' });
+  navigate({ review: 'r-2', ...REVIEW_SCOPED });
+  expect(parseRoute(location.search)).toEqual({ project: 'app', review: 'r-2' });
+  expect(toSearch({ step: 'g1', view: 'guided', range: 'a..b', review: 'r-1' })).toBe('?review=r-1&view=guided&step=g1&range=a..b');
+});

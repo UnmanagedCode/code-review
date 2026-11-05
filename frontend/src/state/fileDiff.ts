@@ -4,12 +4,11 @@ import { contextBaseline, trimContext } from '@/lib/contextLines';
 import { buildRows, gapNeeds, gapSpans, type Expansion, type Expansions, type Row } from '@/lib/diffRows';
 import * as ep from '@/lib/endpoints';
 import { errorText } from '@/lib/refusals';
-import type { DiffFile, FileSig, Side, Thread, Verdict } from '@/lib/types';
+import type { DiffFile, Side, Thread } from '@/lib/types';
 import { ignoreWhitespace } from '@/lib/whitespace';
 import { useDiffPrefs } from './diffPrefs';
 import { clearReturned, recordDropped } from './dropped';
-import { diffKey, diffSpec } from './diffResource';
-import { useResource } from './resource';
+import { useDiffEntry } from './diffResource';
 
 export const EXPAND_STEP = 20;
 const NONE: Expansion = { top: 0, bottom: 0 };
@@ -51,19 +50,8 @@ export function useFileDiff({ reviewId, path, sig, uncommitted, commitFiles, rou
   const prefs = useDiffPrefs();
   const commitMode = !!commitFiles;
   const listed = commitMode || !!compare;
-  const key = path && !listed ? diffKey(reviewId, round, path) : null;
-  const fetched = useResource(key, diffSpec(reviewId, round, path ?? ''), { keepPrevious: true });
+  const fetched = useDiffEntry(reviewId, round, path && !listed ? path : undefined, sig);
   const switching = fetched.placeholder;
-  // Refetch when the cached diff's sig differs from the view's. Compared once per (file, view sig): a local patch
-  // (`patchSig`) moves the cached sig ahead of the view's until the review reloads, and must not read as a stale diff.
-  const compared = useRef('');
-  useEffect(() => {
-    if (!key || sig === undefined || switching || fetched.loading || !fetched.data) return;
-    const id = `${key}\0${sig}`;
-    if (compared.current === id) return;
-    compared.current = id;
-    if (fetched.data.sig !== sig) fetched.reload();
-  }, [key, sig, switching, fetched.loading, fetched.data]);
 
   const file: DiffFile | undefined = commitMode ? commitFiles.find((f) => f.path === path)
     : compare ? compare.files?.find((f) => f.path === path) : fetched.data;
@@ -191,23 +179,8 @@ export function useFileDiff({ reviewId, path, sig, uncommitted, commitFiles, rou
     [file, shown.hunks, effective, texts, shownTotal, side],
   );
 
-  const patch = fetched.mutate;
-  const patchThread = useCallback((t: Thread) => patch((f) => {
-    const rest = f.threads.filter((x) => x.id !== t.id);
-    const belongs = t.anchor.kind !== 'review' && t.anchor.file === f.path && t.status !== 'outdated';
-    return { ...f, threads: belongs ? [...rest, t].sort((a, b) => a.id.localeCompare(b.id, undefined, { numeric: true })) : rest };
-  }), [patch]);
-  const patchVerdict = useCallback((hunkId: string, verdict: Verdict) => patch((f) => ({ ...f, hunks: f.hunks.map((h) => (h.id === hunkId ? { ...h, verdict } : h)) })), [patch]);
-  /**
-   * The server's new sig for the file a write touched: the patches above made the cached diff match it, so no refetch is due.
-   * A review thread's write touched no file (null).
-   */
-  const patchSig = useCallback((fs: FileSig | null) => {
-    if (fs?.sig && fs.path === path) patch((f) => ({ ...f, sig: fs.sig! }));
-  }, [patch, path]);
-
   return {
-    file, rows, side, total, switching, expand, reveal, patchThread, patchVerdict, patchSig, reload: compare ? compare.reload : fetched.reload,
+    file, rows, side, total, switching, expand, reveal, reload: compare ? compare.reload : fetched.reload,
     loading: commitMode ? false : compare ? !compare.files && !compare.error : fetched.loading && (!fetched.data || switching),
     error: commitMode ? undefined : compare ? compare.error : fetched.error,
   };

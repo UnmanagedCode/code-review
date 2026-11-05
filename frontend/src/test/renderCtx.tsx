@@ -6,14 +6,16 @@ import { ReviewProvider, type ReviewCtx } from '@/state/reviewContext';
 import { diffFile, fileState, review } from './fixtures';
 
 export function ctxValue(over: Partial<ReviewCtx> = {}): ReviewCtx {
-  const fileDiff = { file: diffFile(), rows: [], side: 'new', total: null, expand: vi.fn(), reveal: vi.fn(), patchThread: vi.fn(), patchVerdict: vi.fn(), patchSig: vi.fn(), reload: vi.fn(), loading: false, error: undefined, ...(over.fileDiff ?? {}) } as unknown as FileDiffState;
+  const fileDiff = { file: diffFile(), rows: [], side: 'new', total: null, expand: vi.fn(), reveal: vi.fn(), reload: vi.fn(), loading: false, error: undefined, ...(over.fileDiff ?? {}) } as unknown as FileDiffState;
   const rv = over.review ?? review();
   return {
     id: 'r-1', review: rv, files: [fileState()], rounds: [{ n: 1, headSha: 'a', baseSha: 'b', createdAt: '', submittedAt: null }], submissions: [], outdatedThreads: [], reviewThreads: [],
     commit: undefined, round: undefined, compare: undefined, viewLoad: undefined,
     // As ReviewView derives it: a round view or a comparison.
     pastView: over.round !== undefined || over.compare !== undefined, threadCounts: rv.counts.threads,
-    readOnly: false, version: 1, sessions: [], reload: vi.fn(), applyReview: vi.fn(), ...over, fileDiff,
+    readOnly: false, version: 1, sessions: [], reload: vi.fn(), applyReview: vi.fn(),
+    guide: null, patchGuide: vi.fn(), diffs: { patchVerdicts: vi.fn(), patchThread: vi.fn(), patchSig: vi.fn() },
+    ...over, fileDiff,
   };
 }
 

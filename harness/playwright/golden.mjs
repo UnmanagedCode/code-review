@@ -15,7 +15,7 @@ mkdirSync(outDir, { recursive: true });
 const HOST_URLS = /pluginBridge\.js|pluginTheme\.css/;
 
 const world = await seed();
-const { range, uncommitted, main, syntax } = world.ids;
+const { range, uncommitted, main, syntax, guided } = world.ids;
 const q = (o) => `${world.url}/?${new URLSearchParams({ project: 'app', worktree: 'feature', ...o })}`;
 
 function watchErrors(page) {
@@ -237,7 +237,7 @@ try {
     // 4b: the active session's checkouts lead each select; New review prefills from it, and a typed title survives a session change.
     const groups = (id) => page.evaluate((i) => [...document.querySelectorAll(`#${i} optgroup`)].map((g) => [g.label, [...g.querySelectorAll('option')].map((o) => o.textContent)]), id);
     assert.deepEqual(await groups('cb-project'), [['Active session', ['app']], ['Other projects', ['other']]]);
-    assert.deepEqual(await groups('cb-worktree'), [['Active session', ['feature']], ['Other worktrees', ['Main checkout', 'syntax']]]);
+    assert.deepEqual(await groups('cb-worktree'), [['Active session', ['feature']], ['Other worktrees', ['Main checkout', 'syntax', 'guided']]]);
     await page.getByRole('button', { name: 'New review' }).click();
     const title = page.getByLabel('Title (optional)');
     const recipient = page.getByLabel('Recipient session');
@@ -256,7 +256,7 @@ try {
     await shot('4b-new-review-title-kept');
     await page.keyboard.press('Escape');
     assert.deepEqual(await groups('cb-project'), [['Active session', ['app', 'other']]]);
-    assert.deepEqual(await groups('cb-worktree'), [['Active session', ['Main checkout']], ['Other worktrees', ['feature', 'syntax']]]);
+    assert.deepEqual(await groups('cb-worktree'), [['Active session', ['Main checkout']], ['Other worktrees', ['feature', 'syntax', 'guided']]]);
 
     await page.goto(q({ review: uncommitted }));
     // The stub is re-installed on navigation (no session emitted); make the first send fail.
@@ -925,6 +925,192 @@ try {
     await page.waitForURL(/thread=/);
     assert.equal(params(page).file, 'c.js', 'Focus on a review thread keeps the open file');
     assert.equal(params(page).view, 'threads');
+    assert.deepEqual(errors, []);
+  }, { headless: true, viewport: { width: 1280, height: 800 } });
+
+  // 21: guided review, on its own worktree. Steps, group verdicts, the carry-over a refresh makes, the hunk/group
+  // contradiction note, "Open in file", links to group threads, Guide me, and the phone's step flow.
+  await withPage(async (page) => {
+    const errors = watchErrors(page);
+    const shot = shotter(page);
+    const gq = (o) => q({ worktree: 'guided', review: guided, ...o });
+    const pane = page.getByRole('tablist', { name: 'Review pane' });
+    const steps = page.getByRole('navigation', { name: 'Steps' }).getByRole('button');
+    const step = (title) => page.getByRole('navigation', { name: 'Steps' }).getByRole('button', { name: new RegExp(title) });
+    const groupBar = page.getByRole('group', { name: 'Group verdict' });
+    // Scrolls the step's container until `path`'s file heading would sit under the sticky step header, and checks the heading
+    // is pinned just below that header instead (visible, not covered).
+    const scrollPastHeading = async (path, name) => {
+      // A short viewport makes the step tall enough to scroll, whatever the screen.
+      const size = page.viewportSize();
+      await page.setViewportSize({ width: size.width, height: 480 });
+      const heading = page.getByRole('region', { name: path }).getByRole('heading', { name: path });
+      await heading.evaluate((h) => {
+        const header = h.closest('[class*="flex-col"]').firstElementChild;
+        let scroller = h.parentElement;
+        while (scroller && !(scroller.scrollHeight > scroller.clientHeight && /auto|scroll/.test(getComputedStyle(scroller).overflowY))) scroller = scroller.parentElement;
+        scroller.scrollTop += h.getBoundingClientRect().top - header.getBoundingClientRect().bottom + 60;
+      });
+      await page.waitForTimeout(100);
+      const [h, header] = await Promise.all([heading.boundingBox(), page.getByRole('heading', { level: 2 }).first().evaluate((e) => e.closest('.sticky').getBoundingClientRect().bottom)]);
+      assert.ok(Math.abs(h.y - header) <= 2, `${path}'s heading is pinned below the step header (heading ${h.y}, header bottom ${header})`);
+      await shot(name);
+      await page.evaluate(() => document.querySelector('main').scrollTo(0, 0));
+      await page.setViewportSize(size);
+    };
+    const pressed = (bar) => bar.locator('[aria-pressed="true"]').allTextContents();
+
+    // 1. The Guided tab lists the steps (three groups and Other changes); nothing is offered to ask for yet.
+    await page.goto(gq({}));
+    await pane.getByRole('tab', { name: 'Guided' }).click();
+    await steps.first().waitFor();
+    assert.equal(await steps.count(), 4);
+    assert.match(await steps.nth(0).textContent(), /Rename the starting values/);
+    assert.match(await steps.nth(3).textContent(), /Other changes/);
+    assert.equal(await page.getByRole('button', { name: 'Guide me' }).count(), 0, 'nothing to ask for before a refresh');
+    assert.ok(await step('Rename').getAttribute('aria-current') === 'step', 'the first step is current');
+    await page.getByRole('heading', { name: 'Rename the starting values', level: 2 }).waitFor();
+    await shot('21-1-steps');
+
+    // 2. HEAD moved past G3's hunk: Refresh keeps two groups and drops G3, which lists as retired; Guide me is offered.
+    await page.getByRole('button', { name: 'Refresh' }).click();
+    const report = page.getByLabel('Refresh result');
+    await report.waitFor();
+    assert.match(await report.textContent(), /groups 2 kept, 1 dropped/);
+    const retired = page.getByRole('region', { name: 'Retired groups' });
+    await retired.getByText('One-line tweak in g3').waitFor();
+    await page.getByRole('button', { name: 'Guide me' }).waitFor();
+    await page.getByText('A refresh dropped 1 group since the last proposal').waitFor();
+    assert.equal(await steps.count(), 3);
+    await shot('21-2-refreshed');
+
+    // 3. Step 1 spans two files; Accept group accepts it and its hunks, which collapse.
+    await step('Rename').click();
+    const g1 = page.getByRole('region', { name: 'g1.js' });
+    const g2 = page.getByRole('region', { name: 'g2.js' });
+    await g1.getByRole('grid').waitFor();
+    await g2.getByRole('grid').waitFor();
+    await shot('21-3-step-one');
+    await scrollPastHeading('g1.js', '21-3-scrolled-heading');
+    await page.getByRole('button', { name: 'Accept group' }).click();
+    await page.getByRole('button', { name: ACCEPTED_SUMMARY }).first().waitFor();
+    assert.equal(await page.getByRole('button', { name: ACCEPTED_SUMMARY }).count(), 2, 'both hunks are accepted and collapsed');
+    assert.deepEqual(await pressed(groupBar), ['Accept group']);
+    await step('Rename').getByText('accepted').waitFor();
+    await shot('21-3-accepted');
+
+    // 4. G2: hostile markup in its title and description stays inert. Reject group.
+    await page.getByRole('button', { name: 'Next step' }).click();
+    await page.getByRole('heading', { name: 'Tidy the tail <b>of g1</b>', level: 2 }).waitFor();
+    await page.locator('.md').getByText('another').waitFor();
+    assert.equal(await page.evaluate(() => window.__xss), undefined, 'no injected script ran');
+    assert.equal(await page.locator('.md script, .md img, .md a[href^="javascript"]').count(), 0, 'no script, image or javascript: link in the description');
+    assert.equal(await page.getByRole('heading', { level: 2 }).locator('b').count(), 0, 'the title is text');
+    await page.emulateMedia({ colorScheme: 'dark' });
+    await shot('21-4-dark-step');
+    await page.emulateMedia({ colorScheme: 'light' });
+    await page.getByRole('button', { name: 'Reject group' }).click();
+    await page.waitForFunction(() => [...document.querySelectorAll('[aria-label="Group verdict"] [aria-pressed="true"]')].map((b) => b.textContent).join() === 'Reject group');
+    await shot('21-4-rejected');
+
+    // 5. Comment on group: the thread appears in the step.
+    await page.getByRole('button', { name: 'Comment on group' }).click();
+    await page.getByLabel('Message').fill('Is the tail change needed?');
+    await page.getByRole('button', { name: 'Post' }).click();
+    await page.getByRole('region', { name: 'Group threads' }).getByRole('article').filter({ hasText: 'Is the tail change needed?' }).waitFor();
+    await shot('21-5-group-thread');
+
+    // 6. Other changes: per-hunk Accept; the step's badge counts decided hunks.
+    await page.getByRole('button', { name: 'Next step' }).click();
+    await page.getByRole('heading', { name: 'Other changes', level: 2 }).waitFor();
+    assert.equal(await page.getByRole('group', { name: 'Group verdict' }).count(), 0, 'Other changes has no group verdict');
+    await page.getByRole('group', { name: 'Hunk verdict' }).first().getByRole('button', { name: 'Accept', exact: true }).click();
+    await step('Other changes').getByText('1/2 decided').waitFor();
+    await shot('21-6-other-changes');
+
+    // 7. The retired G3 opens its own view.
+    await retired.getByRole('button', { name: /One-line tweak in g3/ }).click();
+    await page.getByRole('heading', { name: 'One-line tweak in g3', level: 2 }).waitFor();
+    await page.getByText(/Retired in round \d+ \(refresh\)/).waitFor();
+    await shot('21-7-retired');
+
+    // 8. Changing one hunk of the accepted G1 sets the group back to pending, with a note saying why.
+    await step('Rename').click();
+    await page.getByRole('button', { name: ACCEPTED_SUMMARY }).first().click();
+    await page.getByRole('group', { name: 'Hunk verdict' }).first().getByRole('button', { name: 'Pending', exact: true }).click();
+    await page.waitForFunction(() => [...document.querySelectorAll('[aria-label="Group verdict"] [aria-pressed="true"]')].map((b) => b.textContent).join() === 'Pending');
+    await page.getByText('Set back to pending: you changed the verdict of one of its hunks.').waitFor();
+    await shot('21-8-set-back-to-pending');
+
+    // 9. Open in file: that file with the hunk's lines marked and in view; the Guided tab and step stay.
+    await page.getByRole('link', { name: /^Open g1\.js at/ }).first().click();
+    await page.waitForURL(/file=g1\.js/);
+    assert.deepEqual({ view: params(page).view, step: params(page).step, side: params(page).side }, { view: 'guided', step: 'g1', side: 'new' });
+    const target = page.locator('[data-line-target]');
+    await target.waitFor();
+    const where = await target.boundingBox();
+    assert.ok(where.y >= 0 && where.y + where.height <= 800, `the hunk's first line is in view (y ${where.y})`);
+    assert.equal(await pane.getByRole('tab', { name: 'Guided' }).getAttribute('aria-selected'), 'true');
+    await shot('21-9-open-in-file');
+
+    // 10. Reload keeps the step; Back returns to the previous one.
+    await step('Rename').click();
+    await page.getByRole('heading', { name: 'Rename the starting values', level: 2 }).waitFor();
+    await page.reload();
+    await page.getByRole('heading', { name: 'Rename the starting values', level: 2 }).waitFor();
+    await page.getByRole('button', { name: 'Next step' }).click();
+    await page.getByRole('heading', { name: 'Tidy the tail <b>of g1</b>', level: 2 }).waitFor();
+    await page.goBack();
+    await page.getByRole('heading', { name: 'Rename the starting values', level: 2 }).waitFor();
+    assert.equal(params(page).step, 'g1');
+
+    // 11. A group thread's link (what agent tools hand out) opens its step with the thread focused.
+    const guide = (await world.call('GET', `reviews/${guided}`)).guide;
+    const asked = guide.threads.find((t) => t.anchor.groupId === 'g1');
+    const link = threadLink({ id: guided, project: 'app', worktree: 'guided' }, asked);
+    await page.goto(`${world.url}/?${link.split('/?')[1]}`);
+    await page.getByRole('region', { name: 'Group threads' }).getByRole('article').filter({ hasText: 'Why do these two files change together?' }).waitFor();
+    assert.deepEqual({ view: params(page).view, step: params(page).step, thread: params(page).thread }, { view: 'guided', step: 'g1', thread: asked.id });
+    assert.equal(await page.locator('article.ring-2').count(), 1, 'the linked thread is focused');
+    await shot('21-11-thread-link');
+
+    // 12. Threads tab → All lists the group thread; its location link returns to the step.
+    await pane.getByRole('tab', { name: /^Threads/ }).click();
+    const panel = page.getByRole('tabpanel', { name: /^Threads/ });
+    await panel.getByRole('tab', { name: /^All/ }).click();
+    const card = panel.getByRole('article').filter({ hasText: 'Why do these two files change together?' });
+    await card.waitFor();
+    await shot('21-12-all-threads');
+    await card.getByRole('button', { name: /^Step 1 · Rename the starting values/ }).click();
+    await page.waitForURL(/view=guided/);
+    assert.equal(params(page).step, 'g1');
+    await page.getByRole('heading', { name: 'Rename the starting values', level: 2 }).waitFor();
+
+    // 13. Guide me with no bridge: the prompt for the human to copy, then Mark as sent.
+    await page.getByRole('button', { name: 'Guide me' }).click();
+    const dialog = page.getByRole('dialog', { name: 'Guide me' });
+    await dialog.getByRole('button', { name: 'Copy', exact: true }).waitFor();
+    assert.ok((await dialog.getByLabel('Prompt').inputValue()).length > 0, 'the prompt is shown');
+    await shot('21-13-guide-me');
+    await dialog.getByRole('button', { name: 'Mark as sent' }).click();
+    await dialog.waitFor({ state: 'detached' });
+
+    // 14. Phone: the step list, then a step with Back to steps.
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto(gq({ view: 'guided' }));
+    await steps.first().waitFor();
+    await shot('21-14-phone-steps');
+    await step('Rename').click();
+    await page.getByRole('region', { name: 'g2.js' }).getByRole('grid').waitFor();
+    await scrollPastHeading('g1.js', '21-14-phone-scrolled-heading');
+    await page.getByRole('button', { name: 'Back to steps' }).click();
+    await step('Tidy').click();
+    await page.getByRole('heading', { name: 'Tidy the tail <b>of g1</b>', level: 2 }).waitFor();
+    await page.getByRole('button', { name: 'Back to steps' }).waitFor();
+    await shot('21-14-phone-step');
+    await page.getByRole('button', { name: 'Back to steps' }).click();
+    await steps.first().waitFor();
+    assert.equal(params(page).step, undefined);
     assert.deepEqual(errors, []);
   }, { headless: true, viewport: { width: 1280, height: 800 } });
 

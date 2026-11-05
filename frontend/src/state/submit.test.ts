@@ -1,6 +1,7 @@
 import { act, renderHook } from '@testing-library/react';
 import { toast } from 'sonner';
 import { expect, test, vi } from 'vitest';
+import * as ep from '@/lib/endpoints';
 import { BRIDGE_CODES } from '@/lib/refusals';
 import { installBridge } from '@/test/fakeBridge';
 import { refusal } from '@/test/fixtures';
@@ -13,7 +14,7 @@ const routes = () => stubFetch({
   'POST api/reviews/r-1/submissions/3/result': { submission: { ...sub, status: 'delivered' } },
 });
 const setup = (extra: Partial<Parameters<typeof useSubmission>[0]> = {}) => {
-  const deps = { reviewId: 'r-1', recipientLabel: 'Author', onRecorded: vi.fn(), onNoRecipient: vi.fn(), ...extra };
+  const deps = { reviewId: 'r-1', compose: () => ep.compose('r-1'), recipientLabel: 'Author', onRecorded: vi.fn(), onNoRecipient: vi.fn(), ...extra };
   return { deps, hook: renderHook(() => useSubmission(deps)) };
 };
 const results = (net: ReturnType<typeof stubFetch>) => net.calls.filter((c) => c.url.pathname.endsWith('/result')).map((c) => c.body);

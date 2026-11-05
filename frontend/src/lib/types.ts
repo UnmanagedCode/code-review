@@ -11,14 +11,15 @@ export type Author = { kind: 'human' } | { kind: 'session'; sessionId: string; r
 export interface Citation { raw: string; path: string; startLine: number; endLine: number }
 export interface Message { id: number | string; author: Author; body: string; at: string; round: number; proposeResolve?: boolean; citations: Citation[] }
 
-/** Where a thread sits (`kind`): on lines (a hunk anchor is stored as lines), on a whole file, or on the review itself. */
+/** Where a thread sits (`kind`): on lines (a hunk anchor is stored as lines), on a whole file, on a guided-review group, or on the review itself. */
 export interface LinesAnchor {
   kind: 'lines'; file: string; side: Side; startLine: number; endLine: number;
   hunkId: string | null; round: number; linesHash?: string; drifted: boolean;
 }
 export interface FileAnchor { kind: 'file'; file: string; round: number }
 export interface ReviewAnchor { kind: 'review'; round: number }
-export type Anchor = LinesAnchor | FileAnchor | ReviewAnchor;
+export interface GroupAnchor { kind: 'group'; groupId: string; round: number }
+export type Anchor = LinesAnchor | FileAnchor | ReviewAnchor | GroupAnchor;
 export interface Thread {
   id: string; kind: ThreadKind; severity: Severity | null; status: 'open' | 'resolved' | 'outdated';
   disposition: 'fixed' | 'dismissed' | null; resolveProposed: boolean; anchor: Anchor;
@@ -59,7 +60,7 @@ export type DiffFile = Omit<FileState, 'hunks' | 'threads'> & {
 export interface FileSig { path: string; sig: string | null }
 
 export interface Round { n: number; headSha: string; baseSha: string; createdAt: string; submittedAt: string | null }
-export interface SubmissionRef { id: number | string; status: 'pending' | 'delivered' | 'failed' | 'superseded'; code: string | null; round: number }
+export interface SubmissionRef { id: number | string; kind: 'round' | 'guide'; status: 'pending' | 'delivered' | 'failed' | 'superseded'; code: string | null; round: number }
 export interface Submission extends SubmissionRef { recipient: string; text: string }
 
 export interface ReviewSummary {
@@ -69,6 +70,8 @@ export interface ReviewSummary {
   counts: { files: number | null; hunks: ({ pending: number; accepted: number; rejected: number } | { total: number }) | null; threads: ThreadCounts };
   mergeBlockers: number; unread: number; seenByHuman: boolean; rev: number; createdAt: string; createdBy: Author;
   lastSubmission: SubmissionRef | null;
+  /** The current round's groups; null on uncommitted reviews. `ungrouped` is null while the snapshot is unreadable. */
+  groups: { total: number; accepted: number; rejected: number; pending: number; ungrouped: number | null; guideMe: boolean } | null;
   snapshotError?: 'CHECKOUT_GONE' | 'SNAPSHOT_GONE' | 'DIFF_TOO_LARGE' | 'SYSTEM_UNREACHABLE' | 'GIT_TIMEOUT' | 'GIT_UNAVAILABLE' | 'TEMP_UNUSABLE';
 }
 
@@ -91,10 +94,25 @@ export interface RefreshReport {
   unchanged: boolean; round: number;
   hunks?: { kept: number; reset: number; new: number };
   threads?: { moved: number; drifted: number; outdated: number; dropped: number };
+  groups?: { kept: number; dropped: number };
 }
 
 export type ThreadAnchorInput =
   | { kind: 'lines'; file: string; side?: Side; startLine: number; endLine?: number }
   | { kind: 'hunk'; hunkId: string }
   | { kind: 'file'; file: string }
+  | { kind: 'group'; groupId: string }
   | { kind: 'review' };
+
+/** A hunk as a guide lists it: `file` is null while the snapshot is unreadable. */
+export interface GuideHunk { id: string; file: string | null; verdict: Verdict }
+export interface GuideGroup {
+  id: string; order: number; title: string; description: string; hunks: GuideHunk[]; verdict: Verdict;
+  proposedBy: Author; threads: ThreadCounts; unread: number;
+}
+/** A group that left the current round (dropped by a refresh, or replaced by a re-proposal); its threads stay. */
+export interface RetiredGroup { id: string; title: string; retiredIn: number; reason: 'refresh' | 'reproposal' }
+export interface GuideMe { offered: boolean; noGroups: boolean; droppedGroups: number; newUngrouped: number }
+export interface GuideView {
+  round: number; groups: GuideGroup[]; ungrouped: GuideHunk[] | null; threads: Thread[]; retired: RetiredGroup[]; guideMe: GuideMe;
+}

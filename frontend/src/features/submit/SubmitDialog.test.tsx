@@ -125,7 +125,7 @@ test('a submission left failed after a reload is offered for re-send', async () 
   const bridge = installBridge();
   const n = net();
   renderInReview(<SubmitControls onNoRecipient={() => {}} />, {
-    review: review({ lastSubmission: { id: 3, status: 'failed', code: 'SESSION_NOT_READY', round: 1 } }),
+    review: review({ lastSubmission: { id: 3, kind: 'round', status: 'failed', code: 'SESSION_NOT_READY', round: 1 } }),
     submissions: [{ ...sub, status: 'failed' }] as never,
   });
   expect(screen.getByText('Last submission failed (SESSION_NOT_READY)')).toBeTruthy();
@@ -141,7 +141,7 @@ test('a submission left pending is offered for re-send, worded as unrecorded and
   installBridge();
   net();
   renderInReview(<SubmitControls onNoRecipient={() => {}} />, {
-    review: review({ lastSubmission: { id: 3, status: 'pending', code: null, round: 1 } }),
+    review: review({ lastSubmission: { id: 3, kind: 'round', status: 'pending', code: null, round: 1 } }),
     submissions: [sub] as never,
   });
   expect(screen.getByText('Last submission isn’t recorded as delivered')).toBeTruthy();

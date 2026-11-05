@@ -1,4 +1,4 @@
-import type { Author, DiffFile, DiffLine, FileState, InboxItem, LinesAnchor, Message, ReviewSummary, TextHunk, Thread } from '@/lib/types';
+import type { Author, DiffFile, GroupAnchor, GuideGroup, GuideView, DiffLine, FileState, InboxItem, LinesAnchor, Message, ReviewSummary, TextHunk, Thread } from '@/lib/types';
 
 export const HUMAN: Author = { kind: 'human' };
 export const agent = (sessionId = 's-rev', role: 'author' | 'reviewer' | 'conductor' = 'reviewer'): Author => ({ kind: 'session', sessionId, role });
@@ -8,7 +8,7 @@ export const review = (over: Partial<ReviewSummary> = {}): ReviewSummary => ({
   status: 'open', recipient: 's-author', author: null, recipientRole: 'author', round: 1, headSha: 'a'.repeat(40), baseSha: 'b'.repeat(40),
   headMoved: false, dirty: false, checkoutGone: false,
   counts: { files: 1, hunks: { pending: 1, accepted: 0, rejected: 0 }, threads: { open: 0, resolved: 0, outdated: 0 } },
-  mergeBlockers: 0, unread: 0, seenByHuman: true, rev: 1, createdAt: '2026-01-01T00:00:00Z', createdBy: HUMAN, lastSubmission: null,
+  mergeBlockers: 0, unread: 0, seenByHuman: true, rev: 1, createdAt: '2026-01-01T00:00:00Z', createdBy: HUMAN, lastSubmission: null, groups: null,
   ...over,
 });
 
@@ -59,4 +59,16 @@ export const inboxItem = (over: Partial<InboxItem> = {}): InboxItem => ({
   id: 'r-1', project: 'app', worktree: 'feature', branch: 'feature', kind: 'range', label: 'main…feature', title: '', round: 1,
   unread: 0, seenByHuman: true, lastActivityAt: '2026-01-01T00:00:00Z', turn: 'human', checkoutGone: false,
   ...over,
+});
+
+export const groupAnchor = (over: Partial<GroupAnchor> = {}): GroupAnchor => ({ kind: 'group', groupId: 'g1', round: 1, ...over });
+
+export const guideGroup = (over: Partial<GuideGroup> = {}): GuideGroup => ({
+  id: 'g1', order: 1, title: 'Group one', description: 'What this group does.', hunks: [{ id: 'h1', file: 'src/a.ts', verdict: 'pending' }],
+  verdict: 'pending', proposedBy: agent('s-author', 'author'), threads: { open: 0, resolved: 0, outdated: 0 }, unread: 0, ...over,
+});
+
+export const guideView = (over: Partial<GuideView> = {}): GuideView => ({
+  round: 1, groups: [guideGroup()], ungrouped: [], threads: [], retired: [],
+  guideMe: { offered: false, noGroups: false, droppedGroups: 0, newUngrouped: 0 }, ...over,
 });

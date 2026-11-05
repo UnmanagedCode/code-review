@@ -1,6 +1,6 @@
 import { useCallback } from 'react';
 import * as ep from '@/lib/endpoints';
-import type { ReviewSummary } from '@/lib/types';
+import type { GuideView, ReviewSummary } from '@/lib/types';
 import { usePolling } from './live';
 import { resourceKey } from './checkout';
 import { useResource } from './resource';
@@ -23,6 +23,10 @@ export function useReview(id: string | undefined) {
   const applyReview = useCallback((review: ReviewSummary) => {
     f.mutate((d) => (review.rev >= d.review.rev ? { ...d, review } : d));
   }, [f.mutate]);
-  return { ...f, deleted: f.gone, applyReview };
+  /** Patches the guide inside the cached review; the server's next response replaces it. */
+  const patchGuide = useCallback((fn: (g: GuideView) => GuideView) => {
+    f.mutate((d) => (d.guide ? { ...d, guide: fn(d.guide) } : d));
+  }, [f.mutate]);
+  return { ...f, deleted: f.gone, applyReview, patchGuide };
 }
 export type ReviewState = ReturnType<typeof useReview>;

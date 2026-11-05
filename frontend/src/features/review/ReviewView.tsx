@@ -9,6 +9,7 @@ import type { FileState } from '@/lib/types';
 import { useMediaQuery, WIDE_QUERY } from '@/lib/useMediaQuery';
 import { useSessions } from '@/state/checkout';
 import { useCompare } from '@/state/compare';
+import { useDiffPatchers } from '@/state/diffResource';
 import { useFileDiff } from '@/state/fileDiff';
 import { useReview } from '@/state/review';
 import { useRoundView } from '@/state/round';
@@ -17,7 +18,9 @@ import { useFetch } from '@/state/useFetch';
 import { Empty, ErrorState, Loading } from '@/features/common/States';
 import { FileDiff } from '@/features/diff/FileDiff';
 import { DesktopLayout, PhoneLayout } from '@/features/layout/layouts';
-import { ReviewPane, UnreadBadge } from './ReviewPane';
+import { GuideStepView } from '@/features/guide/GuideStepView';
+import { paneTab, ReviewPane, UnreadBadge } from './ReviewPane';
+import { useReviewCtx } from '@/state/reviewContext';
 
 const CLEAR = { review: undefined, ...REVIEW_SCOPED };
 const NO_THREADS = { open: 0, resolved: 0, outdated: 0 };
@@ -37,11 +40,16 @@ function PhoneThreadsButton() {
 
 function Body() {
   const route = useRoute();
+  const { review, guide, pastView, commit } = useReviewCtx();
   const wide = useMediaQuery(WIDE_QUERY);
-  if (wide) return <DesktopLayout left={<ReviewPane />} center={<FileDiff />} />;
+  const guided = paneTab(route, { review, guide, pastView, commit }) === 'guided';
+  // Wide: an open file wins over the step; with neither, the Guided tab's centre is the current step.
+  if (wide) return <DesktopLayout left={<ReviewPane />} center={!route.file && guided ? <GuideStepView /> : <FileDiff />} />;
+  // Phone: the file's Back keeps view and step, so it returns to the step it was opened from.
   return (
     <PhoneLayout>
-      {route.file ? <FileDiff onBack={() => navigate(LEAVE_FILE)} extra={<PhoneThreadsButton />} /> : <ReviewPane />}
+      {route.file ? <FileDiff onBack={() => navigate(LEAVE_FILE)} extra={<PhoneThreadsButton />} />
+        : guided && route.step ? <GuideStepView onBack={() => navigate({ step: undefined })} /> : <ReviewPane />}
     </PhoneLayout>
   );
 }
@@ -51,6 +59,7 @@ export function ReviewView({ id, chrome }: { id: string; chrome?: ReactNode }) {
   const route = useRoute();
   const rv = useReview(id);
   const detail = rv.data;
+  const diffs = useDiffPatchers(id);
   const sessions = useSessions(detail?.review.project, detail?.review.worktree ?? null);
   const commitDiff = useFetch(route.commit ? () => ep.commitDiff(id, route.commit!) : null, [id, route.commit]);
   const commitFiles = commitDiff.data?.files;
@@ -96,7 +105,7 @@ export function ReviewView({ id, chrome }: { id: string; chrome?: ReactNode }) {
   return (
     <ReviewProvider value={{
       ...detail, id, commit: route.commit, readOnly, fileDiff, version: rv.version, sessions: sessions.data?.sessions ?? [],
-      files: treeFiles, reload: rv.reload, applyReview: rv.applyReview,
+      files: treeFiles, reload: rv.reload, applyReview: rv.applyReview, patchGuide: rv.patchGuide, diffs,
       round, compare: compare && { ...compare, view: compareView.data }, pastView,
       viewLoad: past && { loading: past.loading && !past.data, error: past.error, loaded: !!past.data, reload: past.reload },
       outdatedThreads: past ? (round !== undefined && roundView.data?.outdatedThreads) || [] : detail.outdatedThreads,

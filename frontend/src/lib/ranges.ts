@@ -1,5 +1,5 @@
 import { formatLines } from './route';
-import type { Anchor, LinesAnchor, Side, Thread, ThreadKind } from './types';
+import type { Anchor, FileAnchor, LinesAnchor, Side, Thread, ThreadKind } from './types';
 
 /** `L3` or `L3–L5`. */
 export const lineSpan = (start: number, end: number): string => `L${formatLines(start, end).replace('-', '–L')}`;
@@ -11,8 +11,11 @@ export const rangeLabel = (r: { side: Side; startLine: number; endLine: number }
 export type LinesThread<T extends Thread = Thread> = T & { anchor: LinesAnchor };
 export const onLines = <T extends Thread>(t: T): t is LinesThread<T> => t.anchor.kind === 'lines';
 
+/** An anchor that sits on a file (lines or the whole file); review and group anchors sit on none. Mirrors `onFile` in `src/anchor.js`. */
+export const onFile = (a: Anchor): a is LinesAnchor | FileAnchor => a.kind === 'lines' || a.kind === 'file';
+
 /** What a card names a thread's place by: its range, the whole file, or the review. */
-export const anchorLabel = (a: Anchor): string => (a.kind === 'lines' ? rangeLabel(a) : a.kind === 'file' ? 'Whole file' : 'Review');
+export const anchorLabel = (a: Anchor): string => (a.kind === 'lines' ? rangeLabel(a) : a.kind === 'file' ? 'Whole file' : a.kind === 'group' ? 'Group' : 'Review');
 
 /** Rail lanes per gutter; deeper overlaps share the last one. */
 export const MAX_LANES = 3;

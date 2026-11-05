@@ -112,6 +112,30 @@ export async function seed() {
     sx.commit({ 'hl.ts': HL_HEAD }, 'edit hl.ts');
     const syntax = (await call('POST', 'reviews', { project: 'app', worktree: 'syntax', kind: 'range', base: hlBase, recipient: 's-author', title: 'Syntax' })).review;
 
+    // Guided review, on its own worktree so the other reviews' counts don't move: three 60-line files, five hunks (two lines
+    // 5 and 50 of each of g1.js and g2.js, line 5 of g3.js), grouped by the author: G1 spans g1.js and g2.js, G2 is one
+    // hunk, G3 is one hunk, and g2.js line 50 is ungrouped. An agent comment sits on G1. HEAD then moves past G3's lines
+    // without a refresh, so the golden walk refreshes and sees G3 dropped.
+    const gw = w.addWorktree('guided');
+    const body = (name) => Array.from({ length: 60 }, (_, i) => `${name}_${i + 1}`);
+    const gBase = gw.commit(Object.fromEntries(['g1', 'g2', 'g3'].map((n) => [`${n}.js`, `${body(n).join('\n')}\n`])), 'add g files');
+    const edited = (n, at) => `${body(n).map((l, i) => (at.includes(i + 1) ? `${l}_edited` : l)).join('\n')}\n`;
+    gw.commit({ 'g1.js': edited('g1', [5, 50]), 'g2.js': edited('g2', [5, 50]), 'g3.js': edited('g3', [5]) }, 'edit g files');
+    const guided = (await call('POST', 'reviews', { project: 'app', worktree: 'guided', kind: 'range', base: gBase, recipient: 's-author', title: 'Guided' })).review;
+    const hunkIds = {};
+    for (const f of (await call('GET', `reviews/${guided.id}/diff`)).files) hunkIds[f.path] = f.hunks.map((h) => h.id);
+    const description2 = [
+      'Tidy `g1.js` near the end.', '', '- a list item', '- another **bold** item', '',
+      '<img src=x onerror="window.__xss=1">', '<script>window.__xss=2</script>', '', '[click](javascript:window.__xss=3)',
+    ].join('\n');
+    await mcp('propose_groups', { review: guided.id, groups: [
+      { title: 'Rename the starting values', description: 'Both files start from the renamed values.', hunks: [hunkIds['g1.js'][0], hunkIds['g2.js'][0]] },
+      { title: 'Tidy the tail <b>of g1</b>', description: description2, hunks: [hunkIds['g1.js'][1]] },
+      { title: 'One-line tweak in g3', description: 'A single hunk.', hunks: [hunkIds['g3.js'][0]] },
+    ] }, author);
+    await mcp('annotate', { review: guided.id, anchor: 'group', group: 'g1', kind: 'question', body: 'Why do these two files change together?' }, author);
+    gw.commit({ 'g3.js': edited('g3', [5]).replace('g3_5_edited', 'g3_5_rewritten') }, 'rewrite g3 hunk');
+
     const deliver = async (rid) => {
       const { submission } = await call('POST', `reviews/${rid}/submissions`);
       await call('POST', `reviews/${rid}/submissions/${submission.id}/result`, { ok: true });
@@ -128,7 +152,7 @@ export async function seed() {
     await deliver(main.id);
 
     return {
-      url: srv.url, ids: { range: id, uncommitted: un.id, conducted: conducted.id, main: main.id, syntax: syntax.id }, call,
+      url: srv.url, ids: { range: id, uncommitted: un.id, conducted: conducted.id, main: main.id, syntax: syntax.id, guided: guided.id }, call,
       /**
        * Adds a throwaway worktree `spike` with a review titled "Spike experiment" (on demand, so earlier steps never list it).
        * Resolves {id, destroy}; `destroy()` simulates cc deleting the worktree.

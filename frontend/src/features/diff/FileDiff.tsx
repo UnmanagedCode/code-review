@@ -6,7 +6,7 @@ import { dedupeCopies, type ShownThread } from '@/lib/compare';
 import { decorateRows } from '@/lib/decorate';
 import { collapseRows, type Row } from '@/lib/diffRows';
 import { languageFor } from '@/lib/highlight';
-import { onLines, rangeLabel, rangeMarks } from '@/lib/ranges';
+import { onFile, onLines, rangeLabel, rangeMarks } from '@/lib/ranges';
 import { navigate, parseLines, useRoute } from '@/lib/route';
 import { lineOn, selectionTouches, type Selection } from '@/lib/selection';
 import { pairLine, splitRows, type SplitRow as SplitRowT } from '@/lib/splitRows';
@@ -126,7 +126,7 @@ export function FileDiff({ onBack, extra }: { onBack?: () => void; extra?: React
     }
     return m;
   }, [lineThreads]);
-  const ownDropped = useMemo(() => dropped.filter((d) => d.anchor.kind !== 'review' && d.anchor.file === file?.path), [dropped, file?.path]);
+  const ownDropped = useMemo(() => dropped.filter((d) => onFile(d.anchor) && d.anchor.file === file?.path), [dropped, file?.path]);
   const fileTombstones = ownDropped.filter((d) => d.anchor.kind === 'file');
   const tombstones = useMemo(() => {
     const m = new Map<string, Thread[]>();
@@ -241,7 +241,7 @@ export function FileDiff({ onBack, extra }: { onBack?: () => void; extra?: React
       const toggleable = collapse.toggleable(id) && (r.collapsed || !selectionTouches(sel.selection, r.hunk.lines));
       return (
         <Fragment key={r.key}>
-          <HunkHeader row={r} toggleable={toggleable} onToggle={(open) => collapse.setOpen(id, open)} />
+          <HunkHeader row={r} path={file.path} toggleable={toggleable} onToggle={(open) => collapse.setOpen(id, open)} />
           {r.collapsed && belowRow(keysOf(r.hunk.lines), false)}
         </Fragment>
       );
@@ -283,7 +283,7 @@ export function FileDiff({ onBack, extra }: { onBack?: () => void; extra?: React
       {!textFile && (
         <div className="flex flex-col gap-2 p-3">
           <p className="text-sm text-muted-foreground">{file.binary ? 'Binary file changed' : 'Too large to diff'}</p>
-          {file.hunks.map((h) => <HunkBar key={h.id} hunk={h} commentable={false} />)}
+          {file.hunks.map((h) => <HunkBar key={h.id} hunk={h} path={file.path} commentable={false} />)}
         </div>
       )}
       {textFile && (

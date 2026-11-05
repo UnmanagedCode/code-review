@@ -76,11 +76,11 @@ test('a review thread opens the Threads pane at the thread, with no file', () =>
   }
 });
 
-test('a group thread opens the Threads pane at the thread, with no file', () => {
-  // Invariant: a group anchor links like a review anchor (view=threads and thread only), whatever its status.
+test('a group thread opens its Guided step, live or retired, and round-trips through parseRoute', () => {
+  // Invariant: a group anchor routes to view=guided&step=<groupId>&thread whatever the thread's status (a retired group's lands on its retired view).
   for (const status of ['open', 'resolved', 'outdated']) {
-    assert.deepEqual(route(threadLink(rv, { id: 't-7', status, anchor: { kind: 'group', groupId: 'g1', round: 1 } })),
-      { project: 'app', worktree: 'feature', review: 'r-1', thread: 't-7', view: 'threads' });
+    assert.deepEqual(route(threadLink(rv, { id: 't-7', status, anchor: { kind: 'group', groupId: 'g3', round: 2 } })),
+      { project: 'app', worktree: 'feature', review: 'r-1', view: 'guided', step: 'g3', thread: 't-7' });
   }
 });
 

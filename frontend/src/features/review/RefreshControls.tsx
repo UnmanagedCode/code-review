@@ -30,7 +30,7 @@ export function RefreshControls() {
             <span className="flex-1">
               {r.unchanged
                 ? `No changes; still round ${r.round}`
-                : `Round ${r.round}: hunks ${r.hunks!.kept} kept, ${r.hunks!.reset} reset, ${r.hunks!.new} new; threads ${r.threads!.moved} moved, ${r.threads!.drifted} drifted, ${r.threads!.outdated} outdated, ${r.threads!.dropped} dropped`}
+                : `Round ${r.round}: hunks ${r.hunks!.kept} kept, ${r.hunks!.reset} reset, ${r.hunks!.new} new; threads ${r.threads!.moved} moved, ${r.threads!.drifted} drifted, ${r.threads!.outdated} outdated, ${r.threads!.dropped} dropped${r.groups && r.groups.kept + r.groups.dropped > 0 ? `; groups ${r.groups.kept} kept, ${r.groups.dropped} dropped` : ''}`}
             </span>
             <Button size="icon-sm" variant="ghost" aria-label="Dismiss" onClick={admin.dismissReport}><XIcon /></Button>
           </AlertDescription>

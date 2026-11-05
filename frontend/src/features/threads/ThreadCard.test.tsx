@@ -2,7 +2,7 @@ import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { toast } from 'sonner';
 import { expect, test, vi } from 'vitest';
-import { agent, message, refusal, review, thread, linesAnchor } from '@/test/fixtures';
+import { agent, groupAnchor, guideGroup, guideView, message, refusal, review, thread, linesAnchor } from '@/test/fixtures';
 import { parseRoute } from '@/lib/route';
 import type { LinesAnchor } from '@/lib/types';
 import { renderInReview } from '@/test/renderCtx';
@@ -305,4 +305,23 @@ test('an outdated file thread links to the round view it last sat in', async () 
   expect(screen.getByText('outdated · its file left the diff after round 2')).toBeTruthy();
   await userEvent.setup().click(screen.getByRole('button', { name: 'src/a.ts · Whole file' }));
   expect(parseRoute(location.search)).toEqual({ review: 'r-1', file: 'src/a.ts', thread: 't-1', round: '2' });
+});
+
+// Invariant: a group thread's place leaves every read-only view and the open file for its Guided step, whatever its status.
+test('a group thread\'s Focus route clears file, side, lines, round, compare and commit and opens its Guided step', async () => {
+  history.replaceState(null, '', '?review=r-1&file=src%2Fa.ts&side=old&lines=3&round=1&compare=1..2&commit=abc1234&view=history&thread=t-0');
+  const t = thread({ id: 't-4', status: 'outdated', anchor: groupAnchor({ groupId: 'g2' }) });
+  renderInReview(<ThreadCard thread={t} />, { guide: guideView({ groups: [guideGroup({ id: 'g2' })] }) });
+  await userEvent.setup().click(screen.getByRole('button', { name: 'Focus' }));
+  expect(parseRoute(location.search)).toEqual({ review: 'r-1', view: 'guided', step: 'g2', thread: 't-4' });
+});
+
+// Invariant: a group thread's location link names its step and title (or marks it retired), never a bare id the guide can resolve.
+test('a group thread\'s location link names its step and title, or "(retired)"', () => {
+  const guide = guideView({ groups: [guideGroup({ id: 'g2', order: 1, title: 'Wire the thing' })], retired: [{ id: 'g5', title: 'Gone', retiredIn: 1, reason: 'refresh' }] });
+  const { unmount } = renderInReview(<ThreadCard thread={thread({ anchor: groupAnchor({ groupId: 'g2' }) })} showLocation />, { guide });
+  expect(screen.getByRole('button', { name: 'Step 1 · Wire the thing' })).toBeTruthy();
+  unmount();
+  renderInReview(<ThreadCard thread={thread({ status: 'outdated', anchor: groupAnchor({ groupId: 'g5' }) })} showLocation />, { guide });
+  expect(screen.getByRole('button', { name: 'Gone (retired)' })).toBeTruthy();
 });

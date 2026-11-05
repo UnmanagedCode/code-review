@@ -3,7 +3,7 @@ import manifest from '../conductor.plugin.json' with { type: 'json' };
 // Mirrors `parseRoute`'s grammar and `threadPlace` in ThreadCard.tsx; tests/links.test.js round-trips through the real `parseRoute`.
 const PLUGIN_ID = manifest.id;
 // The order of `KEYS` in frontend/src/lib/route.ts.
-const ORDER = ['project', 'worktree', 'review', 'file', 'side', 'lines', 'thread', 'commit', 'round', 'compare', 'view'];
+const ORDER = ['project', 'worktree', 'review', 'file', 'side', 'lines', 'thread', 'commit', 'round', 'compare', 'view', 'step'];
 // cc's transcript renderer maps this fake host's `#plugin/…` URLs to its in-app view links.
 const CC_ORIGIN = 'http://cc.internal';
 
@@ -20,10 +20,11 @@ export const reviewLink = (review) => link(reviewRoute(review));
 
 /**
  * Link to the route that shows `thread` in place: live threads at their file, outdated ones in the round they last sat in,
- * review and group threads in the Threads pane.
+ * review threads in the Threads pane, group threads at their Guided step (a retired group's lands on its retired view).
  */
 export function threadLink(review, { id, status, anchor }) {
-  if (anchor.kind === 'review' || anchor.kind === 'group') return link({ ...reviewRoute(review), view: 'threads', thread: id });
+  if (anchor.kind === 'review') return link({ ...reviewRoute(review), view: 'threads', thread: id });
+  if (anchor.kind === 'group') return link({ ...reviewRoute(review), view: 'guided', step: anchor.groupId, thread: id });
   const base = { ...reviewRoute(review), file: anchor.file, thread: id };
   if (anchor.kind === 'file') return link(status === 'outdated' ? { ...base, round: String(anchor.round) } : base);
   if (status !== 'outdated') return link({ ...base, side: anchor.side });

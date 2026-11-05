@@ -1,7 +1,7 @@
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { expect, test, vi } from 'vitest';
-import { agent, diffFile, fileState, HUMAN, message, review, thread, linesAnchor } from '@/test/fixtures';
+import { agent, diffFile, fileState, groupAnchor, guideGroup, guideView, HUMAN, message, review, thread, linesAnchor } from '@/test/fixtures';
 import { parseRoute } from '@/lib/route';
 import { ctxValue } from '@/test/renderCtx';
 import { stubFetch } from '@/test/stubFetch';
@@ -345,4 +345,45 @@ test.each(['This file', 'All', 'Outdated', 'Review'])('in a past round still loa
   expect(within(panel()).queryByText(/^No /)).toBeNull();
   await user.click(within(panel()).getByRole('button', { name: 'Retry' }));
   expect(reload).toHaveBeenCalled();
+});
+
+const gThread = (id: string, status: Thread['status'] = 'open', groupId = 'g1') => thread({ id, status, anchor: groupAnchor({ groupId }) });
+const groupPanel = (over: Partial<ReturnType<typeof ctxValue>> = {}) => {
+  const guide = guideView({ groups: [guideGroup({ id: 'g1', title: 'Wire it up' })], threads: [gThread('t-4'), gThread('t-5', 'resolved'), gThread('t-6', 'outdated')] });
+  return render(<ReviewProvider value={ctxValue({ guide, threadCounts: { open: 1, resolved: 1, outdated: 1 }, fileDiff: { file: undefined } as never, ...over })}><ThreadPanel /></ReviewProvider>);
+};
+
+// Invariant: All lists the live group threads, so its list is as long as the badge that counts them; outdated ones wait in Outdated.
+test('All lists live group threads (as many as its badge counts); Outdated lists the outdated ones', async () => {
+  stubFetch({});
+  groupPanel();
+  const user = userEvent.setup();
+  expect(screen.getByRole('tab', { name: /^All/ }).textContent).toContain('2');
+  await user.click(screen.getByRole('tab', { name: /^All/ }));
+  await user.selectOptions(screen.getByLabelText('Status'), 'all');
+  expect(await screen.findAllByRole('article')).toHaveLength(2);
+  expect(screen.getByRole('tab', { name: /^Outdated/ }).textContent).toContain('1');
+  await user.click(screen.getByRole('tab', { name: /^Outdated/ }));
+  expect(screen.getAllByRole('article')).toHaveLength(1);
+  expect(screen.getByText(/its group was retired after round 1/)).toBeTruthy();
+});
+
+// Invariant: group threads exist only in the live round, so a past round lists none.
+test('a past round lists no group threads', async () => {
+  stubFetch({});
+  groupPanel({ round: 1, readOnly: true, pastView: true });
+  await userEvent.setup().click(screen.getByRole('tab', { name: /^All/ }));
+  expect(screen.queryAllByRole('article')).toHaveLength(0);
+});
+
+test('a group card\'s location link routes to its Guided step, and Next unread reaches group threads', async () => {
+  stubFetch({ 'POST api/reviews/r-1/read': { review: review() } });
+  history.replaceState(null, '', '?review=r-1&view=threads&file=src%2Fa.ts');
+  const guide = guideView({ groups: [guideGroup({ id: 'g1', title: 'Wire it up' })], threads: [{ ...gThread('t-4'), unread: 1 }] });
+  render(<ReviewProvider value={ctxValue({ guide, threadCounts: { open: 1, resolved: 0, outdated: 0 }, fileDiff: { file: undefined } as never })}><ThreadPanel /></ReviewProvider>);
+  const user = userEvent.setup();
+  await user.click(screen.getByRole('tab', { name: /^All/ }));
+  await waitFor(() => expect((screen.getByRole('button', { name: 'Next unread' }) as HTMLButtonElement).disabled).toBe(false));
+  await user.click(screen.getByRole('button', { name: 'Step 1 · Wire it up' }));
+  expect(parseRoute(location.search)).toEqual({ review: 'r-1', view: 'guided', step: 'g1', thread: 't-4' });
 });

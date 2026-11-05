@@ -2,6 +2,8 @@ import { act, renderHook } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { expect, test, vi } from 'vitest';
 import { refusal, review, thread } from '@/test/fixtures';
+import { sampleGuide } from '@/test/guideWorld';
+import { useClearedGroups } from './clearedGroups';
 import { ctxValue } from '@/test/renderCtx';
 import { stubFetch } from '@/test/stubFetch';
 import { ReviewProvider } from './reviewContext';
@@ -52,23 +54,23 @@ test('after the provider remounts, marking the same thread at the same version p
   expect(posts(net)).toBe(2);
 });
 
-// Invariant: a write response's `fileSig` reaches the open file's cache (`patchSig`), for every write that carries one.
+// Invariant: a write response's `fileSig` reaches that file's cache (`patchSig`), for every write that carries one.
 test('each write passes its response\'s fileSig on to patchSig', async () => {
   const fileSig = { path: 'src/a.ts', sig: 's2' };
   stubFetch({
     'POST api/reviews/r-1/threads': { thread: thread(), fileSig },
     'POST api/reviews/r-1/threads/t-1/messages': { thread: thread(), fileSig },
     'PATCH api/reviews/r-1/threads/t-1': { thread: thread(), fileSig },
-    'PUT api/reviews/r-1/hunks/h1/verdict': { hunkId: 'h1', verdict: 'accepted', review: review(), fileSig },
-    'POST api/reviews/r-1/accept-file': { file: 'src/a.ts', accepted: ['h1'], review: review(), fileSig },
+    'PUT api/reviews/r-1/hunks/h1/verdict': { hunkId: 'h1', verdict: 'accepted', clearedGroups: ['g1'], review: review(), fileSig },
+    'POST api/reviews/r-1/accept-file': { file: 'src/a.ts', accepted: ['h1'], clearedGroups: ['g1'], review: review(), fileSig },
   });
   const { value, result } = actions();
-  const patchSig = value.fileDiff.patchSig as ReturnType<typeof vi.fn>;
+  const patchSig = value.diffs.patchSig as ReturnType<typeof vi.fn>;
   const writes: [string, () => Promise<unknown>][] = [
     ['createThread', () => result.current.createThread({ anchor: { kind: 'hunk', hunkId: 'h1' }, kind: 'comment', body: 'x' })],
     ['reply', () => result.current.reply('t-1', 'x')],
     ['setStatus', () => result.current.setStatus('t-1', 'resolved', 'fixed')],
-    ['setVerdict', () => result.current.setVerdict('h1', 'accepted', null)],
+    ['setVerdict', () => result.current.setVerdict('src/a.ts', 'h1', 'accepted', null)],
     ['acceptFile', () => result.current.acceptFile('src/a.ts', ['h1'])],
   ];
   for (const [name, write] of writes) {
@@ -85,6 +87,27 @@ test('a review-thread write with a null fileSig reloads the review', async () =>
   const { value, result } = actions();
   await act(async () => { await result.current.createThread({ anchor: { kind: 'review' }, kind: 'comment', body: 'x' }); });
   expect(value.reload).toHaveBeenCalled();
-  expect(value.fileDiff.patchThread).toHaveBeenCalledWith(t);
+  expect(value.diffs.patchThread).toHaveBeenCalledWith(t);
   expect(net.calls.filter((c) => c.method === 'GET')).toEqual([]);
+});
+
+// Invariant: the groups a verdict response says were cleared reach the cached guide and the session-local marks; nothing else decides it.
+type Actions = { current: ReturnType<typeof useReviewActions> };
+interface Case { name: string; url: string; run: (r: Actions) => Promise<unknown>; extra: Record<string, unknown> }
+const CASES: Case[] = [
+  { name: 'setVerdict', url: 'PUT api/reviews/r-1/hunks/h1/verdict', run: (r) => r.current.setVerdict('src/a.ts', 'h1', 'accepted', null), extra: { hunkId: 'h1', verdict: 'accepted' } },
+  { name: 'acceptFile', url: 'POST api/reviews/r-1/accept-file', run: (r) => r.current.acceptFile('src/a.ts', ['h1']), extra: { file: 'src/a.ts', accepted: ['h1'] } },
+];
+test.each(CASES)('$name: clearedGroups reach patchGuide and the cleared-group marks', async ({ url, run, extra }) => {
+  stubFetch({ [url]: { ...extra, clearedGroups: ['g1'], review: review(), fileSig: { path: 'src/a.ts', sig: 's2' } } });
+  const { value, result } = actions();
+  const marks = renderHook(() => useClearedGroups('r-1'));
+  await act(async () => { await run(result); });
+  const guide = sampleGuide({}, { verdict: 'accepted' }, { verdict: 'accepted' });
+  const patched = vi.mocked(value.patchGuide).mock.calls.map(([fn]) => fn(guide));
+  expect(patched.at(-1)!.groups.map((g) => [g.id, g.verdict])).toEqual([['g1', 'pending'], ['g2', 'accepted']]);
+  expect([...marks.result.current]).toEqual(['g1']);
+  // the optimistic flip patched the hunk only, in the guide and in the file's cached diff
+  expect(vi.mocked(value.diffs.patchVerdicts).mock.calls[0]).toEqual(['src/a.ts', { h1: 'accepted' }]);
+  expect(patched[0].groups.map((g) => g.verdict)).toEqual(['accepted', 'accepted']);
 });

@@ -5,7 +5,7 @@ import { WIDE_QUERY } from '@/lib/useMediaQuery';
 import { installFakeEventSource } from '@/test/fakeEventSource';
 import { installMedia } from '@/test/fakeMedia';
 import { parseRoute } from '@/lib/route';
-import { diffFile, fileState, refusal, review, thread, linesAnchor } from '@/test/fixtures';
+import { diffFile, fileState, guideGroup, guideView, refusal, review, thread, linesAnchor } from '@/test/fixtures';
 import { stubFetch } from '@/test/stubFetch';
 import { ReviewView } from './ReviewView';
 
@@ -444,4 +444,52 @@ test('wide: focusing an unread thread posts exactly one read mark, though two ca
   await waitFor(() => expect(net.count('GET api/reviews/r-1')).toBeGreaterThan(1));
   await waitFor(() => expect(net.count('GET api/reviews/r-1/diff')).toBeGreaterThan(1));
   expect(net.calls.filter((c) => c.method === 'POST' && c.url.pathname.endsWith('/read')).map((c) => c.body)).toEqual([{ threadId: 't-1' }]);
+});
+
+/** A live range review with a guide: g1 has hunk h1 of src/a.ts. */
+function guided(over: { status?: 'open' | 'closed' } = {}) {
+  const guide = guideView({ groups: [guideGroup({ id: 'g1', title: 'Wire it up', hunks: [{ id: 'h1', file: 'src/a.ts', verdict: 'pending' }] })], ungrouped: [] });
+  return stubFetch({
+    'GET api/reviews/r-1': { review: review({ status: over.status ?? 'open' }), files: [fileState()], rounds: [], submissions: [], outdatedThreads: [], reviewThreads: [], guide },
+    'GET api/reviews/r-1/diff': { review: review(), files: [diffFile()] },
+    'GET api/reviews/r-1/commits': { commits: [] },
+    'GET api/sessions': { sessions: [] },
+  });
+}
+
+// Invariant: wide, the Guided tab's centre is the step; an open file takes the centre back.
+test('wide: view=guided with no file shows the step in the centre, with a file the file diff', async () => {
+  installMedia({ [WIDE_QUERY]: true });
+  guided();
+  history.replaceState(null, '', '?review=r-1&view=guided');
+  const { unmount } = render(<ReviewView id="r-1" />);
+  expect(await screen.findByRole('heading', { name: 'Wire it up', level: 2 })).toBeTruthy();
+  expect(screen.getByText('Step 1 of 1')).toBeTruthy();
+  unmount();
+  history.replaceState(null, '', '?review=r-1&view=guided&step=g1&file=src%2Fa.ts');
+  render(<ReviewView id="r-1" />);
+  expect(await screen.findByRole('grid', { name: 'Changes in src/a.ts' })).toBeTruthy();
+  expect(screen.queryByText('Step 1 of 1')).toBeNull();
+});
+
+// Invariant: on a phone the list and the step are separate screens; a file opened from a step returns to that step.
+test('phone: step list without a step, the step with Back to steps, and Back from a file returns to the step', async () => {
+  installMedia({ [WIDE_QUERY]: false });
+  guided();
+  history.replaceState(null, '', '?review=r-1&view=guided');
+  const { unmount } = render(<ReviewView id="r-1" />);
+  expect(await screen.findByRole('navigation', { name: 'Steps' })).toBeTruthy();
+  expect(screen.queryByRole('button', { name: 'Back to steps' })).toBeNull();
+  unmount();
+  history.replaceState(null, '', '?review=r-1&view=guided&step=g1');
+  render(<ReviewView id="r-1" />);
+  const user = userEvent.setup();
+  await user.click(await screen.findByRole('button', { name: 'Back to steps' }));
+  expect(parseRoute(location.search)).toEqual({ review: 'r-1', view: 'guided' });
+  await user.click(screen.getByRole('button', { name: /Wire it up/ }));
+  await user.click(await screen.findByRole('link', { name: /^Open src\/a\.ts/ }));
+  expect(parseRoute(location.search)).toMatchObject({ view: 'guided', step: 'g1', file: 'src/a.ts' });
+  await user.click(await screen.findByRole('button', { name: 'Back to files' }));
+  expect(parseRoute(location.search)).toEqual({ review: 'r-1', view: 'guided', step: 'g1' });
+  expect(await screen.findByRole('heading', { name: 'Wire it up', level: 2 })).toBeTruthy();
 });

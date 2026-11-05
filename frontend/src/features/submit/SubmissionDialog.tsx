@@ -1,0 +1,69 @@
+import { useRef } from 'react';
+import { toast } from 'sonner';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Button } from '@/components/ui/button';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Textarea } from '@/components/ui/textarea';
+import { getBridge } from '@/lib/bridge';
+import { bridgeMessage, isBridgeCode } from '@/lib/refusals';
+import type { Submission } from '@/lib/types';
+import type { useSubmission } from '@/state/submit';
+
+/** The delivery dialog of a submission (titled "Guide me" for a guide one, else `title`): shown when it needs the human (no bridge, a failed send, a timeout). */
+export function SubmissionDialog({ sub, title }: { sub: ReturnType<typeof useSubmission>; title: string }) {
+  const textRef = useRef<HTMLTextAreaElement>(null);
+  const dialogState = sub.state.phase === 'manual' || sub.state.phase === 'failed' || sub.state.phase === 'timedOut' ? sub.state : null;
+  const submission: Submission | undefined = dialogState?.submission;
+
+  async function copy() {
+    if (!submission) return;
+    try {
+      await navigator.clipboard.writeText(submission.text);
+      toast.success('Prompt copied');
+    } catch {
+      textRef.current?.select();
+      toast.info('Press Ctrl/Cmd+C to copy');
+    }
+  }
+  const openAgent = async () => {
+    const res = await getBridge()?.openSession(submission!.recipient);
+    if (res && !res.ok) toast.error(bridgeMessage(res.code));
+  };
+
+  return (
+    <Dialog open={!!dialogState} onOpenChange={(o) => !o && sub.close()}>
+      <DialogContent className="[&>*]:min-w-0">
+        <DialogHeader>
+          <DialogTitle>{submission?.kind === 'guide' ? 'Guide me' : title}</DialogTitle>
+          <DialogDescription>
+            {dialogState?.phase === 'manual' && 'No cc connection here: copy this prompt into the recipient session.'}
+            {dialogState?.phase === 'failed' && 'The prompt was not delivered.'}
+            {dialogState?.phase === 'timedOut' && 'cc didn’t answer — the prompt may not have arrived.'}
+          </DialogDescription>
+        </DialogHeader>
+        {dialogState?.phase === 'failed' && (
+          <Alert variant="destructive"><AlertDescription>{bridgeMessage(dialogState.code)}{!isBridgeCode(dialogState.code) && ' (not recorded)'}</AlertDescription></Alert>
+        )}
+        {dialogState?.phase === 'timedOut' && (
+          <Alert variant="warning"><AlertDescription id="retry-warning">The prompt may already have arrived, so retrying could deliver it twice.</AlertDescription></Alert>
+        )}
+        <Textarea ref={textRef} readOnly rows={10} aria-label="Prompt" value={submission?.text ?? ''} className="font-mono text-xs" />
+        <DialogFooter className="sm:flex-wrap">
+          {dialogState?.phase === 'manual' ? (
+            <Button variant="ghost" onClick={sub.close}>Close</Button>
+          ) : (
+            <>
+              <Button variant="ghost" onClick={sub.close}>Close</Button>
+              <Button variant="outline" onClick={() => submission && sub.resend(submission)} aria-describedby={dialogState?.phase === 'timedOut' ? 'retry-warning' : undefined}>
+                {dialogState?.phase === 'timedOut' ? 'Retry anyway' : 'Retry'}
+              </Button>
+              {getBridge() && <Button variant="outline" onClick={openAgent}>Open agent</Button>}
+            </>
+          )}
+          <Button variant="outline" onClick={copy}>{dialogState?.phase === 'manual' ? 'Copy' : 'Copy prompt'}</Button>
+          <Button onClick={sub.markSent}>Mark as sent</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}

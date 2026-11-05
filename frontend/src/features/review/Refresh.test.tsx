@@ -48,3 +48,15 @@ test('a past-round view has no refresh control, even with HEAD moved', () => {
   renderInReview(<RefreshControls />, { review: review({ headMoved: true }), round: 1, readOnly: true });
   expect(screen.queryByRole('button', { name: 'Refresh' })).toBeNull();
 });
+
+// Invariant: the report names the groups a refresh carried and dropped, and only when it touched any.
+test.each([
+  [{ kept: 2, dropped: 1 }, '; groups 2 kept, 1 dropped'],
+  [{ kept: 0, dropped: 0 }, null],
+])('a refresh with groups %j reads %j', async (groups, suffix) => {
+  stubFetch({ 'POST api/reviews/r-1/refresh': { unchanged: false, round: 2, hunks: { kept: 3, reset: 1, new: 2 }, threads: { moved: 4, drifted: 1, outdated: 2, dropped: 0 }, groups } });
+  renderInReview(<RefreshControls />, { review: review({ headMoved: true }) });
+  await userEvent.setup().click(screen.getByRole('button', { name: 'Refresh' }));
+  const text = (await screen.findByLabelText('Refresh result')).textContent!;
+  if (suffix) expect(text).toContain(suffix); else expect(text).not.toContain('groups');
+});

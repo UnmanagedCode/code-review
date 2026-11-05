@@ -5,6 +5,7 @@ import { diffFile, fileState, hunk, lines, review, thread } from '@/test/fixture
 import { stubFetch } from '@/test/stubFetch';
 import { setDiffPrefs } from './diffPrefs';
 import { useDropped } from './dropped';
+import { diffPatchers } from './diffResource';
 import { useFileDiff } from './fileDiff';
 import { POLL_MS, REFOCUS_MIN_MS } from './live';
 import { ensure, resetResources } from './resource';
@@ -303,7 +304,8 @@ function sigWorld(opts: { hunkAt?: number; gate?: Record<string, Promise<void>>;
   const settle = () => act(() => vi.advanceTimersByTimeAsync(0));
   const diffs = () => net.count('GET api/reviews/r-1/diff');
   const reviews = () => net.count('GET api/reviews/r-1');
-  return { sigs, net, hook, mount, settle, diffs, reviews, reload: () => act(() => hook.result.current.r.reload()) };
+  const patchers = diffPatchers('r-1');
+  return { sigs, patchers, net, hook, mount, settle, diffs, reviews, reload: () => act(() => hook.result.current.r.reload()) };
 }
 
 // Invariant: a review reload that leaves the open file's sig alone costs no diff fetch; a moved sig costs exactly one.
@@ -385,13 +387,13 @@ test('a fileSig from a write response removes the own-write refetch', async () =
   const w = sigWorld();
   await vi.waitFor(() => expect(w.hook.result.current.f.file).toBeDefined());
   await w.settle();
-  act(() => { w.hook.result.current.f.patchThread(thread({ id: 't-9' })); w.hook.result.current.f.patchSig({ path: 'src/a.ts', sig: 'a2' }); });
+  act(() => { w.patchers.patchThread(thread({ id: 't-9' })); w.patchers.patchSig({ path: 'src/a.ts', sig: 'a2' }); });
   w.sigs['src/a.ts'] = 'a2';
   await w.reload(); await w.settle();
   expect(w.diffs()).toBe(1);
   expect(w.hook.result.current.f.file?.threads.map((t) => t.id)).toEqual(['t-9']);
-  // a sig for another file, or an unknown one, patches nothing: the reload then refetches
-  act(() => { w.hook.result.current.f.patchSig({ path: 'src/b.ts', sig: 'zzz' }); w.hook.result.current.f.patchSig({ path: 'src/a.ts', sig: null }); });
+  // a sig for a file with no cached diff, or an unknown one, patches nothing: the reload then refetches
+  act(() => { w.patchers.patchSig({ path: 'src/b.ts', sig: 'zzz' }); w.patchers.patchSig({ path: 'src/a.ts', sig: null }); });
   w.sigs['src/a.ts'] = 'a3';
   await w.reload(); await w.settle();
   expect(w.diffs()).toBe(2);
@@ -432,7 +434,7 @@ test('a review-thread write with a null fileSig refetches no file diff and only 
   const w = sigWorld();
   await vi.waitFor(() => expect(w.hook.result.current.f.file).toBeDefined());
   await w.settle();
-  act(() => { w.hook.result.current.f.patchThread(thread({ id: 't-r', anchor: { kind: 'review', round: 1 } })); w.hook.result.current.f.patchSig(null); });
+  act(() => { w.patchers.patchThread(thread({ id: 't-r', anchor: { kind: 'review', round: 1 } })); w.patchers.patchSig(null); });
   await w.reload(); await w.settle();
   expect([w.reviews(), w.diffs()]).toEqual([2, 1]);
   expect(w.hook.result.current.f.file?.threads).toEqual([]);

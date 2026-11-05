@@ -2,25 +2,27 @@ import { useSyncExternalStore } from 'react';
 
 export interface Route {
   project?: string; worktree?: string; review?: string; file?: string; side?: 'old' | 'new';
-  lines?: string; thread?: string; commit?: string; round?: string; compare?: string; view?: 'new' | 'threads' | 'history' | 'inbox';
+  lines?: string; thread?: string; commit?: string; round?: string; compare?: string; view?: 'new' | 'threads' | 'history' | 'guided' | 'inbox';
+  /** Guided tab: a group id (current or retired) or `other` (the hunks in no group). */
+  step?: string;
   /** New review prefill (`view=new`), kept raw: `lib/prefill.ts` reads them so the dialog can say why one is unusable. */
   range?: string; sha?: string;
 }
-const KEYS = ['project', 'worktree', 'review', 'file', 'side', 'lines', 'thread', 'commit', 'round', 'compare', 'view', 'range', 'sha'] as const;
+const KEYS = ['project', 'worktree', 'review', 'file', 'side', 'lines', 'thread', 'commit', 'round', 'compare', 'view', 'step', 'range', 'sha'] as const;
 
 /**
  * Every key that belongs to the open review (its file position, filters, views). Spread it into any patch that opens,
  * leaves or deletes a review, so nothing of one review leaks into the next: `navigate` merges into the current route.
  */
 export const REVIEW_SCOPED = {
-  file: undefined, side: undefined, lines: undefined, thread: undefined, commit: undefined, round: undefined, compare: undefined, view: undefined,
+  file: undefined, side: undefined, lines: undefined, thread: undefined, commit: undefined, round: undefined, compare: undefined, view: undefined, step: undefined,
   range: undefined, sha: undefined,
 } as const satisfies Route;
 
 /** Closes the New review dialog and drops its prefill, so the next one opens with the defaults. */
 export const NEW_REVIEW_CLOSED = { view: undefined, range: undefined, sha: undefined } as const satisfies Route;
 
-/** Leaves the open file position (file, lines, side, focused thread) and nothing else: filters, views and the pane tab stay. */
+/** Leaves the open file position (file, lines, side, focused thread) and nothing else: filters, views, the pane tab and the guided step stay. */
 export const LEAVE_FILE = { file: undefined, lines: undefined, side: undefined, thread: undefined } as const satisfies Route;
 
 const COMPARE_RE = /^([1-9]\d*)\.\.([1-9]\d*)$/;
@@ -38,7 +40,8 @@ export function parseRoute(search: string): Route {
     const v = p.get(k);
     if (v === null || v === '') continue;
     if (k === 'side' && v !== 'old' && v !== 'new') continue;
-    if (k === 'view' && v !== 'new' && v !== 'threads' && v !== 'history' && v !== 'inbox') continue;
+    if (k === 'view' && v !== 'new' && v !== 'threads' && v !== 'history' && v !== 'guided' && v !== 'inbox') continue;
+    if (k === 'step' && !/^(g[1-9]\d*|other)$/.test(v)) continue;
     if (k === 'lines' && !/^\d+(-\d+)?$/.test(v)) continue;
     if (k === 'round' && !/^[1-9]\d*$/.test(v)) continue;
     if (k === 'compare' && !COMPARE_RE.test(v)) continue;

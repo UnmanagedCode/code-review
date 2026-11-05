@@ -10,7 +10,7 @@ import { HunkBar } from './HunkBar';
  * button that expands it, no verdict bar.
  * Expanded and `toggleable`: the usual header with a collapse button.
  */
-export function HunkHeader({ row, toggleable, onToggle }: { row: Extract<Row, { kind: 'hunk' }>; toggleable: boolean; onToggle: (open: boolean) => void }) {
+export function HunkHeader({ row, path, toggleable, onToggle }: { row: Extract<Row, { kind: 'hunk' }>; path: string; toggleable: boolean; onToggle: (open: boolean) => void }) {
   const { hunk } = row;
   if (row.collapsed && hunk.kind === 'text') {
     return (
@@ -32,7 +32,7 @@ export function HunkHeader({ row, toggleable, onToggle }: { row: Extract<Row, { 
           <p className="font-mono text-xs text-muted-foreground">{hunk.header}</p>
         </div>
       ) : <p className="font-mono text-xs text-muted-foreground">{hunk.header}</p>)}
-      <HunkBar hunk={hunk} commentable={hunk.kind === 'text'} />
+      <HunkBar hunk={hunk} path={path} commentable={hunk.kind === 'text'} />
     </div>
   );
 }

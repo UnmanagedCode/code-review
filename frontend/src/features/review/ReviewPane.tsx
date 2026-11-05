@@ -3,18 +3,21 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { guideAvailable } from '@/lib/guide';
 import { LEAVE_FILE, navigate, useRoute, type Route } from '@/lib/route';
+import type { GuideView, ReviewSummary } from '@/lib/types';
 import { useReviewAdmin } from '@/state/admin';
 import { useReviewCtx } from '@/state/reviewContext';
 import { Empty, ErrorState, Loading } from '@/features/common/States';
 import { FileTree } from '@/features/files/FileTree';
 import { ThreadPanel } from '@/features/threads/ThreadPanel';
+import { GuidePanel } from '@/features/guide/GuidePanel';
 import { HistoryList } from './HistoryList';
 import { RefreshControls } from './RefreshControls';
 import { ReviewHeader } from './ReviewHeader';
 import { ScopeIndicator } from './ScopeIndicator';
 
-type PaneTab = 'files' | 'threads' | 'history';
+type PaneTab = 'files' | 'guided' | 'threads' | 'history';
 
 /** The review's unread count, shown only on the live review (a past view's threads are as they were). */
 export function UnreadBadge() {
@@ -62,16 +65,26 @@ function Files() {
 }
 
 /**
- * The review's side pane: header, banners, refresh and scope on top, then the Files | Threads | History tabs. The tab
+ * The pane tab a route selects. `view=guided` where Guided isn't available (uncommitted, past views, commit filter, no
+ * guide) shows Files, derived without rewriting the URL; so does `view=history` outside a range review.
+ */
+export function paneTab(route: Route, ctx: { review: ReviewSummary; guide: GuideView | null; pastView: boolean; commit: string | undefined }): PaneTab {
+  if (route.view === 'guided' && guideAvailable(ctx)) return 'guided';
+  return route.view === 'threads' ? 'threads' : route.view === 'history' && ctx.review.kind === 'range' ? 'history' : 'files';
+}
+
+/**
+ * The review's side pane: header, banners, refresh and scope on top, then the Files | Guided | Threads | History tabs. The tab
  * is the route's `view` (absent = Files), written with replace so Back skips tab switches; every other navigation
  * merges into the route and so keeps it. Inactive panels stay mounted (their state survives) but `hidden`.
  */
 export function ReviewPane() {
-  const { review } = useReviewCtx();
+  const { review, guide, pastView, commit } = useReviewCtx();
   const route = useRoute();
   const historyTab = useRef<HTMLButtonElement>(null);
   const hasHistory = review.kind === 'range';
-  const tab: PaneTab = route.view === 'threads' ? 'threads' : route.view === 'history' && hasHistory ? 'history' : 'files';
+  const hasGuide = guideAvailable({ review, guide, pastView, commit });
+  const tab = paneTab(route, { review, guide, pastView, commit });
   const choose = (v: string) => navigate({ view: v === 'files' ? undefined : v as Route['view'] }, { replace: true });
   const panel = (value: PaneTab, className: string, children: ReactNode) => (
     <TabsContent value={value} forceMount hidden={tab !== value} className={className}>{children}</TabsContent>
@@ -87,10 +100,12 @@ export function ReviewPane() {
       <Tabs value={tab} onValueChange={choose} className="min-h-0 flex-1 gap-0">
         <TabsList aria-label="Review pane" className="mx-3 mt-2 mb-1 w-auto">
           <TabsTrigger value="files">Files</TabsTrigger>
+          {hasGuide && <TabsTrigger value="guided">Guided</TabsTrigger>}
           <TabsTrigger value="threads">Threads <UnreadBadge /></TabsTrigger>
           {hasHistory && <TabsTrigger ref={historyTab} value="history">History</TabsTrigger>}
         </TabsList>
         {panel('files', 'min-h-0 overflow-y-auto', <Files />)}
+        {hasGuide && panel('guided', 'min-h-0 overflow-y-auto', <GuidePanel />)}
         {panel('threads', 'flex min-h-0 flex-col', <ThreadPanel />)}
         {hasHistory && panel('history', 'min-h-0 overflow-y-auto', <HistoryList />)}
       </Tabs>

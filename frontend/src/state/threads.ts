@@ -3,12 +3,14 @@ import * as ep from '@/lib/endpoints';
 import { errorText, STALE_DIFF } from '@/lib/refusals';
 import type { FileSig, Severity, Thread, ThreadAnchorInput, ThreadKind, Verdict } from '@/lib/types';
 import { claimMark, releaseMark } from './readMarks';
+import { clearGroups, withHunkVerdicts } from '@/lib/guide';
+import { noteCleared } from './clearedGroups';
 import { useReviewCtx } from './reviewContext';
 
 /** Write actions on the open review. Each returns undefined after toasting a refusal, and refetches when the diff proved stale. */
 export function useReviewActions() {
   const ctx = useReviewCtx();
-  const { id, fileDiff, reload, applyReview, version } = ctx;
+  const { id, diffs, patchGuide, reload, applyReview, version } = ctx;
 
   async function guard<T>(fn: () => Promise<T>): Promise<T | undefined> {
     try {
@@ -20,7 +22,19 @@ export function useReviewActions() {
       return undefined;
     }
   }
-  const landed = ({ thread, fileSig }: { thread: Thread; fileSig: FileSig | null }) => { fileDiff.patchThread(thread); fileDiff.patchSig(fileSig); reload(); return thread; };
+  const landed = ({ thread, fileSig }: { thread: Thread; fileSig: FileSig | null }) => { diffs.patchThread(thread); diffs.patchSig(fileSig); reload(); return thread; };
+
+  const applyHunks = (path: string, hunkIds: string[], verdict: Verdict) => {
+    const verdicts = Object.fromEntries(hunkIds.map((h) => [h, verdict]));
+    diffs.patchVerdicts(path, verdicts);
+    patchGuide((g) => withHunkVerdicts(g, verdicts));
+  };
+  const landedVerdicts = (fileSig: FileSig, clearedGroups: string[]) => {
+    diffs.patchSig(fileSig);
+    patchGuide((g) => clearGroups(g, clearedGroups));
+    noteCleared(id, clearedGroups);
+    reload();
+  };
 
   return {
     createThread: (input: { anchor: ThreadAnchorInput; kind: ThreadKind; severity?: Severity; body: string }) =>
@@ -41,16 +55,18 @@ export function useReviewActions() {
         reload();
       });
     },
-    /** Optimistic: flips at once, reverts on refusal. */
-    async setVerdict(hunkId: string, verdict: Verdict, previous: Verdict | null) {
-      fileDiff.patchVerdict(hunkId, verdict);
+    /**
+     * Optimistic on the hunk only: it flips at once, reverts on refusal. Groups holding it change only as the response
+     * says (`clearedGroups`), never by a rule applied here.
+     */
+    async setVerdict(path: string, hunkId: string, verdict: Verdict, previous: Verdict | null) {
+      applyHunks(path, [hunkId], verdict);
       try {
         const done = await ep.setVerdict(id, hunkId, verdict);
         applyReview(done.review);
-        fileDiff.patchSig(done.fileSig);
-        reload();
+        landedVerdicts(done.fileSig, done.clearedGroups);
       } catch (e) {
-        if (previous) fileDiff.patchVerdict(hunkId, previous);
+        if (previous) applyHunks(path, [hunkId], previous);
         toast.error(errorText(e));
       }
     },
@@ -59,14 +75,13 @@ export function useReviewActions() {
      * the revert can clobber a per-hunk verdict set while this request was in flight.
      */
     async acceptFile(file: string, hunkIds: string[]) {
-      hunkIds.forEach((h) => fileDiff.patchVerdict(h, 'accepted'));
+      applyHunks(file, hunkIds, 'accepted');
       try {
         const done = await ep.acceptFile(id, file, hunkIds);
         applyReview(done.review);
-        fileDiff.patchSig(done.fileSig);
-        reload();
+        landedVerdicts(done.fileSig, done.clearedGroups);
       } catch (e) {
-        hunkIds.forEach((h) => fileDiff.patchVerdict(h, 'pending'));
+        applyHunks(file, hunkIds, 'pending');
         toast.error(errorText(e));
         reload();
       }

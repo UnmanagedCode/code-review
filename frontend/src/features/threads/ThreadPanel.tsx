@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { NativeSelect } from '@/components/ui/native-select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { dedupeCopies, type ShownThread } from '@/lib/compare';
+import { onFile } from '@/lib/ranges';
 import { navigate, useRoute } from '@/lib/route';
 import type { Thread, UnplacedThread } from '@/lib/types';
 import { useDropped } from '@/state/dropped';
@@ -43,7 +44,7 @@ const compareList = (shown: ShownThread[], compare: { from: number; to: number }
   <div className="flex flex-col gap-3 p-3">
     {shown.map(({ thread: t, other }) => {
       const reason = (t as Partial<UnplacedThread>).reason;
-      const note = reason ? <UnplacedNote reason={reason} /> : t.anchor.kind !== 'review' && <CompareNote thread={t} other={other} compare={compare} />;
+      const note = reason ? <UnplacedNote reason={reason} /> : onFile(t.anchor) && <CompareNote thread={t} other={other} compare={compare} />;
       return <ThreadCard key={t.id} thread={t} note={note} showLocation={showLocation && !reason} unplaced={!!reason} />;
     })}
   </div>
@@ -130,8 +131,12 @@ function ReviewThreadPanel() {
   const gate = load && !load.loaded ? load.error ? <ErrorState error={load.error} onRetry={load.reload} /> : <Loading label="Loading threads" rows={3} /> : null;
   const index = useThreadIndex(ctx.id, ctx.files, tab === 'all', ctx.round);
   const fileThreads = ctx.fileDiff.file?.threads ?? [];
-  // The file-bound threads, then the review's own: together what the All badge counts.
-  const every = [...index.threads, ...ctx.reviewThreads];
+  // Group threads exist only in the live round; the outdated ones are listed with the Outdated tab's.
+  const groupThreads = ctx.pastView ? [] : ctx.guide?.threads ?? [];
+  const liveGroupThreads = groupThreads.filter((t) => t.status !== 'outdated');
+  const outdated = [...ctx.outdatedThreads, ...groupThreads.filter((t) => t.status === 'outdated')];
+  // The file-bound threads, then the review's and the groups': together what the All badge counts.
+  const every = [...index.threads, ...ctx.reviewThreads, ...liveGroupThreads];
   const allThreads = every.filter((t) => (status === 'all' || t.status === status) && ownedBy(t, owner));
   const nextUnread = every.find((t) => t.unread > 0);
   const counts = ctx.threadCounts;
@@ -141,7 +146,7 @@ function ReviewThreadPanel() {
         <TabsList aria-label="Thread filter" className={FILTER_TABS} onFocus={showFocusedTab}>
           <TabsTrigger value="file">This file</TabsTrigger>
           <TabsTrigger value="all">All <Badge variant="secondary">{counts.open + counts.resolved}</Badge></TabsTrigger>
-          <TabsTrigger value="outdated">Outdated <Badge variant="secondary">{ctx.outdatedThreads.length}</Badge></TabsTrigger>
+          <TabsTrigger value="outdated">Outdated <Badge variant="secondary">{outdated.length}</Badge></TabsTrigger>
           <TabsTrigger value="review">Review <Badge variant="secondary">{ctx.reviewThreads.length}</Badge></TabsTrigger>
           {dropped.length > 0 && <TabsTrigger value="dropped">Dropped <Badge variant="secondary">{dropped.length}</Badge></TabsTrigger>}
         </TabsList>
@@ -163,7 +168,7 @@ function ReviewThreadPanel() {
                 : allThreads.length ? list(allThreads, { showLocation: true }) : <Empty title="No threads" />)}
           </TabsContent>
           <TabsContent value="outdated">
-            {gate ?? (ctx.outdatedThreads.length ? list(ctx.outdatedThreads, { showLocation: true }) : <Empty title="No outdated threads" />)}
+            {gate ?? (outdated.length ? list(outdated, { showLocation: true }) : <Empty title="No outdated threads" />)}
           </TabsContent>
           <TabsContent value="review">
             {!ctx.readOnly && (

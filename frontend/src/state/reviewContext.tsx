@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, type ReactNode } from 'react';
 import type { CompareView, ReviewDetail } from '@/lib/endpoints';
-import type { ReviewSummary, Session, Thread, ThreadCounts } from '@/lib/types';
+import type { GuideView, ReviewSummary, Session, Thread, ThreadCounts } from '@/lib/types';
+import type { DiffPatchers } from './diffResource';
 import type { FileDiffState } from './fileDiff';
 import { forgetMarks } from './readMarks';
 
@@ -27,6 +28,10 @@ export interface ReviewCtx extends Omit<ReviewDetail, 'review'> {
   /** Counts the review's successful loads; dependants refetch when it moves. */
   version: number;
   fileDiff: FileDiffState;
+  /** Patches any file's cached live diff, so a view of several files (a guided step) updates them all. */
+  diffs: DiffPatchers;
+  /** Patches the cached guide in place; a no-op while there is none. */
+  patchGuide: (fn: (g: GuideView) => GuideView) => void;
   sessions: Session[];
   reload: () => void;
   applyReview: (r: ReviewSummary) => void;

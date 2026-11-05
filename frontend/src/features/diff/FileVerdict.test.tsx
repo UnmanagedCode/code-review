@@ -15,10 +15,10 @@ const file = (...verdicts: Verdict[]) => diffFile({ hunks: verdicts.map((verdict
 const button = () => screen.getByRole('button', { name: 'Accept file' }) as HTMLButtonElement;
 
 test('Accept file posts the file path and only the pending hunk ids, flipping them optimistically', async () => {
-  const net = stubFetch({ [URL_]: { file: 'src/a.ts', accepted: ['h1', 'h3'], review: review({ rev: 2 }), fileSig: { path: 'src/a.ts', sig: 's-2' } } });
+  const net = stubFetch({ [URL_]: { file: 'src/a.ts', accepted: ['h1', 'h3'], review: review({ rev: 2 }), clearedGroups: [], fileSig: { path: 'src/a.ts', sig: 's-2' } } });
   const { value } = renderInReview(<FileVerdict file={file('pending', 'rejected', 'pending', 'accepted')} />);
   await userEvent.setup().click(button());
-  expect(vi.mocked(value.fileDiff.patchVerdict).mock.calls).toEqual([['h1', 'accepted'], ['h3', 'accepted']]);
+  expect(vi.mocked(value.diffs.patchVerdicts).mock.calls).toEqual([['src/a.ts', { h1: 'accepted', h3: 'accepted' }]]);
   await waitFor(() => expect(net.calls[0].body).toEqual({ file: 'src/a.ts', hunkIds: ['h1', 'h3'] }));
   await waitFor(() => expect(value.applyReview).toHaveBeenCalledWith(review({ rev: 2 })));
   expect(value.reload).toHaveBeenCalled();
@@ -34,7 +34,7 @@ test.each([
   const { value } = renderInReview(<FileVerdict file={file('pending', 'pending')} />);
   await userEvent.setup().click(button());
   await waitFor(() => expect(error).toHaveBeenCalledWith(text));
-  expect(vi.mocked(value.fileDiff.patchVerdict).mock.calls).toEqual([['h1', 'accepted'], ['h2', 'accepted'], ['h1', 'pending'], ['h2', 'pending']]);
+  expect(vi.mocked(value.diffs.patchVerdicts).mock.calls).toEqual([['src/a.ts', { h1: 'accepted', h2: 'accepted' }], ['src/a.ts', { h1: 'pending', h2: 'pending' }]]);
   expect(value.reload).toHaveBeenCalledTimes(1);
   expect(value.applyReview).not.toHaveBeenCalled();
 });
@@ -68,7 +68,7 @@ test('no control on uncommitted reviews or the commit-filter view; disabled on a
 });
 
 test('a binary file\'s single file-level hunk can be accepted', async () => {
-  const net = stubFetch({ [URL_]: { file: 'img.png', accepted: ['f1'], review: review(), fileSig: { path: 'img.png', sig: 's-2' } } });
+  const net = stubFetch({ [URL_]: { file: 'img.png', accepted: ['f1'], clearedGroups: [], review: review(), fileSig: { path: 'img.png', sig: 's-2' } } });
   const bin = diffFile({ path: 'img.png', binary: true, hunks: [{ id: 'f1', kind: 'file', lines: [], verdict: 'pending' }] });
   renderInReview(<FileVerdict file={bin} />);
   expect(screen.getByText('0/1 accepted')).toBeTruthy();
@@ -76,11 +76,11 @@ test('a binary file\'s single file-level hunk can be accepted', async () => {
   await waitFor(() => expect(net.calls[0].body).toEqual({ file: 'img.png', hunkIds: ['f1'] }));
 });
 
-// A harness whose patchVerdict really updates the file, so the header shows what the UI shows.
+// A harness whose patchVerdicts really updates the file, so the header shows what the UI shows.
 function Stateful() {
   const [f, setF] = useState<DiffFile>(file('pending', 'rejected', 'pending'));
-  const patchVerdict = (id: string, verdict: Verdict) => setF((x) => ({ ...x, hunks: x.hunks.map((h) => (h.id === id ? { ...h, verdict } : h)) }));
-  const value = ctxValue({ fileDiff: { patchVerdict } as never });
+  const patchVerdicts = (_path: string, v: Record<string, Verdict>) => setF((x) => ({ ...x, hunks: x.hunks.map((h) => (v[h.id] ? { ...h, verdict: v[h.id] } : h)) }));
+  const value = ctxValue({ diffs: { patchVerdicts } as never });
   return <ReviewProvider value={value}><FileVerdict file={f} /></ReviewProvider>;
 }
 

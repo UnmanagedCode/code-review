@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { expect, test, vi } from 'vitest';
 import { parseRoute } from '@/lib/route';
 import type { Kind, Round } from '@/lib/types';
-import { review } from '@/test/fixtures';
+import { guideView, review } from '@/test/fixtures';
 import { renderInReview } from '@/test/renderCtx';
 import { stubFetch } from '@/test/stubFetch';
 import type { ReviewCtx } from '@/state/reviewContext';
@@ -111,4 +111,49 @@ test.each([
     outsideAndBefore(screen.getByRole('link', { name: 'Reviews' }));
     outsideAndBefore(screen.getByRole('button', { name: button }));
   }
+});
+
+// Invariant: the Guided tab sits between Files and Threads wherever a live committed review has a guide with groups or an offer.
+test('a range or commit review with a guide shows Files, Guided, Threads (, History)', () => {
+  const guide = guideView();
+  const a = show('range', { guide });
+  expect(paneTabs().map(text)).toEqual(['Files', 'Guided', 'Threads', 'History']);
+  a.unmount();
+  show('commit', { guide });
+  expect(paneTabs().map(text)).toEqual(['Files', 'Guided', 'Threads']);
+});
+
+// Invariant: an uncommitted review, a guide with nothing in it and no guide all hide the tab.
+test('no Guided tab for an uncommitted review, an empty guide, or no guide', () => {
+  const a = show('uncommitted', { guide: guideView() });
+  expect(paneTabs().map(text)).toEqual(['Files', 'Threads']);
+  a.unmount();
+  const b = show('range', { guide: guideView({ groups: [] }) });
+  expect(paneTabs().map(text)).toEqual(['Files', 'Threads', 'History']);
+  b.unmount();
+  show('range', { guide: null });
+  expect(paneTabs().map(text)).toEqual(['Files', 'Threads', 'History']);
+});
+
+// Invariant: a round view, a comparison and the commit filter have no Guided tab, and view=guided there shows Files without rewriting the URL.
+test.each([
+  ['round view', { round: 1, readOnly: true }],
+  ['comparison', { compare: { from: 1, to: 2 }, readOnly: true }],
+  ['commit filter', { commit: 'abc1234', readOnly: true }],
+] as const)('%s: no Guided tab; view=guided selects Files and leaves the URL alone', (_name, over) => {
+  history.replaceState(null, '', '?review=r-1&view=guided');
+  show('range', { guide: guideView(), ...over });
+  expect(paneTabs().map(text)).not.toContain('Guided');
+  expect(selected()).toBe('Files');
+  expect(location.search).toBe('?review=r-1&view=guided');
+});
+
+test('view=guided selects Guided, and choosing a tab writes view with replace', async () => {
+  history.replaceState(null, '', '?review=r-1&view=guided');
+  show('range', { guide: guideView() });
+  expect(selected()).toBe('Guided');
+  const before = history.length;
+  await userEvent.setup().click(screen.getByRole('tab', { name: 'Files' }));
+  expect(parseRoute(location.search)).toEqual({ review: 'r-1' });
+  expect(history.length).toBe(before);
 });

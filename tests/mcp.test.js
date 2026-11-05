@@ -390,7 +390,7 @@ test('get_hunk shows the groups a hunk sits in, in text and meta', async () => {
 });
 
 test('list_threads names a group thread `group g1` with anchor kind group in meta', async () => {
-  // Invariant: a group thread lists with its group, and its link opens the Threads pane at the thread.
+  // Invariant: a group thread lists with its group, and its link opens its Guided step at the thread.
   const { review } = await reviewOnFeature();
   const [h1] = await hunkIdsOf(review.id);
   await result('propose_groups', { review: review.id, groups: [{ title: 'a', description: 'd', hunks: [h1] }] });
@@ -398,5 +398,5 @@ test('list_threads names a group thread `group g1` with anchor kind group in met
   const got = await call('list_threads', { review: review.id });
   assert.match(got.text, /\[t1\] question · open · group g1 · by reviewer/);
   assert.equal(got.meta.threads[0].anchor, 'group');
-  assert.deepEqual(routeOf(got.meta.threads[0].link), { project: 'app', worktree: 'feature', review: review.id, thread: t.thread.id, view: 'threads' });
+  assert.deepEqual(routeOf(got.meta.threads[0].link), { project: 'app', worktree: 'feature', review: review.id, thread: t.thread.id, view: 'guided', step: 'g1' });
 });

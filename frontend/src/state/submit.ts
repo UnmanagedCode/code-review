@@ -18,6 +18,8 @@ export type SubmitState =
 
 export interface SubmitDeps {
   reviewId: string;
+  /** Composes the submission to deliver: the round's (`ep.compose`) or a Guide me prompt (`ep.guideMe`). */
+  compose: () => Promise<{ submission: Submission }>;
   /** Title shown in the "Sent to …" toast. */
   recipientLabel: string;
   /** Refetch the review after a recorded result. */
@@ -27,7 +29,7 @@ export interface SubmitDeps {
 }
 
 /** The submit-round state machine: compose → send through the cc bridge (or hand the text to the human) → record the result. */
-export function useSubmission({ reviewId, recipientLabel, onRecorded, onNoRecipient }: SubmitDeps) {
+export function useSubmission({ reviewId, compose, recipientLabel, onRecorded, onNoRecipient }: SubmitDeps) {
   const [state, setState] = useState<SubmitState>({ phase: 'idle' });
 
   const record = useCallback(async (submission: Submission, result: { ok: boolean; code?: string }): Promise<'recorded' | 'stale' | 'error'> => {
@@ -74,7 +76,7 @@ export function useSubmission({ reviewId, recipientLabel, onRecorded, onNoRecipi
   const start = useCallback(async () => {
     setState({ phase: 'composing' });
     try {
-      const { submission } = await ep.compose(reviewId);
+      const { submission } = await compose();
       await deliver(submission);
     } catch (e) {
       setState({ phase: 'idle' });
@@ -83,7 +85,7 @@ export function useSubmission({ reviewId, recipientLabel, onRecorded, onNoRecipi
       else if (code === 'NOTHING_TO_SUBMIT') toast.info(errorText(e));
       else toast.error(errorText(e));
     }
-  }, [reviewId, deliver, onNoRecipient]);
+  }, [compose, deliver, onNoRecipient]);
 
   /** Send an existing submission again (a failed one, or one left pending after a reload). */
   const resend = useCallback((submission: Submission) => deliver(submission), [deliver]);

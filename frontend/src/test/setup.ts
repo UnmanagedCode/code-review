@@ -3,6 +3,7 @@ import { afterEach, vi } from 'vitest';
 import { resetCodeGit } from '@/lib/codeGit';
 import { resetRoute } from '@/lib/route';
 import { resetSse } from '@/lib/sse';
+import { resetClearedGroups } from '@/state/clearedGroups';
 import { resetDiffPrefs } from '@/state/diffPrefs';
 import { resetDrafts } from '@/state/drafts';
 import { resetDropped } from '@/state/dropped';
@@ -13,6 +14,7 @@ import { resetResources } from '@/state/resource';
 afterEach(() => {
   cleanup();
   resetDropped();
+  resetClearedGroups();
   resetMarks();
   resetResources();
   resetSse();

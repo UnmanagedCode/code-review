@@ -511,3 +511,13 @@ test('with the diff unreadable, ungrouped is null in the summary and the guide, 
   assert.match(unknown, /\n1 group\.\n/);
   assert.ok(!unknown.includes('in no group'));
 });
+
+test('a refresh that drops a group without adding any hunk still offers Guide me', async () => {
+  // Invariant: droppedGroups > 0 alone offers Guide me (no new hunk is involved).
+  const s = await setup();
+  await s.propose([s.spec('one', 'a1'), s.spec('two', 'c')]);
+  s.wt.commit({ 'c.js': null });
+  const res = ok(await reviews.refreshReview(s.id, HUMAN));
+  assert.deepEqual([res.groups, res.hunks.new], [{ kept: 1, dropped: 1 }, 0]);
+  assert.deepEqual((await s.view()).guide.guideMe, { offered: true, noGroups: false, droppedGroups: 1, newUngrouped: 0 });
+});

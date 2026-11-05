@@ -36,7 +36,7 @@ A **group** is a set of hunks, possibly across files, with a title and a markdow
 - **Group verdicts.** Accept group, Reject group and Pending (reopen) each write the group's own verdict and then its hunks:
   - **Accept** accepts each hunk whose every group is accepted, whatever its verdict was; other hunks are untouched.
   - **Reject** rejects every hunk of the group.
-  - **Pending** on a group with a verdict sets the group and its hunks pending, except a hunk another rejected group holds (it stays rejected). Pending on a group that is already pending writes nothing, whatever its hunks' verdicts; a verdict applied again to a group that already has it re-runs its hunk writes.
+  - **Pending** on a group with a verdict sets the group and its hunks pending, except a hunk another rejected group holds (it stays rejected). Pending on a group that is already pending writes nothing, whatever its hunks' verdicts; an accepted or rejected verdict applied again to a group that already has it re-runs its hunk writes.
   - A group action never changes another group's verdict, so the outcome does not depend on the order of actions.
 - **Direct hunk verdicts win.** A per-hunk verdict (and Accept file) clears, to pending, the verdict of every group holding that hunk whose verdict differs from the new hunk verdict, and writes no other hunk. Accepting a hunk directly while its group is pending changes no group. The response lists the cleared ids (`clearedGroups`).
 - **Invariant:** every hunk of a rejected group is rejected, on every path.

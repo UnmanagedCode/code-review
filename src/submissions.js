@@ -1,9 +1,10 @@
 import { attempt, Refusal } from './refusals.js';
 import { assertOpen, currentRound, inReview, recipientRole } from './context.js';
-import { renderPrompt } from './prompt.js';
+import { renderPrompt, renderGuidePrompt } from './prompt.js';
 import { verdictOf } from './rollup.js';
 import { touch } from './reviews.js';
 import { anchorLabel } from './anchor.js';
+import { groupCounts, guideState } from './grouping.js';
 
 const BRIDGE_CODES = ['INVALID_ARGUMENT', 'SESSION_UNKNOWN', 'SESSION_NOT_LIVE', 'SESSION_NOT_READY', 'SEND_FAILED', 'LOOKUP_FAILED', 'HOST_ERROR'];
 const now = () => new Date().toISOString();
@@ -25,8 +26,8 @@ function activeThreads(review, since) {
   return out;
 }
 
-async function rejectedHunks(review, env, since) {
-  const ids = Object.entries(review.verdicts).filter(([, v]) => v.verdict === 'rejected' && v.seq > since).map(([id]) => id);
+// Where each hunk id sits, for the prompt; a file that can no longer be read says so.
+async function describeHunks(env, ids) {
   if (!ids.length) return [];
   let files = [];
   try { files = (await env.snapshot()).files; } catch (e) { if (!(e instanceof Refusal)) throw e; }
@@ -37,11 +38,41 @@ async function rejectedHunks(review, env, since) {
   });
 }
 
-/** Composes the next prompt for the recipient and records it as pending. */
+/** Groups the human decided since `since`, and the rejected hunks no listed rejected group already covers. */
+async function verdictsSince(review, env, since) {
+  const decided = (verdict) => review.groups.filter((g) => g.verdict?.verdict === verdict && g.verdict.seq > since);
+  const rejectedGroups = decided('rejected');
+  const covered = new Set(rejectedGroups.flatMap((g) => g.hunkIds));
+  const ids = Object.entries(review.verdicts).filter(([id, v]) => v.verdict === 'rejected' && v.seq > since && !covered.has(id)).map(([id]) => id);
+  return {
+    groups: {
+      accepted: decided('accepted').map((g) => ({ id: g.id, title: g.title, hunks: g.hunkIds.length })),
+      rejected: await Promise.all(rejectedGroups.map(async (g) => ({ id: g.id, title: g.title, hunks: await describeHunks(env, g.hunkIds) }))),
+    },
+    rejected: await describeHunks(env, ids),
+  };
+}
+
+// Stores a composed submission; it supersedes every pending or failed one, so the last submission is the live one.
+function storeSubmission(review, kind, text) {
+  for (const s of review.submissions) if (s.status === 'pending' || s.status === 'failed') s.status = 'superseded';
+  const round = currentRound(review);
+  const submission = {
+    id: `s${review.nextSubmission++}`, round: round.n, seq: review.seq, recipient: review.recipient, text, kind,
+    status: 'pending', code: null, composedAt: now(), deliveredAt: null,
+  };
+  review.submissions.push(submission);
+  touch(review);
+  return { ok: true, submission: { id: submission.id, round: submission.round, recipient: submission.recipient, text, status: submission.status, kind } };
+}
+
+const labelOf = (review) => (review.kind === 'range' ? `${review.baseLabel}...${review.branch}` : review.kind === 'commit' ? `commit ${review.target.sha.slice(0, 7)}` : 'uncommitted changes');
+
+/** Composes the next round prompt for the recipient and records it as pending. */
 export const composeSubmission = (id) => attempt(() => inReview(id, async (review, env) => {
   assertOpen(review);
   if (!review.recipient) throw new Refusal('NO_RECIPIENT', 'no recipient session: choose one before submitting');
-  const lastDelivered = [...review.submissions].reverse().find((s) => s.status === 'delivered');
+  const lastDelivered = [...review.submissions].reverse().find((s) => s.kind === 'round' && s.status === 'delivered');
   const since = lastDelivered?.seq ?? 0;
   if (lastDelivered && review.humanSeq <= since) throw new Refusal('NOTHING_TO_SUBMIT', 'nothing changed since the last delivered submission');
   const round = currentRound(review);
@@ -57,20 +88,28 @@ export const composeSubmission = (id) => attempt(() => inReview(id, async (revie
     } catch (e) { if (!(e instanceof Refusal)) throw e; }
   }
   const text = renderPrompt({
-    id: review.id, round: round.n, project: review.project, worktree: review.worktree,
-    label: `${review.kind === 'range' ? `${review.baseLabel}...${review.branch}` : review.kind === 'commit' ? `commit ${review.target.sha.slice(0, 7)}` : 'uncommitted changes'}`,
+    id: review.id, round: round.n, project: review.project, worktree: review.worktree, label: labelOf(review),
     role: recipientRole(review), uncommitted, author: review.author ?? null, tally,
-    rejected: uncommitted ? [] : await rejectedHunks(review, env, since),
+    ...(uncommitted ? { groups: { accepted: [], rejected: [] }, rejected: [] } : await verdictsSince(review, env, since)),
     threads: activeThreads(review, since), files,
   });
-  for (const s of review.submissions) if (s.status === 'pending' || s.status === 'failed') s.status = 'superseded';
-  const submission = {
-    id: `s${review.nextSubmission++}`, round: round.n, seq: review.seq, recipient: review.recipient, text,
-    status: 'pending', code: null, composedAt: now(), deliveredAt: null,
-  };
-  review.submissions.push(submission);
-  touch(review);
-  return { ok: true, submission: { id: submission.id, round: submission.round, recipient: submission.recipient, text, status: submission.status } };
+  return storeSubmission(review, 'round', text);
+}));
+
+/** Composes the Guide me prompt (asks the recipient to group the round) and records it as pending. */
+export const composeGuide = (id) => attempt(() => inReview(id, async (review, env) => {
+  assertOpen(review);
+  if (review.kind === 'uncommitted') throw new Refusal('NO_GROUPS', 'uncommitted reviews have no groups');
+  if (!review.recipient) throw new Refusal('NO_RECIPIENT', 'no recipient session: choose one before submitting');
+  let files = null;
+  try { files = (await env.snapshot()).files; } catch (e) { if (!(e instanceof Refusal)) throw e; }
+  const state = guideState(review);
+  const text = renderGuidePrompt({
+    id: review.id, round: currentRound(review).n, project: review.project, worktree: review.worktree, label: labelOf(review),
+    role: recipientRole(review), author: review.author ?? null,
+    groups: review.groups.length, dropped: state.droppedGroups, newUngrouped: state.newUngrouped, ungrouped: groupCounts(review, files).ungrouped,
+  });
+  return storeSubmission(review, 'guide', text);
 }));
 
 /** Records the UI's report of sending a submission through the bridge. */
@@ -84,8 +123,7 @@ export const recordResult = (id, sid, { ok, code } = {}) => attempt(() => inRevi
     sub.status = 'delivered';
     sub.code = null;
     sub.deliveredAt = now();
-    const round = review.rounds.find((r) => r.n === sub.round);
-    round.submittedAt ??= sub.deliveredAt;
+    if (sub.kind === 'round') review.rounds.find((r) => r.n === sub.round).submittedAt ??= sub.deliveredAt;
   } else {
     sub.status = 'failed';
     sub.code = code;

@@ -99,7 +99,7 @@ test('review lifecycle over HTTP: open, reuse, get, diff, file, commits, patch, 
   const id = opened.review.id;
   assert.equal((await openReview()).reused, true);
   const detail = (await req('GET', `/reviews/${id}`)).body;
-  assert.deepEqual(Object.keys(detail).sort(), ['files', 'ok', 'outdatedThreads', 'review', 'reviewThreads', 'rounds', 'submissions']);
+  assert.deepEqual(Object.keys(detail).sort(), ['files', 'guide', 'ok', 'outdatedThreads', 'review', 'reviewThreads', 'rounds', 'submissions']);
   const diff = (await req('GET', `/reviews/${id}/diff`)).body;
   assert.equal(diff.files[0].hunks.length, 2);
   assert.equal(diff.files[0].hunks[0].verdict, 'pending');
@@ -216,7 +216,7 @@ test('accept-file returns {file, accepted, fileSig, review}; an unknown file is 
   const ids = (await req('GET', `/reviews/${id}/diff`)).body.files[0].hunks.map((h) => h.id);
   const res = await req('POST', `/reviews/${id}/accept-file`, { file: 'a.js', hunkIds: ids });
   assert.equal(res.status, 200);
-  assert.deepEqual(Object.keys(res.body).sort(), ['accepted', 'file', 'fileSig', 'ok', 'review']);
+  assert.deepEqual(Object.keys(res.body).sort(), ['accepted', 'clearedGroups', 'file', 'fileSig', 'ok', 'review']);
   assert.deepEqual([res.body.file, res.body.accepted, res.body.review.counts.hunks.accepted], ['a.js', ids, 2]);
   const gone = await req('POST', `/reviews/${id}/accept-file`, { file: 'zzz.js', hunkIds: ids });
   assert.deepEqual([gone.status, gone.body.code], [404, 'FILE_NOT_IN_DIFF']);
@@ -299,7 +299,7 @@ test('mutating routes refuse a non-JSON content type with 415 and change nothing
   const raw = (method, url, headers = {}) => fetch(base + url, { method, headers });
   const attempts = [
     ['POST', `/reviews/${id}/refresh`], ['POST', `/reviews/${id}/submissions`], ['POST', `/reviews/${id}/read`],
-    ['PATCH', `/reviews/${id}`], ['DELETE', `/reviews/${id}`], ['PUT', `/reviews/${id}/hunks/h/verdict`], ['POST', `/reviews/${id}/accept-file`], ['POST', '/mcp'],
+    ['PATCH', `/reviews/${id}`], ['DELETE', `/reviews/${id}`], ['PUT', `/reviews/${id}/hunks/h/verdict`], ['POST', `/reviews/${id}/accept-file`], ['PUT', `/reviews/${id}/groups/g1/verdict`], ['POST', `/reviews/${id}/guide`], ['POST', '/mcp'],
   ];
   for (const [method, url] of attempts) {
     for (const headers of [{}, { 'content-type': 'text/plain' }, { 'content-type': 'application/x-www-form-urlencoded' }]) {
@@ -326,4 +326,32 @@ test('POST /reviews/:id/refresh acts as the human: a new round keeps the turn wi
   assert.equal((await req('POST', `/reviews/${id}/refresh`)).body.round, 2);
   assert.equal(await turn(), 'agent');
   assert.equal(store.read(id).agentSeq, 0);
+});
+
+test('the group routes map their refusals to NO_GROUPS 409, GROUP_UNKNOWN 404 and (over MCP, 200 + code) GROUP_EMPTY', async () => {
+  // Invariant: HTTP_STATUS maps each new refusal; PUT /groups/:groupId/verdict and POST /guide answer the documented shapes.
+  const id = (await openReview()).review.id;
+  const [h1, h2] = (await req('GET', `/reviews/${id}/diff`)).body.files[0].hunks.map((h) => h.id);
+  const caller = { sessionId: 's-author', project: 'app' };
+  const empty = await req('POST', '/mcp', { tool: 'propose_groups', arguments: { review: id, groups: [{ title: 't', description: 'd', hunks: [] }] }, caller });
+  assert.deepEqual([empty.status, empty.body.result.code, HTTP_STATUS.GROUP_EMPTY], [200, 'GROUP_EMPTY', 400]);
+  const proposed = await req('POST', '/mcp', { tool: 'propose_groups', arguments: { review: id, groups: [{ title: 't', description: 'd', hunks: [h1] }] }, caller });
+  assert.equal(proposed.body.result.ok, true);
+  const unknown = await req('PUT', `/reviews/${id}/groups/g9/verdict`, { verdict: 'accepted' });
+  assert.deepEqual([unknown.status, unknown.body.code], [404, 'GROUP_UNKNOWN']);
+  const set = await req('PUT', `/reviews/${id}/groups/g1/verdict`, { verdict: 'rejected' });
+  assert.equal(set.status, 200);
+  assert.deepEqual(Object.keys(set.body).sort(), ['fileSigs', 'groupId', 'guide', 'hunks', 'ok', 'review', 'verdict']);
+  assert.deepEqual(set.body.hunks, [{ id: h1, verdict: 'rejected' }]);
+  const direct = await req('PUT', `/reviews/${id}/hunks/${h1}/verdict`, { verdict: 'accepted' });
+  assert.deepEqual(direct.body.clearedGroups, ['g1']);
+  const guide = await req('POST', `/reviews/${id}/guide`);
+  assert.equal(guide.status, 200);
+  assert.deepEqual([guide.body.submission.kind, guide.body.submission.recipient], ['guide', 's-author']);
+  w.addWorktree('other').write('a.js', editLines({ 2: 'edit' }));
+  const u = (await req('POST', '/reviews', { project: 'app', worktree: 'other', kind: 'uncommitted' })).body.review.id;
+  const none = await req('POST', `/reviews/${u}/guide`);
+  assert.deepEqual([none.status, none.body.code, HTTP_STATUS.NO_GROUPS], [409, 'NO_GROUPS', 409]);
+  assert.equal((await req('PUT', `/reviews/${u}/groups/g1/verdict`, { verdict: 'accepted' })).status, 409);
+  assert.ok(h2);
 });

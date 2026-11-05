@@ -76,6 +76,14 @@ test('a review thread opens the Threads pane at the thread, with no file', () =>
   }
 });
 
+test('a group thread opens the Threads pane at the thread, with no file', () => {
+  // Invariant: a group anchor links like a review anchor (view=threads and thread only), whatever its status.
+  for (const status of ['open', 'resolved', 'outdated']) {
+    assert.deepEqual(route(threadLink(rv, { id: 't-7', status, anchor: { kind: 'group', groupId: 'g1', round: 1 } })),
+      { project: 'app', worktree: 'feature', review: 'r-1', thread: 't-7', view: 'threads' });
+  }
+});
+
 test('every value is URL-encoded and survives the round-trip', () => {
   // Invariant: awkward characters come back from parseRoute exactly and the link is safe in a hash and a markdown destination.
   const file = 'dir/a b&c=d#e%f+g(h)?i é.js';

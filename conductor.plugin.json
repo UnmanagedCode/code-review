@@ -74,7 +74,7 @@
       },
       {
         "name": "get_review",
-        "description": "Rollup: target, round, per-file hunk verdicts and thread counts, mergeBlockers.",
+        "description": "Rollup: target, round, per-file hunk verdicts and thread counts, mergeBlockers, the round's groups and its ungrouped hunks.",
         "inputSchema": {
           "type": "object",
           "properties": {
@@ -91,7 +91,7 @@
       },
       {
         "name": "list_threads",
-        "description": "Threads with their anchored lines and messages; cited code is inlined. A thread can also sit on a whole file or on the review itself.",
+        "description": "Threads with their anchored lines and messages; cited code is inlined. A thread can also sit on a whole file, a group, or the review itself.",
         "inputSchema": {
           "type": "object",
           "properties": {
@@ -131,7 +131,7 @@
       },
       {
         "name": "get_hunk",
-        "description": "Diff text with line numbers and verdict: one hunk by `hunk` id or by `file`+new-side `line`, or every hunk of `file`.",
+        "description": "Diff text with line numbers, verdict and groups: one hunk by `hunk` id or by `file`+new-side `line`, or every hunk of `file`.",
         "inputSchema": {
           "type": "object",
           "properties": {
@@ -161,7 +161,7 @@
       },
       {
         "name": "annotate",
-        "description": "Start a thread on lines, a hunk, a whole file, or the review (`anchor`). A finding needs `severity`. Cite code as path#L10-L20.",
+        "description": "Start a thread on lines, a hunk, a whole file, a group, or the review (`anchor`). A finding needs `severity`. Cite code as path#L10-L20.",
         "inputSchema": {
           "type": "object",
           "properties": {
@@ -176,9 +176,10 @@
                 "lines",
                 "hunk",
                 "file",
+                "group",
                 "review"
               ],
-              "description": "What the thread is on: `lines` (file+startLine[+endLine, side]), `hunk` (hunk), `file` (file: the whole file), `review` (the review itself; no file, lines or hunk)."
+              "description": "What the thread is on: `lines` (file+startLine[+endLine, side]), `hunk` (hunk), `file` (file: the whole file), `group` (group), `review` (the review itself; no file, lines or hunk)."
             },
             "kind": {
               "type": "string",
@@ -230,6 +231,10 @@
             "hunk": {
               "type": "string",
               "description": "Hunk id; hunk anchors only."
+            },
+            "group": {
+              "type": "string",
+              "description": "Group id (g\u2026); group anchors only."
             }
           },
           "required": [
@@ -282,8 +287,34 @@
         }
       },
       {
+        "name": "propose_groups",
+        "description": "Set the current round's groups: ordered review steps, each a set of hunks (across files if needed) with a title and a markdown description of what they accomplish together. Replaces the round's groups; a group with exactly the hunks of an existing one keeps its verdict and threads. A hunk may sit in several groups; hunks in none show as other changes.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "review": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Review id (r-\u2026)."
+            },
+            "groups": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "description": "{title, description, hunks: [hunk id]}"
+              },
+              "description": "Every group, in reading order. title: one line; description: markdown; hunks: this round's hunk ids (without h:), at least one."
+            }
+          },
+          "required": [
+            "review",
+            "groups"
+          ]
+        }
+      },
+      {
         "name": "refresh_review",
-        "description": "Re-snapshot after committing fixes. Unchanged hunks keep their verdicts and changed ones reset to pending. Threads follow their lines or go outdated. Not for commit reviews.",
+        "description": "Re-snapshot after committing fixes. Unchanged hunks keep their verdicts and changed ones reset to pending. Threads follow their lines or go outdated. Groups whose hunks all survive carry over; others are dropped. Not for commit reviews.",
         "inputSchema": {
           "type": "object",
           "properties": {

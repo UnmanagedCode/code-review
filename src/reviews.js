@@ -11,6 +11,7 @@ import { followThreads } from './follow.js';
 import { currentRound, authorFor, assertOpen, inReview, viewReview } from './context.js';
 import { summarize, fileStates, hunkView, threadView, targetLabel, liveView, signStates, diffFiles, liveSig } from './rollup.js';
 import { pickRound, roundDiff } from './rounds.js';
+import { groupsHolding, contradictedGroups, carryGroups, groupCounts, guideView } from './grouping.js';
 
 const KINDS = ['range', 'commit', 'uncommitted'];
 const VERDICTS = ['pending', 'accepted', 'rejected'];
@@ -28,12 +29,23 @@ export const bump = (review) => {
 
 const invalid = (reason) => new Refusal('INVALID_ARGUMENT', reason);
 
-/** One human verdict: its own seq, recorded as the latest human activity. */
-function record(review, hunkId, verdict) {
+/** One human verdict: its own seq, recorded as the latest human activity. Direct and group writes both go through it. */
+export function recordVerdict(review, hunkId, verdict) {
   const seq = bump(review);
   review.humanSeq = seq;
   if (verdict === 'pending') delete review.verdicts[hunkId];
   else review.verdicts[hunkId] = { verdict, seq, at: now() };
+}
+
+/**
+ * A direct hunk verdict: recorded, and every group holding the hunk with a different verdict is cleared to pending.
+ * Returns the cleared group ids.
+ */
+function directVerdict(review, hunkId, verdict) {
+  const cleared = contradictedGroups(review, hunkId, verdict);
+  recordVerdict(review, hunkId, verdict);
+  for (const g of cleared) g.verdict = null;
+  return cleared.map((g) => g.id);
 }
 
 /**
@@ -49,7 +61,7 @@ export async function summaryOf(review, env) {
   };
   if (review.kind === 'uncommitted') {
     const files = await env.snapshot().then((s) => s.files, unreadable(UNREADABLE));
-    return summarize(review, files, { headMoved: false, dirty: false, checkoutGone: snapshotError === 'CHECKOUT_GONE', snapshotError });
+    return summarize(review, files, { headMoved: false, dirty: false, checkoutGone: snapshotError === 'CHECKOUT_GONE', snapshotError, groups: groupCounts(review, files) });
   }
   const p = await env.probe({ status: true }).catch(unreadable(UNREACHABLE));
   const files = p && (await env.snapshot().then((s) => s.files, unreadable(UNREADABLE)));
@@ -60,7 +72,7 @@ export async function summaryOf(review, env) {
     dirty = st?.dirty ?? false;
     if (st && review.kind === 'range') headMoved = st.head !== currentRound(review).headSha;
   }
-  return summarize(review, files ?? null, { headMoved, dirty, checkoutGone: p ? p.where !== 'checkout' : false, snapshotError });
+  return summarize(review, files ?? null, { headMoved, dirty, checkoutGone: p ? p.where !== 'checkout' : false, snapshotError, groups: groupCounts(review, files ?? null) });
 }
 
 /** Fresh summary of a stored review (re-read, so `rev` is current). */
@@ -118,6 +130,7 @@ export const openReview = (args, actor) => attempt(() => withLock('create', asyn
     recipient, author: args.author ?? null, seenByHuman: actor.kind === 'human', rev: 0, seq: 0, humanSeq: 0, agentSeq: 0, nextThread: 1, nextSubmission: 1,
     rounds: [{ n: 1, ...shas, fingerprint: snap.fingerprint, createdAt, submittedAt: null }],
     verdicts: {}, threads: [], droppedThreads: [], submissions: [],
+    groups: [], retiredGroups: [], nextGroup: 1, sinceProposal: { dropped: 0, newHunkIds: [] },
   };
   review.createdBy = authorFor(review, actor);
   review.title = args.title || targetLabel(review);
@@ -141,7 +154,8 @@ export const getReview = (id) => attempt(() => viewReview(id, async (review, env
   const files = snap ? signStates(snap, fileStates(review, snap.files), snap.files, liveView(review)) : [];
   return {
     ok: true, review: summary, files, rounds: review.rounds, submissions: review.submissions,
-    outdatedThreads: review.threads.filter((t) => t.status === 'outdated').map(threadView),
+    guide: guideView(review, snap?.files ?? null),
+    outdatedThreads: review.threads.filter((t) => t.status === 'outdated' && t.anchor.kind !== 'group').map(threadView),
     reviewThreads: review.threads.filter((t) => t.anchor.kind === 'review').map(threadView),
   };
 }));
@@ -173,10 +187,10 @@ export const setVerdict = (id, hunkId, verdict) => attempt(async () => {
     const snap = await env.snapshot();
     const f = snap.files.find((x) => x.hunks.some((h) => h.id === hunkId));
     if (!f) throw new Refusal('HUNK_UNKNOWN', `no such hunk in round ${currentRound(review).n}: ${hunkId}`);
-    record(review, hunkId, verdict);
-    return { ok: true, fileSig: liveSig(review, snap, f.path) };
+    const clearedGroups = directVerdict(review, hunkId, verdict);
+    return { ok: true, clearedGroups, fileSig: liveSig(review, snap, f.path) };
   }, scope);
-  return res.ok ? { ...(await summaryById(id, scope)), hunkId, verdict, fileSig: res.fileSig } : res;
+  return res.ok ? { ...(await summaryById(id, scope)), hunkId, verdict, clearedGroups: res.clearedGroups, fileSig: res.fileSig } : res;
 });
 
 /** Accepts the listed pending hunks of one file in one write; hunks with a verdict keep it. */
@@ -193,14 +207,15 @@ export const acceptFile = (id, file, hunkIds) => attempt(async () => {
     const unknown = hunkIds.find((h) => !f.hunks.some((x) => x.id === h));
     if (unknown) throw new Refusal('HUNK_UNKNOWN', `no such hunk in ${file} in round ${currentRound(review).n}: ${unknown}`);
     const accepted = [];
+    const clearedGroups = [];
     for (const hunkId of hunkIds) {
       if (review.verdicts[hunkId]) continue; // also skips a repeated id
-      record(review, hunkId, 'accepted');
+      for (const g of directVerdict(review, hunkId, 'accepted')) if (!clearedGroups.includes(g)) clearedGroups.push(g);
       accepted.push(hunkId);
     }
-    return { ok: true, accepted, fileSig: liveSig(review, snap, file) };
+    return { ok: true, accepted, clearedGroups, fileSig: liveSig(review, snap, file) };
   }, scope);
-  return res.ok ? { ...(await summaryById(id, scope)), file, accepted: res.accepted, fileSig: res.fileSig } : res;
+  return res.ok ? { ...(await summaryById(id, scope)), file, accepted: res.accepted, clearedGroups: res.clearedGroups, fileSig: res.fileSig } : res;
 });
 
 /** Re-snapshots a range or uncommitted review. A new round is activity; one an agent pushes is also agent activity (`agentSeq`). */
@@ -210,6 +225,7 @@ export const refreshReview = (id, actor) => attempt(async () => inReview(id, asy
   const co = await env.checkout();
   const cur = currentRound(review);
   const zero = { moved: 0, drifted: 0, outdated: 0, dropped: 0 };
+  const noGroups = { kept: 0, dropped: 0 };
   const push = (snap) => {
     const seq = bump(review);
     if (actor.kind === 'agent') review.agentSeq = seq;
@@ -220,7 +236,7 @@ export const refreshReview = (id, actor) => attempt(async () => inReview(id, asy
     const snap = await env.snapshot();
     if (snap.fingerprint === cur.fingerprint) return { ok: true, unchanged: true, round: cur.n };
     push(snap);
-    return { ok: true, unchanged: false, round: cur.n + 1, hunks: { kept: 0, reset: 0, new: 0 }, threads: env.sweep ?? zero };
+    return { ok: true, unchanged: false, round: cur.n + 1, hunks: { kept: 0, reset: 0, new: 0 }, threads: env.sweep ?? zero, groups: noGroups };
   }
 
   if ((await env.probe()).where !== 'checkout') throw new Refusal('CHECKOUT_GONE', `${co.path ?? 'the checkout'} no longer exists`);
@@ -240,8 +256,10 @@ export const refreshReview = (id, actor) => attempt(async () => inReview(id, asy
   let renames = {};
   try { renames = await git.renames(co.place, cur.headSha, shas.headSha); } catch { /* previous head gone: threads fall back to same-path lookup */ }
   const threads = await followThreads(review, next, 'reanchor', { renames, round: cur.n + 1 });
+  const g = carryGroups(review, nextIds, prevIds, cur.n + 1);
+  threads.outdated += g.threadsOutdated;
   push(next);
-  return { ok: true, unchanged: false, round: cur.n + 1, hunks, threads };
+  return { ok: true, unchanged: false, round: cur.n + 1, hunks, threads, groups: { kept: g.kept, dropped: g.dropped } };
 }));
 
 /** Files with hunks and threads for the whole review, one file, or (read-only) one commit or one past round of a range. */
@@ -313,7 +331,7 @@ export const getHunks = (id, { hunk, file, line } = {}) => attempt(() => viewRev
   return {
     ok: true, file: picked.f.path,
     hunks: picked.hunks.map((h) => ({
-      hunk: h, verdict: hunkView(review, h).verdict,
+      hunk: h, verdict: hunkView(review, h).verdict, groups: groupsHolding(review, h.id).map((g) => g.id),
       threadIds: review.threads.filter((t) => t.status !== 'outdated' && t.anchor.hunkId === h.id).map((t) => t.id),
     })),
   };

@@ -19,12 +19,19 @@ const HUMAN = { kind: 'human' };
 const AGENT = { kind: 'session', sessionId: 's-a', role: 'author' };
 const msg = (seq, at, author = HUMAN) => ({ id: `m${seq}`, seq, at, author, body: 'x' });
 
-/** A review file in the shape written before `lastActivityAt` and `agentSeq` existed. */
-function seed(id, { messages = [], verdicts = {}, rounds = [], submissions = [], ...extra } = {}) {
+const EMPTY_GROUPS = { groups: [], retiredGroups: [], nextGroup: 1, sinceProposal: { dropped: 0, newHunkIds: [] } };
+
+/**
+ * A review file in the shape written before `lastActivityAt` and `agentSeq` existed. It has the group fields and submission
+ * kinds already, unless `legacy`: the shape before groups.
+ */
+function seed(id, { messages = [], verdicts = {}, rounds = [], submissions = [], legacy = false, ...extra } = {}) {
   const review = {
     id, project: 'app', worktree: null, status: 'open', createdAt: '2026-01-01T00:00:00.000Z', rev: 3, seq: 9, humanSeq: 0,
     rounds: [{ n: 1, createdAt: '2026-01-01T00:00:00.000Z', submittedAt: null }, ...rounds],
-    verdicts, threads: messages.length ? [{ id: 't1', messages }] : [], submissions, ...extra,
+    verdicts, threads: messages.length ? [{ id: 't1', messages }] : [],
+    submissions: legacy ? submissions : submissions.map((s) => ({ kind: 'round', ...s })),
+    ...(legacy ? {} : EMPTY_GROUPS), ...extra,
   };
   fs.mkdirSync(path.dirname(fileOf(id)), { recursive: true });
   fs.writeFileSync(fileOf(id), JSON.stringify(review, null, 2));
@@ -127,4 +134,20 @@ test('start() migrates the store before it serves', async (t) => {
   t.after(() => { server.closeAllConnections(); server.close(); fs.rmSync(dist, { recursive: true, force: true }); });
   const review = JSON.parse(fs.readFileSync(fileOf('r-000000000a'), 'utf8'));
   assert.deepEqual([review.lastActivityAt, review.agentSeq], ['2026-01-02T00:00:00.000Z', 2]);
+});
+
+test('a review from before groups gains the empty group fields and round-kind submissions; a second run writes nothing', async () => {
+  // Invariant: groupFields and submissionKinds fill only what is missing, so values already there survive and a second run is a no-op.
+  const sub = { id: 's1', seq: 3, status: 'delivered', composedAt: '2026-01-06T00:00:00.000Z', deliveredAt: '2026-01-07T00:00:00.000Z' };
+  seed('r-000000000a', { legacy: true, lastActivityAt: '2026-02-01T00:00:00.000Z', agentSeq: 0, submissions: [sub, { ...sub, id: 's2', kind: 'guide' }] });
+  seed('r-000000000b', { lastActivityAt: '2026-02-01T00:00:00.000Z', agentSeq: 0, groups: [{ id: 'g1' }], nextGroup: 2, sinceProposal: { dropped: 2, newHunkIds: ['h'] } });
+  await migrateStore();
+  const [a, b] = stored();
+  assert.deepEqual([a.groups, a.retiredGroups, a.nextGroup, a.sinceProposal], [[], [], 1, { dropped: 0, newHunkIds: [] }]);
+  assert.deepEqual(a.submissions.map((x) => x.kind), ['round', 'guide']);
+  assert.deepEqual([b.groups, b.nextGroup, b.sinceProposal], [[{ id: 'g1' }], 2, { dropped: 2, newHunkIds: ['h'] }]);
+  const bytes = fs.readFileSync(fileOf('r-000000000a'));
+  await migrateStore();
+  assert.deepEqual(fs.readFileSync(fileOf('r-000000000a')), bytes);
+  assert.deepEqual(stored().map((r) => r.rev), [a.rev, b.rev]);
 });

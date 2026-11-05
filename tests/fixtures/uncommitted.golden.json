@@ -1803,6 +1803,10 @@
     "drifted": 0,
     "outdated": 0,
     "dropped": 0
+   },
+   "groups": {
+    "kept": 0,
+    "dropped": 0
    }
   },
   "files": [

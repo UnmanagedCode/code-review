@@ -19,6 +19,8 @@ const BACKEND: Record<string, string> = {
   DIFF_TOO_LARGE: 'The diff is too large to show',
   REVIEW_CLOSED: 'The review is closed; reopen it to change it',
   NO_VERDICTS: 'Uncommitted reviews take no verdicts',
+  NO_GROUPS: 'Uncommitted reviews have no groups',
+  GROUP_UNKNOWN: 'That group is gone; reloaded',
   IMMUTABLE_TARGET: 'This review’s target is a fixed commit, so it can’t be refreshed',
   HUNK_UNKNOWN: 'The diff changed under you; reloaded',
   FILE_NOT_IN_DIFF: 'The diff changed under you; reloaded',

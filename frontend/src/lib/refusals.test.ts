@@ -12,8 +12,8 @@ test('the backend code list was read from source', () => {
   expect(codes).toContain('THREAD_DROPPED');
 });
 
-// CALLER_UNKNOWN and AUTHOR_UNKNOWN only come from the MCP surface: the human's REST path refuses an `author` as INVALID_ARGUMENT first.
-const MCP_ONLY = new Set(['CALLER_UNKNOWN', 'AUTHOR_UNKNOWN']);
+// CALLER_UNKNOWN, AUTHOR_UNKNOWN and GROUP_EMPTY only come from the MCP surface: the human's REST path refuses an `author` as INVALID_ARGUMENT first, and only `propose_groups` takes a group list.
+const MCP_ONLY = new Set(['CALLER_UNKNOWN', 'AUTHOR_UNKNOWN', 'GROUP_EMPTY']);
 
 test('every backend refusal code except the MCP-only ones, and INTERNAL, has a specific message', () => {
   for (const code of [...codes.filter((c) => !MCP_ONLY.has(c)), 'INTERNAL']) {

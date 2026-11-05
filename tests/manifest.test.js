@@ -45,11 +45,11 @@ test('every tool except open_review requires `review`', () => {
   }
 });
 
-test('annotate requires `anchor`, one of lines, hunk, file and review', () => {
+test('annotate requires `anchor`, one of lines, hunk, file, group and review', () => {
   // Invariant: the schema makes agents name the anchor kind, from exactly the kinds buildAnchor takes.
   const schema = manifest.mcp.tools.find((t) => t.name === 'annotate').inputSchema;
   assert.ok(schema.required.includes('anchor'));
-  assert.deepEqual(schema.properties.anchor.enum, ['lines', 'hunk', 'file', 'review']);
+  assert.deepEqual(schema.properties.anchor.enum, ['lines', 'hunk', 'file', 'group', 'review']);
 });
 
 test('annotate declares no default for side, so no client adds one to a file or review anchor', () => {
@@ -85,4 +85,18 @@ test('menuItems: one Show reviews entry per row scope, each {label, scope, path}
     assert.equal(item.path, '/');
   }
   assert.deepEqual(manifest.menuItems.map((m) => m.scope).sort(), ['project', 'worktree']);
+});
+
+test('every `items` schema carries only type and description, the keys cc accepts there', () => {
+  // Invariant: cc's manifest validation allows only `type` and `description` inside `items`.
+  const items = manifest.mcp.tools.flatMap((t) => Object.values(t.inputSchema.properties).filter((d) => d.items).map((d) => [t.name, d.items]));
+  assert.ok(items.length > 0);
+  for (const [name, def] of items) assert.deepEqual(Object.keys(def).filter((k) => !['type', 'description'].includes(k)), [], name);
+});
+
+test('propose_groups requires `review` and `groups`, and has no verdict property', () => {
+  // Invariant: a proposal names its review and its groups; no tool takes a verdict.
+  const tool = manifest.mcp.tools.find((t) => t.name === 'propose_groups');
+  assert.deepEqual([...tool.inputSchema.required].sort(), ['groups', 'review']);
+  assert.equal(tool.inputSchema.properties.groups.type, 'array');
 });

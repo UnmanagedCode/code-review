@@ -6,7 +6,7 @@ export const anchorChain = (t) => [...t.pastAnchors, anchorView(t.anchor)];
 
 /**
  * The review's threads as of round `n`, in the stored thread shape.
- * Threads opened later are absent and later messages are cut (`laterMessages` counts them). Each thread sits at its
+ * Group threads are left out. Threads opened later are absent and later messages are cut (`laterMessages` counts them). Each thread sits at its
  * anchor of round `n`; one outdated by then sits at its last located anchor. Status is the current one, except that a
  * thread outdated only later shows the status it had when it went outdated.
  * Unread is 0 (`humanReadSeq` Infinity) and no resolution is proposed: a round view is read-only.
@@ -14,7 +14,7 @@ export const anchorChain = (t) => [...t.pastAnchors, anchorView(t.anchor)];
 export function threadsAt(review, n) {
   const threads = [];
   for (const t of review.threads) {
-    if (t.messages[0].round > n) continue;
+    if (t.messages[0].round > n || t.anchor.kind === 'group') continue; // a group exists in one round only: past views and comparisons omit it
     const messages = t.messages.filter((m) => m.round <= n);
     const chain = anchorChain(t);
     const last = chain[chain.length - 1];

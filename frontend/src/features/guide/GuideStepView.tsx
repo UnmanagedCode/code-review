@@ -87,7 +87,7 @@ function StepBody({ step, steps, onBack }: { step: Step; steps: Step[]; onBack?:
             : <div><Button size="sm" variant="outline" onClick={() => setComposing(true)}><MessageSquarePlusIcon />Comment on group</Button></div>)}
         </section>
       )}
-      {byFile(hunks).map((b) => <GuideFileSection key={b.file ?? '\0unknown'} path={b.file} hunkIds={b.hunks.map((h) => h.id)} stepKey={step.key} />)}
+      {byFile(hunks).map((b) => <GuideFileSection key={b.file ?? '\0unknown'} path={b.file} hunks={b.hunks} stepKey={step.key} />)}
     </div>
   );
 }

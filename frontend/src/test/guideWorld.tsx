@@ -1,3 +1,5 @@
+import { screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { useState, type ReactNode } from 'react';
 import { vi } from 'vitest';
 import type { GuideGroup, GuideHunk, GuideView, Verdict } from '@/lib/types';
@@ -51,4 +53,10 @@ export function GuideHarness({ guide, spies, children }: { guide: GuideView; spi
     reload: vi.fn(), applyReview: vi.fn(), ...spies,
   });
   return <ReviewProvider value={value}>{children}</ReviewProvider>;
+}
+
+/** Opens a file's bar in a guided step (they start collapsed); waits for the bar, then clicks it unless it is already open. */
+export async function expandFile(path: string): Promise<void> {
+  const bar = await screen.findByRole('button', { name: new RegExp(`^${path.replace(/\./g, '\\.')}`) });
+  if (bar.getAttribute('aria-expanded') !== 'true') await userEvent.setup().click(bar);
 }

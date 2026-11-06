@@ -37,6 +37,8 @@ function LoadedSection({ path, hunks: refs, stepKey }: { path: string; hunks: Gu
   const openThreads = file ? here.filter((t) => t.status === 'open').length : 0;
   const stored = useOpenFiles(ctx.id, stepKey).has(path);
   const [released, setReleased] = useState<string | null>(null);
+  // A release belongs to one visit to a routed thread: any other route clears it, so arriving again force-opens the file again.
+  if (released !== null && released !== route.thread) setReleased(null);
   const routedHere = !!route.thread && here.some((t) => t.id === route.thread);
   const isForced = routedHere && released !== route.thread;
   const open = stored || isForced;

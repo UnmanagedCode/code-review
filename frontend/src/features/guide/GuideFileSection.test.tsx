@@ -1,7 +1,9 @@
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { expect, test, vi } from 'vitest';
-import { diffFile, groupAnchor, hunk, linesAnchor, review, thread } from '@/test/fixtures';
+import { act } from '@testing-library/react';
+import { navigate } from '@/lib/route';
+import { diffFile, groupAnchor, hunk, linesAnchor, lines, review, thread } from '@/test/fixtures';
 import { GuideHarness, guideNet, headerOf, sampleGuide } from '@/test/guideWorld';
 import { GuideStepView } from './GuideStepView';
 
@@ -10,13 +12,17 @@ const mount = (guide = sampleGuide()) => render(<GuideHarness guide={guide}><Gui
 const bar = (path: string) => screen.findByRole('button', { name: new RegExp(`^${path.replace('.', '\\.')}`) });
 const grids = () => screen.queryAllByRole('grid');
 
-/** a.ts's diff carries the given line threads (the fixture hunks' lines are numbered from 1). */
+/** The fixture hunk's rows renumbered to start at `start`, so a hunk's lines agree with its newStart. */
+const linesFrom = (start: number) => lines('c1 c2 d3 a3 c4').map((l) => ({ ...l, old: l.old === null ? null : l.old + start - 1, new: l.new === null ? null : l.new + start - 1 }));
+const hunkAt = (id: string, start: number) => hunk({ id, header: headerOf(id), oldStart: start, newStart: start, lines: linesFrom(start) });
+
+/** a.ts's diff carries the given line threads (h1 spans lines 1-4, h2 lines 20-23). */
 const withThreads = (...threads: ReturnType<typeof thread>[]) => ({
   'GET api/reviews/r-1/diff': (u: URL) => {
     const path = u.searchParams.get('file')!;
     const hunks = path === 'a.ts'
-      ? [hunk({ id: 'h1', header: headerOf('h1'), oldStart: 1, newStart: 1 }), hunk({ id: 'h2', header: headerOf('h2'), oldStart: 20, newStart: 20 })]
-      : [hunk({ id: 'h3', header: headerOf('h3'), oldStart: 1, newStart: 1 }), hunk({ id: 'h4', header: headerOf('h4'), oldStart: 30, newStart: 30 })];
+      ? [hunkAt('h1', 1), hunkAt('h2', 20)]
+      : [hunkAt('h3', 1), hunkAt('h4', 30)];
     return { review: review(), files: [diffFile({ path, sig: path === 'a.ts' ? 'sa' : 'sb', hunks, threads: path === 'a.ts' ? threads : [] })] };
   },
 });
@@ -94,21 +100,24 @@ test('an open file stays open across a remount, per step', async () => {
 
 test('a thread route into a file opens it on the first render of the card, and the bar still collapses it', async () => {
   // Invariant: the routed line thread's card mounts inside an open file so its scroll lands on a visible card; the user can still collapse.
-  const scroll = vi.fn(function (this: Element) { visible.push(!this.closest('[hidden]')); });
   const visible: boolean[] = [];
+  const scroll = vi.fn(function (this: Element) { visible.push(!this.closest('[hidden]')); });
+  const orig = Element.prototype.scrollIntoView;
   Element.prototype.scrollIntoView = scroll;
-  at('&step=g2&thread=t-5');
-  const t = thread({ id: 't-5', anchor: linesAnchor({ file: 'a.ts', hunkId: 'h2', startLine: 3, endLine: 3 }) });
-  guideNet({}, withThreads(t));
-  mount();
-  const b = await bar('a.ts');
-  await waitFor(() => expect(b.getAttribute('aria-expanded')).toBe('true'));
-  await waitFor(() => expect(scroll).toHaveBeenCalled());
-  expect(visible.every(Boolean)).toBe(true);
-  await userEvent.setup().click(b);
-  expect(b.getAttribute('aria-expanded')).toBe('false');
-  await new Promise((r) => setTimeout(r, 20));
-  expect(b.getAttribute('aria-expanded')).toBe('false');
+  try {
+    at('&step=g2&thread=t-5');
+    const t = thread({ id: 't-5', anchor: linesAnchor({ file: 'a.ts', hunkId: 'h2', startLine: 21, endLine: 21 }) });
+    guideNet({}, withThreads(t));
+    mount();
+    const b = await bar('a.ts');
+    await waitFor(() => expect(b.getAttribute('aria-expanded')).toBe('true'));
+    await waitFor(() => expect(scroll).toHaveBeenCalled());
+    expect(visible.every(Boolean)).toBe(true);
+    await userEvent.setup().click(b);
+    expect(b.getAttribute('aria-expanded')).toBe('false');
+    await new Promise((r) => setTimeout(r, 20));
+    expect(b.getAttribute('aria-expanded')).toBe('false');
+  } finally { Element.prototype.scrollIntoView = orig; }
 });
 
 test('a routed group thread leaves the file bars collapsed', async () => {
@@ -118,4 +127,41 @@ test('a routed group thread leaves the file bars collapsed', async () => {
   guideNet();
   render(<GuideHarness guide={sampleGuide({ threads: [t] })}><GuideStepView /></GuideHarness>);
   for (const p of ['a.ts', 'b.ts']) expect((await bar(p)).getAttribute('aria-expanded')).toBe('false');
+});
+
+test('arriving again at a routed thread re-opens its file after the user collapsed it', async () => {
+  // Invariant: each fresh arrival at a routed line thread force-opens its file, even if it was collapsed during an earlier visit.
+  const visible: boolean[] = [];
+  const orig = Element.prototype.scrollIntoView;
+  Element.prototype.scrollIntoView = function (this: Element) { visible.push(!this.closest('[hidden]')); };
+  try {
+    at('&step=g1&thread=t-5');
+    const line = thread({ id: 't-5', anchor: linesAnchor({ file: 'a.ts', hunkId: 'h1', startLine: 2, endLine: 2 }) });
+    const group = thread({ id: 't-9', anchor: groupAnchor({ groupId: 'g1' }) });
+    guideNet({}, withThreads(line));
+    render(<GuideHarness guide={sampleGuide({ threads: [group] })}><GuideStepView /></GuideHarness>);
+    const b = await bar('a.ts');
+    await waitFor(() => expect(b.getAttribute('aria-expanded')).toBe('true'));
+    await userEvent.setup().click(b);
+    expect(b.getAttribute('aria-expanded')).toBe('false');
+    act(() => navigate({ thread: 't-9' }));
+    expect(b.getAttribute('aria-expanded')).toBe('false');
+    visible.length = 0;
+    act(() => navigate({ thread: 't-5' }));
+    await waitFor(() => expect(b.getAttribute('aria-expanded')).toBe('true'));
+    await waitFor(() => expect(visible.length).toBeGreaterThan(0));
+    expect(visible.every(Boolean)).toBe(true);
+  } finally { Element.prototype.scrollIntoView = orig; }
+});
+
+test('a line thread on another hunk of the same file does not open the file', async () => {
+  // Invariant: only a routed thread that touches a hunk shown in this step opens that file; g2 shows h2, the thread sits on h1.
+  at('&step=g2&thread=t-5');
+  const other = thread({ id: 't-5', anchor: linesAnchor({ file: 'a.ts', hunkId: 'h1', startLine: 3, endLine: 3 }) });
+  guideNet({}, withThreads(other));
+  mount();
+  const b = await bar('a.ts');
+  await waitFor(() => expect(b.textContent).toContain('1 hunk'));
+  await new Promise((r) => setTimeout(r, 20));
+  expect(b.getAttribute('aria-expanded')).toBe('false');
 });

@@ -1037,12 +1037,14 @@ try {
     await page.getByRole('button', { name: 'Next step' }).click();
     await page.getByRole('heading', { name: 'Other changes', level: 2 }).waitFor();
     assert.equal(await page.getByRole('group', { name: 'Group verdict' }).count(), 0, 'Other changes has no group verdict');
-    const otherFile = page.getByRole('region').filter({ has: page.getByRole('button', { expanded: false }) }).first();
+    const otherPath = await page.getByRole('region').filter({ has: page.getByRole('button', { expanded: false }) }).first().getAttribute('aria-label');
+    const otherFile = page.getByRole('region', { name: otherPath });
     await otherFile.getByRole('button', { expanded: false }).click();
     const pendingBefore = await otherFile.getByRole('button').first().textContent();
     assert.match(pendingBefore, /pending/, 'the bar counts what is still to decide');
     await page.getByRole('group', { name: 'Hunk verdict' }).first().getByRole('button', { name: 'Accept', exact: true }).click();
     await step('Other changes').getByText('1/2 decided').waitFor();
+    assert.match(await otherFile.getByRole('button').first().textContent(), /1 hunk · decided/, 'the bar says decided once its hunk is accepted');
     await shot('21-6-other-changes');
 
     // 7. The retired G3 opens its own view.

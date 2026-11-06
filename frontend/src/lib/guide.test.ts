@@ -2,7 +2,7 @@ import { expect, test } from 'vitest';
 import { guideGroup, guideView, hunk, review } from '@/test/fixtures';
 import type { GuideHunk } from './types';
 import {
-  byFile, clearGroups, groupLabel, guideAvailable, guideProgress, guideSteps, hunkPlace, OTHER, stepAt, withGroupVerdict, withHunkVerdicts,
+  byFile, clearGroups, fileSummary, groupLabel, guideAvailable, guideProgress, guideSteps, hunkPlace, OTHER, stepAt, withGroupVerdict, withHunkVerdicts,
 } from './guide';
 
 const gh = (id: string, file: string | null, verdict: GuideHunk['verdict'] = 'pending'): GuideHunk => ({ id, file, verdict });
@@ -89,4 +89,12 @@ test('guideAvailable is false for uncommitted reviews, past views, a commit filt
   expect(guideAvailable({ ...base, guide: null })).toBe(false);
   expect(guideAvailable({ ...base, guide: guideView({ groups: [] }) })).toBe(false);
   expect(guideAvailable({ ...base, guide: guideView({ groups: [], guideMe: { offered: true, noGroups: true, droppedGroups: 0, newUngrouped: 0 } }) })).toBe(true);
+});
+
+test('fileSummary counts hunks, says pending or decided, and mentions threads only when open', () => {
+  // Invariant: the collapsed bar's status text follows hunk verdicts and the open-thread count.
+  expect(fileSummary([gh('h1', 'a.ts')], 0)).toBe('1 hunk · 1 pending');
+  expect(fileSummary([gh('h1', 'a.ts', 'accepted'), gh('h2', 'a.ts', 'rejected')], 0)).toBe('2 hunks · decided');
+  expect(fileSummary([gh('h1', 'a.ts'), gh('h2', 'a.ts', 'accepted')], 1)).toBe('2 hunks · 1 pending · 1 open thread');
+  expect(fileSummary([gh('h1', 'a.ts', 'accepted')], 3)).toBe('1 hunk · decided · 3 open threads');
 });

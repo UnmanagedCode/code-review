@@ -6,6 +6,7 @@ import { installFakeEventSource } from '@/test/fakeEventSource';
 import { installMedia } from '@/test/fakeMedia';
 import { parseRoute } from '@/lib/route';
 import { diffFile, fileState, guideGroup, guideView, refusal, review, thread, linesAnchor } from '@/test/fixtures';
+import { expandFile } from '@/test/guideWorld';
 import { stubFetch } from '@/test/stubFetch';
 import { ReviewView } from './ReviewView';
 
@@ -487,9 +488,12 @@ test('phone: step list without a step, the step with Back to steps, and Back fro
   await user.click(await screen.findByRole('button', { name: 'Back to steps' }));
   expect(parseRoute(location.search)).toEqual({ review: 'r-1', view: 'guided' });
   await user.click(screen.getByRole('button', { name: /Wire it up/ }));
+  await expandFile('src/a.ts');
   await user.click(await screen.findByRole('link', { name: /^Open src\/a\.ts/ }));
   expect(parseRoute(location.search)).toMatchObject({ view: 'guided', step: 'g1', file: 'src/a.ts' });
   await user.click(await screen.findByRole('button', { name: 'Back to files' }));
   expect(parseRoute(location.search)).toEqual({ review: 'r-1', view: 'guided', step: 'g1' });
   expect(await screen.findByRole('heading', { name: 'Wire it up', level: 2 })).toBeTruthy();
+  // The file you came from is still open.
+  expect((await screen.findByRole('button', { name: /^src\/a\.ts/ })).getAttribute('aria-expanded')).toBe('true');
 });

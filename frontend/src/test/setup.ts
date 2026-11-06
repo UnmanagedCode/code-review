@@ -7,6 +7,7 @@ import { resetClearedGroups } from '@/state/clearedGroups';
 import { resetDiffPrefs } from '@/state/diffPrefs';
 import { resetDrafts } from '@/state/drafts';
 import { resetDropped } from '@/state/dropped';
+import { resetGuideOpenFiles } from '@/state/guideOpenFiles';
 import { resetMarks } from '@/state/readMarks';
 import { resetTop } from './fakeTop';
 import { resetResources } from '@/state/resource';
@@ -15,6 +16,7 @@ afterEach(() => {
   cleanup();
   resetDropped();
   resetClearedGroups();
+  resetGuideOpenFiles();
   resetMarks();
   resetResources();
   resetSse();

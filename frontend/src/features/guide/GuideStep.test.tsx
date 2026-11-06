@@ -5,7 +5,7 @@ import { expect, test, vi } from 'vitest';
 import { parseRoute } from '@/lib/route';
 import { forgetCleared } from '@/state/clearedGroups';
 import { groupAnchor, linesAnchor, refusal, review, thread } from '@/test/fixtures';
-import { GuideHarness, guideNet, headerOf, sampleGuide } from '@/test/guideWorld';
+import { expandFile, GuideHarness, guideNet, headerOf, sampleGuide } from '@/test/guideWorld';
 import { GuideStepView } from './GuideStepView';
 
 const at = (q: string) => history.replaceState(null, '', `?review=r-1&view=guided${q}`);
@@ -13,7 +13,7 @@ const mount = (guide = sampleGuide(), spies = {}) => render(<GuideHarness guide=
 const groupBar = () => screen.getByRole('group', { name: 'Group verdict' });
 const pressed = (bar: HTMLElement) => within(bar).getAllByRole('button').filter((b) => b.getAttribute('aria-pressed') === 'true').map((b) => b.textContent);
 const hunkBars = () => screen.getAllByRole('group', { name: 'Hunk verdict' });
-const loaded = async (...paths: string[]) => { for (const p of paths) await screen.findByRole('region', { name: p }); await screen.findAllByRole('group', { name: 'Hunk verdict' }); };
+const loaded = async (...paths: string[]) => { for (const p of paths) { await screen.findByRole('region', { name: p }); await expandFile(p); } await screen.findAllByRole('group', { name: 'Hunk verdict' }); };
 
 test('shows the step header, its description and its hunks under one section per file', async () => {
   // Invariant: a step reads as "Step i of n", the title, the description, then each file's share of its hunks.

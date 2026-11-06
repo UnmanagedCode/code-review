@@ -79,3 +79,11 @@ export const withHunkVerdicts = (guide: GuideView, verdicts: Record<string, Verd
 export function guideAvailable({ review, guide, pastView, commit }: { review: ReviewSummary; guide: GuideView | null; pastView: boolean; commit: string | undefined }): boolean {
   return review.kind !== 'uncommitted' && !!guide && !pastView && !commit && (guide.groups.length > 0 || guide.guideMe.offered);
 }
+
+/** The collapsed file bar's status text: hunk count, pending or decided, and open line threads when there are any. */
+export function fileSummary(hunks: GuideHunk[], openThreads: number): string {
+  const pending = hunks.filter((h) => h.verdict === 'pending').length;
+  const parts = [`${hunks.length} ${hunks.length === 1 ? 'hunk' : 'hunks'}`, pending ? `${pending} pending` : 'decided'];
+  if (openThreads) parts.push(`${openThreads} open ${openThreads === 1 ? 'thread' : 'threads'}`);
+  return parts.join(' · ');
+}

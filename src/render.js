@@ -8,6 +8,9 @@ const sid8 = (a) => clean(a.sessionId.slice(0, 8));
 export const who = (a) => (a.kind === 'human' ? 'human' : `${a.role} ${sid8(a)}`);
 
 
+/** Text views cut a cited excerpt at this many lines; the json view never cuts. */
+export const MAX_EXCERPT_LINES = 80;
+
 const hunkIds = (ids) => ids.map((h) => `h:${h}`).join(' ');
 
 // The guide block of the rollup: a header, one line per group, then the ungrouped hunks by file.
@@ -55,7 +58,10 @@ export function renderThreads(threads) {
       for (const e of m.excerpts) {
         if (e.error) { out.push(`(unresolved: ${clean(e.error)})`); continue; }
         out.push(`${clean(e.path)}#L${e.startLine}${e.endLine > e.startLine ? `-L${e.endLine}` : ''} @${clean(m.ref)}`);
-        out.push(...fence([...e.lines.map((l) => `${String(l.n).padStart(4)}  ${l.text}`), ...(e.truncated ? ['… (truncated)'] : [])]));
+        const shown = e.lines.slice(0, MAX_EXCERPT_LINES);
+        const hidden = e.lines.length - shown.length;
+        const rest = hidden ? [`… ${hidden} more lines (L${e.lines[shown.length].n}-L${e.endLine}) not shown: read ${clean(e.path)} lines ${e.lines[shown.length].n}-${e.endLine} at ${clean(m.ref)}`] : [];
+        out.push(...fence([...shown.map((l) => `${String(l.n).padStart(4)}  ${l.text}`), ...rest]));
       }
     }
     return out.join('\n');

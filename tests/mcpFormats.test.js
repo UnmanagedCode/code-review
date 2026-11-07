@@ -73,6 +73,13 @@ const walk = (schema, fn) => {
   if (schema.additionalProperties && typeof schema.additionalProperties === 'object') walk(schema.additionalProperties, fn);
 };
 
+/** The nodes of `schema` whose type admits an object but whose additionalProperties is not exactly false. */
+const openObjects = (schema) => {
+  const open = [];
+  walk(schema, (s) => { if ([s.type].flat().includes('object') && s.additionalProperties !== false) open.push(s); });
+  return open;
+};
+
 test('every tool declares an outputSchema inside cc\'s subset, an object at the root, with no `ok` property anywhere', () => {
   // Invariant: cc accepts each manifest outputSchema, and no payload can carry `ok`, which cc reads as a refusal marker; the walk reaches anyOf branches and object-valued additionalProperties too.
   assert.ok(manifest.mcp.tools.length > 0);
@@ -82,8 +89,8 @@ test('every tool declares an outputSchema inside cc\'s subset, an object at the 
     assert.equal(schema.type, 'object', tool.name);
     walk(schema, (s) => {
       assert.ok(!('ok' in (s.properties ?? {})), `${tool.name} declares ok`);
-      if (s.properties) assert.equal(s.additionalProperties, false, `${tool.name}: every object forbids extra properties`);
     });
+    assert.deepEqual(openObjects(schema), [], `${tool.name}: every object forbids extra properties`);
   }
 });
 
@@ -356,6 +363,11 @@ test('the schema walk reaches anyOf branches and object-valued additionalPropert
   const seen = [];
   walk({ type: 'object', additionalProperties: { type: 'string' }, properties: { a: { anyOf: [{ type: 'integer' }, { type: 'object', additionalProperties: false }] } } }, (x) => seen.push(x.type));
   assert.deepEqual(seen.map(String).sort(), ['integer', 'object', 'object', 'string', 'undefined']);
+  // Invariant: an object node is open unless additionalProperties is false, whether or not it lists properties.
+  assert.equal(openObjects({ type: 'object', additionalProperties: false, properties: { a: { type: 'object', additionalProperties: true } } }).length, 1);
+  assert.equal(openObjects({ type: ['object', 'null'], additionalProperties: { type: 'string' } }).length, 1);
+  assert.equal(openObjects({ type: 'object' }).length, 1);
+  assert.equal(openObjects({ type: 'object', additionalProperties: false, properties: { a: { anyOf: [{ type: 'object', additionalProperties: false }] } } }).length, 0);
 });
 
 test('a prototype key is not a tool: toString, constructor and hasOwnProperty are TOOL_UNKNOWN', async () => {

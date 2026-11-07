@@ -43,7 +43,7 @@ Services return a plain object or a refusal `{ok:false, code, reason}`. Low-leve
 | `submissions.js`, `prompt.js` | compose and record submissions (`composeSubmission` for a round, `composeGuide` for Guide me; both end in `storeSubmission`); render the prompt text (pure) |
 | `render.js` | MCP text views (pure), incl. write acks and the text-only excerpt cap `MAX_EXCERPT_LINES` |
 | `mcpViews.js` | per tool `json(res)` / `text(res)` views; adds links, strips `ok`/`sig`/`fileSig` |
-| `mcp.js` | `handle(body)`: envelope, `format` dispatch (json → `{structured}`, text → `{text}`), refusal → `{error, code[, details]}`; `handlers`; the `_toolNames()` test seam |
+| `mcp.js` | `handle(body)`: envelope, `format` dispatch (json → `{structured}`, text → `{text}`), refusal → `{error, code[, details]}`; `handlers`; the `_toolNames()` and `_handlers` test seams |
 | `routes.js` | `apiRouter()`: REST, SSE, `POST /mcp` |
 
 ## Store
@@ -180,7 +180,7 @@ Counted by the fake cc (`execCalls`; pinned in `tests/latency.test.js` and `test
 - `tests/_world.js`: project `app` + worktrees + fake cc + store in one call, with `HUMAN` and `agent()` actors. `world({system, remoteId})` places the project on a fake system: cc rows carry virtual paths (`w.virtual(real)`), `repo.dir` stays real for setup.
 - `tests/exec.test.js` (transport, mapping, byte-exactness, the no-`child_process`/no-`fs` guard), `tests/remote.test.js` (every surface on a project placed on a system, the system-down degradation, `.git` byte-identity over exec with and without `core.fsmonitor`).
 - `harness/bench/highlight.mjs` (not in the test glob): worst-case highlighting time per bundled language at its side cap, from stress lines through the real `highlightLines`; `--search` finds the largest side under a target ([README](../harness/bench/README.md)).
-- `tests/mcpFormats.test.js`: the typed MCP contract: every tool's json reply validates against its manifest `outputSchema`, text replies are prose, refusals are `{error, code}` in both formats, json excerpts and the guide are uncapped.
+- `tests/mcpFormats.test.js`: the typed MCP contract (a stub through `_handlers` proves `details`): every tool's json reply validates against its manifest `outputSchema`, text replies are prose, refusals are `{error, code}` in both formats, json excerpts and the guide are uncapped.
 - `tests/_schema.js`: a JS port of cc's `checkSchema`/`validate` (the `outputSchema` subset); re-sync it when cc's subset changes.
 - `tests/readOnly.test.js`: the read-only invariant over REST and MCP: for range, commit and uncommitted reviews of a main checkout and a linked worktree, every read route (and the store-only writes, which read the tree too) leaves the whole tree (files, directory mtimes, `.git` and the common git dir) byte- and mtime-identical and the pinned `TMPDIR` empty; an unchanged restaged path (its blob already in the store, loose or packed, every object aged first) freshens nothing.
 - `tests/uncommittedGolden.test.js`: uncommitted `files`, `fingerprint`, both sides' lines and swept thread anchors against `tests/fixtures/uncommitted.golden.json`, recorded from the multi-call implementation (regenerate only for an intended change: `UPDATE_GOLDEN=1`). A file vanishes between the untracked listing and the next call through an `execHook`.

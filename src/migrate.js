@@ -41,8 +41,12 @@ function submissionKinds(review) {
   for (const s of review.submissions) if (s.kind === undefined) s.kind = 'round';
 }
 
+/** Gives a review that predates `author` a null one (no named author). */
+const authorField = (review) => { review.author ??= null; };
+
 const upgrade = (review) => {
   backfill(review);
+  authorField(review);
   anchorKinds(review);
   groupFields(review);
   submissionKinds(review);

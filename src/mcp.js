@@ -45,6 +45,9 @@ const handlers = {
   refresh_review: (a, caller) => attempt(async () => reviews.refreshReview(a.review, needCaller(caller))),
 };
 
+/** Test seam: the handler map, so a test can stand in a service result no real tool returns. */
+export const _handlers = handlers;
+
 /** Tool names this module implements (test seam: must equal the manifest's). */
 export const _toolNames = () => Object.keys(handlers);
 
@@ -64,7 +67,7 @@ export async function handle(body) {
   const { tool, arguments: args, caller, format = 'text' } = body || {};
   if (typeof tool !== 'string' || tool.length === 0) return { status: 400, body: { error: 'tool is required and must be a non-empty string' } };
   if (!FORMATS.includes(format ?? 'text')) return { status: 400, body: { error: 'format must be "json" or "text"' } };
-  const fn = handlers[tool];
+  const fn = Object.hasOwn(handlers, tool) ? handlers[tool] : null;
   if (!fn) return { status: 200, body: { error: `unknown tool: ${tool}`, code: 'TOOL_UNKNOWN' } };
   try {
     const res = await fn(args ?? {}, caller);

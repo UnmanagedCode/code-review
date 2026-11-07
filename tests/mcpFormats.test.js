@@ -8,7 +8,8 @@ import { checkSchema, validate } from './_schema.js';
 import * as reviews from '../src/reviews.js';
 import * as store from '../src/store.js';
 import * as threads from '../src/threads.js';
-import { handle, refusalBody, _toolNames } from '../src/mcp.js';
+import { handle, refusalBody, _toolNames, _handlers } from '../src/mcp.js';
+import { migrateStore } from '../src/migrate.js';
 import { views } from '../src/mcpViews.js';
 import { MAX_EXCERPT_LINES } from '../src/render.js';
 import { HTTP_STATUS } from '../src/refusals.js';
@@ -68,10 +69,12 @@ const walk = (schema, fn) => {
   fn(schema);
   for (const s of Object.values(schema.properties ?? {})) walk(s, fn);
   if (schema.items) walk(schema.items, fn);
+  for (const s of schema.anyOf ?? []) walk(s, fn);
+  if (schema.additionalProperties && typeof schema.additionalProperties === 'object') walk(schema.additionalProperties, fn);
 };
 
 test('every tool declares an outputSchema inside cc\'s subset, an object at the root, with no `ok` property anywhere', () => {
-  // Invariant: cc accepts each manifest outputSchema, and no payload can carry `ok`, which cc reads as a refusal marker.
+  // Invariant: cc accepts each manifest outputSchema, and no payload can carry `ok`, which cc reads as a refusal marker; the walk reaches anyOf branches and object-valued additionalProperties too.
   assert.ok(manifest.mcp.tools.length > 0);
   for (const tool of manifest.mcp.tools) {
     const schema = tool.outputSchema;
@@ -346,4 +349,99 @@ test('get_review json carries the guide and files whole', async () => {
   assert.ok(got.guide.groups[0].hunks.every((h) => typeof h.file === 'string'));
   assert.deepEqual(got.files, JSON.parse(JSON.stringify(svc.files.map(({ sig, ...f }) => f))));
   assert.ok(svc.files.every((f) => f.sig));
+});
+
+test('the schema walk reaches anyOf branches and object-valued additionalProperties', () => {
+  // Invariant: `walk` visits every sub-schema, so the `ok` and additionalProperties checks cannot skip a nested one.
+  const seen = [];
+  walk({ type: 'object', additionalProperties: { type: 'string' }, properties: { a: { anyOf: [{ type: 'integer' }, { type: 'object', additionalProperties: false }] } } }, (x) => seen.push(x.type));
+  assert.deepEqual(seen.map(String).sort(), ['integer', 'object', 'object', 'string', 'undefined']);
+});
+
+test('a prototype key is not a tool: toString, constructor and hasOwnProperty are TOOL_UNKNOWN', async () => {
+  // Invariant: handle looks tools up as own keys only, so Object.prototype members answer {error, code: TOOL_UNKNOWN}.
+  for (const tool of ['toString', 'constructor', 'hasOwnProperty', '__proto__']) {
+    for (const format of ['json', 'text']) {
+      const out = await raw(tool, {}, rev, format);
+      assert.deepEqual(out.body, { error: `unknown tool: ${tool}`, code: 'TOOL_UNKNOWN' }, tool);
+    }
+  }
+});
+
+test('a review stored without `author`, once migrated, answers get_review and a reused open_review within their schemas', async () => {
+  // Invariant: the boot migration (migrateStore, which start() awaits before serving; MCP reads go through store.read) gives a pre-author review author null, so its json replies validate; the read path itself defaults nothing.
+  const { review } = await reviewOnFeature();
+  const file = `${w.store.dir}/reviews/${review.id}.json`;
+  const stored = JSON.parse(fs.readFileSync(file, 'utf8'));
+  delete stored.author;
+  fs.writeFileSync(file, JSON.stringify(stored));
+  await migrateStore();
+  assert.equal(store.read(review.id).author, null);
+  assert.equal((await json('get_review', { review: review.id })).review.author, null);
+  const again = await json('open_review', { project: 'app', worktree: 'feature', author: 's-author' }, cond);
+  assert.deepEqual([again.reused, again.review.author], [true, null]);
+});
+
+test('get_hunk on a binary file: json says binary and text says there are no lines', async () => {
+  // Invariant: the snapshot's binary flag reaches get_hunk json (`binary: true`) and the text head of its file-level hunk reads `(binary file: no lines)`.
+  const wt = w.addWorktree();
+  wt.commit({ 'logo.png': Buffer.from([0, 27, 91, 0, 255, 10]) });
+  const { review } = await json('open_review', { project: 'app', worktree: 'feature', author: 's-author' }, cond);
+  const [got, t] = await both('get_hunk', { review: review.id, file: 'logo.png' });
+  assert.deepEqual([got.binary, got.tooLarge, got.hunks[0].kind], [true, false, 'file']);
+  assert.match(t, /\(binary file: no lines\)/);
+});
+
+test('open_review text opens a new review as `opened`, then says `reused`', async () => {
+  // Invariant: the first call on a checkout answers `opened review <id>`; the next, the same id as `reused the open review`.
+  w.addWorktree().commit({ 'a.js': editLines({ 2: 'x' }) });
+  const args = { project: 'app', worktree: 'feature', author: 's-author' };
+  const first = await text('open_review', args, cond);
+  const id = first.match(/^opened review (r-[0-9a-f]+)\n/)?.[1];
+  assert.ok(id, first);
+  assert.match(await text('open_review', args, cond), new RegExp(`^reused the open review ${id}\n`));
+});
+
+test('list_threads counts tally the whole review while threads holds only those of the status asked', async () => {
+  // Invariant: `counts` is the whole review's tally (here 1 resolved, 1 open) though the default status lists only the open thread.
+  const { review } = await reviewOnFeature();
+  const mk = async (line) => (await json('annotate', { review: review.id, anchor: 'lines', kind: 'comment', body: 'x', file: 'a.js', startLine: line })).thread.id;
+  const [a] = [await mk(2), await mk(18)];
+  assert.equal((await threads.setThreadStatus(review.id, a, { status: 'resolved' })).ok, true);
+  const got = await json('list_threads', { review: review.id });
+  assert.deepEqual(got.counts, { open: 1, resolved: 1, outdated: 0 });
+  assert.equal(got.threads.length, 1);
+  assert.equal(got.threads[0].status, 'open');
+});
+
+test('refresh_review reports exact counts in json and the same numbers in text', async () => {
+  // Invariant: a refresh keeps the verdict of an unchanged hunk, counts a new hunk, and text prints the json's numbers.
+  const { wt, review } = await reviewOnFeature();
+  const [h1] = await hunkIdsOf(review.id);
+  await reviews.setVerdict(review.id, h1, 'accepted');
+  wt.commit({ 'b.js': 'z\n' });
+  const got = await json('refresh_review', { review: review.id });
+  assert.deepEqual(got, { unchanged: false, round: 2, hunks: { kept: 1, reset: 0, new: 1 }, threads: { moved: 0, drifted: 0, outdated: 0, dropped: 0 }, groups: { kept: 0, dropped: 0 } });
+  wt.commit({ 'b.js': 'zz\n' });
+  assert.equal(await text('refresh_review', { review: review.id }), 'round 3: hunks 1 kept, 0 reset to pending, 1 new · threads 0 moved, 0 drifted, 0 outdated, 0 dropped · groups 0 kept, 0 dropped');
+});
+
+test('a stubbed refusal with extra fields reaches the wire as details, in both formats', async () => {
+  // Invariant: handle passes fields a refusal carries beyond code and reason as `details`, never into `error`.
+  const real = _handlers.get_review;
+  _handlers.get_review = async () => ({ ok: false, code: 'X_STUB', reason: 'stubbed', extra: { ids: ['a'] } });
+  try {
+    for (const format of ['json', 'text']) {
+      assert.deepEqual((await raw('get_review', { review: 'r-x' }, rev, format)).body, { error: 'stubbed', code: 'X_STUB', details: { extra: { ids: ['a'] } } });
+    }
+  } finally { _handlers.get_review = real; }
+});
+
+test('annotate with no severity omits it from the ack; a reply that resolves a comment says plain `resolved`', async () => {
+  // Invariant: the started header carries `/severity` only for a finding; a comment closes with no disposition and the ack says just `resolved`.
+  const { review } = await reviewOnFeature();
+  const args = { review: review.id, anchor: 'lines', kind: 'comment', body: 'x', file: 'a.js', startLine: 2 };
+  assert.match(await text('annotate', args), /^started thread t\d+ · comment · open · on a\.js#L2$/);
+  const id = (await json('annotate', args)).thread.id;
+  assert.match(await text('reply', { review: review.id, thread: id, body: 'done', resolve: true }), new RegExp(`^replied on thread ${id} \\(m\\d+\\) · resolved$`));
 });

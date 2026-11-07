@@ -70,6 +70,326 @@
               "description": "Review title."
             }
           }
+        },
+        "outputSchema": {
+          "type": "object",
+          "properties": {
+            "review": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "project": {
+                  "type": "string"
+                },
+                "worktree": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "branch": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "range",
+                    "commit",
+                    "uncommitted"
+                  ]
+                },
+                "target": {
+                  "type": "object",
+                  "properties": {
+                    "base": {
+                      "type": "string"
+                    },
+                    "sha": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [],
+                  "additionalProperties": false
+                },
+                "label": {
+                  "type": "string"
+                },
+                "title": {
+                  "type": "string"
+                },
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "open",
+                    "closed"
+                  ]
+                },
+                "recipient": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "author": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "recipientRole": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "round": {
+                  "type": "integer"
+                },
+                "headSha": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "baseSha": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "headMoved": {
+                  "type": "boolean"
+                },
+                "dirty": {
+                  "type": "boolean"
+                },
+                "checkoutGone": {
+                  "type": "boolean"
+                },
+                "snapshotError": {
+                  "type": "string"
+                },
+                "counts": {
+                  "type": "object",
+                  "properties": {
+                    "files": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ]
+                    },
+                    "hunks": {
+                      "type": [
+                        "object",
+                        "null"
+                      ],
+                      "properties": {
+                        "pending": {
+                          "type": "integer"
+                        },
+                        "accepted": {
+                          "type": "integer"
+                        },
+                        "rejected": {
+                          "type": "integer"
+                        },
+                        "total": {
+                          "type": "integer"
+                        }
+                      },
+                      "required": [],
+                      "additionalProperties": false
+                    },
+                    "threads": {
+                      "type": "object",
+                      "properties": {
+                        "open": {
+                          "type": "integer"
+                        },
+                        "resolved": {
+                          "type": "integer"
+                        },
+                        "outdated": {
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "open",
+                        "resolved",
+                        "outdated"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "files",
+                    "hunks",
+                    "threads"
+                  ],
+                  "additionalProperties": false
+                },
+                "mergeBlockers": {
+                  "type": "integer"
+                },
+                "unread": {
+                  "type": "integer"
+                },
+                "seenByHuman": {
+                  "type": "boolean"
+                },
+                "rev": {
+                  "type": "integer"
+                },
+                "createdAt": {
+                  "type": "string"
+                },
+                "createdBy": {
+                  "type": [
+                    "object",
+                    "null"
+                  ],
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "enum": [
+                        "human",
+                        "session"
+                      ]
+                    },
+                    "sessionId": {
+                      "type": "string"
+                    },
+                    "role": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "kind"
+                  ],
+                  "additionalProperties": false
+                },
+                "groups": {
+                  "type": [
+                    "object",
+                    "null"
+                  ],
+                  "properties": {
+                    "total": {
+                      "type": "integer"
+                    },
+                    "pending": {
+                      "type": "integer"
+                    },
+                    "accepted": {
+                      "type": "integer"
+                    },
+                    "rejected": {
+                      "type": "integer"
+                    },
+                    "ungrouped": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ]
+                    },
+                    "guideMe": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "total",
+                    "pending",
+                    "accepted",
+                    "rejected",
+                    "ungrouped",
+                    "guideMe"
+                  ],
+                  "additionalProperties": false
+                },
+                "lastSubmission": {
+                  "type": [
+                    "object",
+                    "null"
+                  ],
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "round": {
+                      "type": "integer"
+                    },
+                    "kind": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "status",
+                    "code",
+                    "round",
+                    "kind"
+                  ],
+                  "additionalProperties": false
+                },
+                "link": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "project",
+                "worktree",
+                "branch",
+                "kind",
+                "target",
+                "label",
+                "title",
+                "status",
+                "recipient",
+                "author",
+                "recipientRole",
+                "round",
+                "headSha",
+                "baseSha",
+                "headMoved",
+                "dirty",
+                "checkoutGone",
+                "counts",
+                "mergeBlockers",
+                "unread",
+                "seenByHuman",
+                "rev",
+                "createdAt",
+                "createdBy",
+                "groups",
+                "lastSubmission",
+                "link"
+              ],
+              "additionalProperties": false
+            },
+            "reused": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "review",
+            "reused"
+          ],
+          "additionalProperties": false
         }
       },
       {
@@ -87,11 +407,674 @@
           "required": [
             "review"
           ]
+        },
+        "outputSchema": {
+          "type": "object",
+          "properties": {
+            "review": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "project": {
+                  "type": "string"
+                },
+                "worktree": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "branch": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "range",
+                    "commit",
+                    "uncommitted"
+                  ]
+                },
+                "target": {
+                  "type": "object",
+                  "properties": {
+                    "base": {
+                      "type": "string"
+                    },
+                    "sha": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [],
+                  "additionalProperties": false
+                },
+                "label": {
+                  "type": "string"
+                },
+                "title": {
+                  "type": "string"
+                },
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "open",
+                    "closed"
+                  ]
+                },
+                "recipient": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "author": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "recipientRole": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "round": {
+                  "type": "integer"
+                },
+                "headSha": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "baseSha": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "headMoved": {
+                  "type": "boolean"
+                },
+                "dirty": {
+                  "type": "boolean"
+                },
+                "checkoutGone": {
+                  "type": "boolean"
+                },
+                "snapshotError": {
+                  "type": "string"
+                },
+                "counts": {
+                  "type": "object",
+                  "properties": {
+                    "files": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ]
+                    },
+                    "hunks": {
+                      "type": [
+                        "object",
+                        "null"
+                      ],
+                      "properties": {
+                        "pending": {
+                          "type": "integer"
+                        },
+                        "accepted": {
+                          "type": "integer"
+                        },
+                        "rejected": {
+                          "type": "integer"
+                        },
+                        "total": {
+                          "type": "integer"
+                        }
+                      },
+                      "required": [],
+                      "additionalProperties": false
+                    },
+                    "threads": {
+                      "type": "object",
+                      "properties": {
+                        "open": {
+                          "type": "integer"
+                        },
+                        "resolved": {
+                          "type": "integer"
+                        },
+                        "outdated": {
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "open",
+                        "resolved",
+                        "outdated"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "files",
+                    "hunks",
+                    "threads"
+                  ],
+                  "additionalProperties": false
+                },
+                "mergeBlockers": {
+                  "type": "integer"
+                },
+                "unread": {
+                  "type": "integer"
+                },
+                "seenByHuman": {
+                  "type": "boolean"
+                },
+                "rev": {
+                  "type": "integer"
+                },
+                "createdAt": {
+                  "type": "string"
+                },
+                "createdBy": {
+                  "type": [
+                    "object",
+                    "null"
+                  ],
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "enum": [
+                        "human",
+                        "session"
+                      ]
+                    },
+                    "sessionId": {
+                      "type": "string"
+                    },
+                    "role": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "kind"
+                  ],
+                  "additionalProperties": false
+                },
+                "groups": {
+                  "type": [
+                    "object",
+                    "null"
+                  ],
+                  "properties": {
+                    "total": {
+                      "type": "integer"
+                    },
+                    "pending": {
+                      "type": "integer"
+                    },
+                    "accepted": {
+                      "type": "integer"
+                    },
+                    "rejected": {
+                      "type": "integer"
+                    },
+                    "ungrouped": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ]
+                    },
+                    "guideMe": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "total",
+                    "pending",
+                    "accepted",
+                    "rejected",
+                    "ungrouped",
+                    "guideMe"
+                  ],
+                  "additionalProperties": false
+                },
+                "lastSubmission": {
+                  "type": [
+                    "object",
+                    "null"
+                  ],
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "round": {
+                      "type": "integer"
+                    },
+                    "kind": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "status",
+                    "code",
+                    "round",
+                    "kind"
+                  ],
+                  "additionalProperties": false
+                },
+                "link": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "project",
+                "worktree",
+                "branch",
+                "kind",
+                "target",
+                "label",
+                "title",
+                "status",
+                "recipient",
+                "author",
+                "recipientRole",
+                "round",
+                "headSha",
+                "baseSha",
+                "headMoved",
+                "dirty",
+                "checkoutGone",
+                "counts",
+                "mergeBlockers",
+                "unread",
+                "seenByHuman",
+                "rev",
+                "createdAt",
+                "createdBy",
+                "groups",
+                "lastSubmission",
+                "link"
+              ],
+              "additionalProperties": false
+            },
+            "files": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "path": {
+                    "type": "string"
+                  },
+                  "oldPath": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "added",
+                      "deleted",
+                      "modified",
+                      "renamed"
+                    ]
+                  },
+                  "binary": {
+                    "type": "boolean"
+                  },
+                  "tooLarge": {
+                    "type": "boolean"
+                  },
+                  "additions": {
+                    "type": "integer"
+                  },
+                  "deletions": {
+                    "type": "integer"
+                  },
+                  "hunks": {
+                    "type": "integer"
+                  },
+                  "verdicts": {
+                    "type": [
+                      "object",
+                      "null"
+                    ],
+                    "properties": {
+                      "pending": {
+                        "type": "integer"
+                      },
+                      "accepted": {
+                        "type": "integer"
+                      },
+                      "rejected": {
+                        "type": "integer"
+                      }
+                    },
+                    "required": [
+                      "pending",
+                      "accepted",
+                      "rejected"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "threads": {
+                    "type": "object",
+                    "properties": {
+                      "open": {
+                        "type": "integer"
+                      },
+                      "resolved": {
+                        "type": "integer"
+                      },
+                      "outdated": {
+                        "type": "integer"
+                      }
+                    },
+                    "required": [
+                      "open",
+                      "resolved",
+                      "outdated"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "unread": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "path",
+                  "oldPath",
+                  "status",
+                  "binary",
+                  "tooLarge",
+                  "additions",
+                  "deletions",
+                  "hunks",
+                  "verdicts",
+                  "threads",
+                  "unread"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "guide": {
+              "type": [
+                "object",
+                "null"
+              ],
+              "properties": {
+                "round": {
+                  "type": "integer"
+                },
+                "groups": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "order": {
+                        "type": "integer"
+                      },
+                      "title": {
+                        "type": "string"
+                      },
+                      "description": {
+                        "type": "string"
+                      },
+                      "hunks": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string"
+                            },
+                            "file": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "verdict": {
+                              "type": "string",
+                              "enum": [
+                                "pending",
+                                "accepted",
+                                "rejected"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "file",
+                            "verdict"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "verdict": {
+                        "type": "string",
+                        "enum": [
+                          "pending",
+                          "accepted",
+                          "rejected"
+                        ]
+                      },
+                      "proposedBy": {
+                        "type": [
+                          "object",
+                          "null"
+                        ],
+                        "properties": {
+                          "kind": {
+                            "type": "string",
+                            "enum": [
+                              "human",
+                              "session"
+                            ]
+                          },
+                          "sessionId": {
+                            "type": "string"
+                          },
+                          "role": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "kind"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "threads": {
+                        "type": "object",
+                        "properties": {
+                          "open": {
+                            "type": "integer"
+                          },
+                          "resolved": {
+                            "type": "integer"
+                          },
+                          "outdated": {
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "open",
+                          "resolved",
+                          "outdated"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "unread": {
+                        "type": "integer"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "order",
+                      "title",
+                      "description",
+                      "hunks",
+                      "verdict",
+                      "proposedBy",
+                      "threads",
+                      "unread"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "ungrouped": {
+                  "type": [
+                    "array",
+                    "null"
+                  ],
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "file": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "verdict": {
+                        "type": "string",
+                        "enum": [
+                          "pending",
+                          "accepted",
+                          "rejected"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "file",
+                      "verdict"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "retired": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "title": {
+                        "type": "string"
+                      },
+                      "retiredIn": {
+                        "type": "integer"
+                      },
+                      "reason": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "title",
+                      "retiredIn",
+                      "reason"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "guideMe": {
+                  "type": "object",
+                  "properties": {
+                    "offered": {
+                      "type": "boolean"
+                    },
+                    "noGroups": {
+                      "type": "boolean"
+                    },
+                    "droppedGroups": {
+                      "type": "integer"
+                    },
+                    "newUngrouped": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "offered",
+                    "noGroups",
+                    "droppedGroups",
+                    "newUngrouped"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "round",
+                "groups",
+                "ungrouped",
+                "retired",
+                "guideMe"
+              ],
+              "additionalProperties": false
+            },
+            "reviewThreads": {
+              "type": "object",
+              "properties": {
+                "open": {
+                  "type": "integer"
+                },
+                "resolved": {
+                  "type": "integer"
+                },
+                "outdated": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "open",
+                "resolved",
+                "outdated"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "review",
+            "files",
+            "guide",
+            "reviewThreads"
+          ],
+          "additionalProperties": false
         }
       },
       {
         "name": "list_threads",
-        "description": "Threads with their anchored lines and messages; cited code is inlined. A thread can also sit on a whole file, a group, or the review itself.",
+        "description": "Threads with their anchored lines, messages and each message's cited code. A thread can also sit on a whole file, a group, or the review itself.",
         "inputSchema": {
           "type": "object",
           "properties": {
@@ -127,11 +1110,316 @@
           "required": [
             "review"
           ]
+        },
+        "outputSchema": {
+          "type": "object",
+          "properties": {
+            "review": {
+              "type": "string"
+            },
+            "counts": {
+              "type": "object",
+              "properties": {
+                "open": {
+                  "type": "integer"
+                },
+                "resolved": {
+                  "type": "integer"
+                },
+                "outdated": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "open",
+                "resolved",
+                "outdated"
+              ],
+              "additionalProperties": false
+            },
+            "threads": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "type": "string"
+                  },
+                  "severity": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "open",
+                      "resolved",
+                      "outdated"
+                    ]
+                  },
+                  "disposition": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "resolveProposed": {
+                    "type": "boolean"
+                  },
+                  "anchor": {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "enum": [
+                          "lines",
+                          "file",
+                          "review",
+                          "group"
+                        ]
+                      },
+                      "round": {
+                        "type": "integer"
+                      },
+                      "file": {
+                        "type": "string"
+                      },
+                      "side": {
+                        "type": "string"
+                      },
+                      "startLine": {
+                        "type": "integer"
+                      },
+                      "endLine": {
+                        "type": "integer"
+                      },
+                      "hunkId": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "linesHash": {
+                        "type": "string"
+                      },
+                      "drifted": {
+                        "type": "boolean"
+                      },
+                      "groupId": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "round"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "openedBy": {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "enum": [
+                          "human",
+                          "session"
+                        ]
+                      },
+                      "sessionId": {
+                        "type": "string"
+                      },
+                      "role": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "kind"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "unread": {
+                    "type": "integer"
+                  },
+                  "messages": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "author": {
+                          "type": "object",
+                          "properties": {
+                            "kind": {
+                              "type": "string",
+                              "enum": [
+                                "human",
+                                "session"
+                              ]
+                            },
+                            "sessionId": {
+                              "type": "string"
+                            },
+                            "role": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "kind"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "body": {
+                          "type": "string"
+                        },
+                        "at": {
+                          "type": "string"
+                        },
+                        "round": {
+                          "type": "integer"
+                        },
+                        "proposeResolve": {
+                          "type": "boolean"
+                        },
+                        "citations": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "raw": {
+                                "type": "string"
+                              },
+                              "path": {
+                                "type": "string"
+                              },
+                              "startLine": {
+                                "type": "integer"
+                              },
+                              "endLine": {
+                                "type": "integer"
+                              }
+                            },
+                            "required": [
+                              "raw",
+                              "path",
+                              "startLine",
+                              "endLine"
+                            ],
+                            "additionalProperties": false
+                          }
+                        },
+                        "ref": {
+                          "type": "string"
+                        },
+                        "excerpts": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "raw": {
+                                "type": "string"
+                              },
+                              "path": {
+                                "type": "string"
+                              },
+                              "startLine": {
+                                "type": "integer"
+                              },
+                              "endLine": {
+                                "type": "integer"
+                              },
+                              "lines": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "n": {
+                                      "type": "integer"
+                                    },
+                                    "text": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "n",
+                                    "text"
+                                  ],
+                                  "additionalProperties": false
+                                }
+                              },
+                              "error": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "raw"
+                            ],
+                            "additionalProperties": false
+                          }
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "author",
+                        "body",
+                        "at",
+                        "round",
+                        "proposeResolve",
+                        "citations",
+                        "ref",
+                        "excerpts"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "anchorLines": {
+                    "type": [
+                      "array",
+                      "null"
+                    ],
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "link": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "kind",
+                  "severity",
+                  "status",
+                  "disposition",
+                  "resolveProposed",
+                  "anchor",
+                  "openedBy",
+                  "unread",
+                  "messages",
+                  "anchorLines",
+                  "link"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          "required": [
+            "review",
+            "counts",
+            "threads"
+          ],
+          "additionalProperties": false
         }
       },
       {
         "name": "get_hunk",
-        "description": "Diff text with line numbers, verdict and groups: one hunk by `hunk` id or by `file`+new-side `line`, or every hunk of `file`.",
+        "description": "Hunks with their numbered diff lines, verdict, groups and thread ids: one by `hunk` id or by `file`+new-side `line`, or every hunk of `file`.",
         "inputSchema": {
           "type": "object",
           "properties": {
@@ -157,6 +1445,134 @@
           "required": [
             "review"
           ]
+        },
+        "outputSchema": {
+          "type": "object",
+          "properties": {
+            "file": {
+              "type": "string"
+            },
+            "binary": {
+              "type": "boolean"
+            },
+            "tooLarge": {
+              "type": "boolean"
+            },
+            "hunks": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "text",
+                      "file"
+                    ]
+                  },
+                  "header": {
+                    "type": "string"
+                  },
+                  "oldStart": {
+                    "type": "integer"
+                  },
+                  "oldLines": {
+                    "type": "integer"
+                  },
+                  "newStart": {
+                    "type": "integer"
+                  },
+                  "newLines": {
+                    "type": "integer"
+                  },
+                  "lines": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "t": {
+                          "type": "string",
+                          "enum": [
+                            "ctx",
+                            "add",
+                            "del"
+                          ]
+                        },
+                        "old": {
+                          "type": [
+                            "integer",
+                            "null"
+                          ]
+                        },
+                        "new": {
+                          "type": [
+                            "integer",
+                            "null"
+                          ]
+                        },
+                        "text": {
+                          "type": "string"
+                        },
+                        "noEol": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "t",
+                        "old",
+                        "new",
+                        "text"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "verdict": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "enum": [
+                      "pending",
+                      "accepted",
+                      "rejected",
+                      null
+                    ]
+                  },
+                  "threadIds": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "groups": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "required": [
+                  "id",
+                  "kind",
+                  "lines",
+                  "verdict",
+                  "threadIds",
+                  "groups"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          "required": [
+            "file",
+            "binary",
+            "tooLarge",
+            "hunks"
+          ],
+          "additionalProperties": false
         }
       },
       {
@@ -243,11 +1659,223 @@
             "kind",
             "body"
           ]
+        },
+        "outputSchema": {
+          "type": "object",
+          "properties": {
+            "thread": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "kind": {
+                  "type": "string"
+                },
+                "severity": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "open",
+                    "resolved",
+                    "outdated"
+                  ]
+                },
+                "disposition": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "resolveProposed": {
+                  "type": "boolean"
+                },
+                "anchor": {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "enum": [
+                        "lines",
+                        "file",
+                        "review",
+                        "group"
+                      ]
+                    },
+                    "round": {
+                      "type": "integer"
+                    },
+                    "file": {
+                      "type": "string"
+                    },
+                    "side": {
+                      "type": "string"
+                    },
+                    "startLine": {
+                      "type": "integer"
+                    },
+                    "endLine": {
+                      "type": "integer"
+                    },
+                    "hunkId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "linesHash": {
+                      "type": "string"
+                    },
+                    "drifted": {
+                      "type": "boolean"
+                    },
+                    "groupId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "round"
+                  ],
+                  "additionalProperties": false
+                },
+                "openedBy": {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "enum": [
+                        "human",
+                        "session"
+                      ]
+                    },
+                    "sessionId": {
+                      "type": "string"
+                    },
+                    "role": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "kind"
+                  ],
+                  "additionalProperties": false
+                },
+                "unread": {
+                  "type": "integer"
+                },
+                "messages": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "author": {
+                        "type": "object",
+                        "properties": {
+                          "kind": {
+                            "type": "string",
+                            "enum": [
+                              "human",
+                              "session"
+                            ]
+                          },
+                          "sessionId": {
+                            "type": "string"
+                          },
+                          "role": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "kind"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "body": {
+                        "type": "string"
+                      },
+                      "at": {
+                        "type": "string"
+                      },
+                      "round": {
+                        "type": "integer"
+                      },
+                      "proposeResolve": {
+                        "type": "boolean"
+                      },
+                      "citations": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "raw": {
+                              "type": "string"
+                            },
+                            "path": {
+                              "type": "string"
+                            },
+                            "startLine": {
+                              "type": "integer"
+                            },
+                            "endLine": {
+                              "type": "integer"
+                            }
+                          },
+                          "required": [
+                            "raw",
+                            "path",
+                            "startLine",
+                            "endLine"
+                          ],
+                          "additionalProperties": false
+                        }
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "author",
+                      "body",
+                      "at",
+                      "round",
+                      "proposeResolve",
+                      "citations"
+                    ],
+                    "additionalProperties": false
+                  }
+                }
+              },
+              "required": [
+                "id",
+                "kind",
+                "severity",
+                "status",
+                "disposition",
+                "resolveProposed",
+                "anchor",
+                "openedBy",
+                "unread",
+                "messages"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "thread"
+          ],
+          "additionalProperties": false
         }
       },
       {
         "name": "reply",
-        "description": "Reply on a thread. resolve:true closes an open thread you opened (a conductor: any open thread an agent opened); a finding also needs `disposition`. Otherwise it proposes resolution to the human. The returned thread's `resolveProposed` says which.",
+        "description": "Reply on a thread. resolve:true closes an open thread you opened (a conductor: any open thread an agent opened); a finding also needs `disposition`. Otherwise it proposes resolution to the human. The result says which.",
         "inputSchema": {
           "type": "object",
           "properties": {
@@ -284,6 +1912,218 @@
             "thread",
             "body"
           ]
+        },
+        "outputSchema": {
+          "type": "object",
+          "properties": {
+            "thread": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "kind": {
+                  "type": "string"
+                },
+                "severity": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "open",
+                    "resolved",
+                    "outdated"
+                  ]
+                },
+                "disposition": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "resolveProposed": {
+                  "type": "boolean"
+                },
+                "anchor": {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "enum": [
+                        "lines",
+                        "file",
+                        "review",
+                        "group"
+                      ]
+                    },
+                    "round": {
+                      "type": "integer"
+                    },
+                    "file": {
+                      "type": "string"
+                    },
+                    "side": {
+                      "type": "string"
+                    },
+                    "startLine": {
+                      "type": "integer"
+                    },
+                    "endLine": {
+                      "type": "integer"
+                    },
+                    "hunkId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "linesHash": {
+                      "type": "string"
+                    },
+                    "drifted": {
+                      "type": "boolean"
+                    },
+                    "groupId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "round"
+                  ],
+                  "additionalProperties": false
+                },
+                "openedBy": {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "enum": [
+                        "human",
+                        "session"
+                      ]
+                    },
+                    "sessionId": {
+                      "type": "string"
+                    },
+                    "role": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "kind"
+                  ],
+                  "additionalProperties": false
+                },
+                "unread": {
+                  "type": "integer"
+                },
+                "messages": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "author": {
+                        "type": "object",
+                        "properties": {
+                          "kind": {
+                            "type": "string",
+                            "enum": [
+                              "human",
+                              "session"
+                            ]
+                          },
+                          "sessionId": {
+                            "type": "string"
+                          },
+                          "role": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "kind"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "body": {
+                        "type": "string"
+                      },
+                      "at": {
+                        "type": "string"
+                      },
+                      "round": {
+                        "type": "integer"
+                      },
+                      "proposeResolve": {
+                        "type": "boolean"
+                      },
+                      "citations": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "raw": {
+                              "type": "string"
+                            },
+                            "path": {
+                              "type": "string"
+                            },
+                            "startLine": {
+                              "type": "integer"
+                            },
+                            "endLine": {
+                              "type": "integer"
+                            }
+                          },
+                          "required": [
+                            "raw",
+                            "path",
+                            "startLine",
+                            "endLine"
+                          ],
+                          "additionalProperties": false
+                        }
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "author",
+                      "body",
+                      "at",
+                      "round",
+                      "proposeResolve",
+                      "citations"
+                    ],
+                    "additionalProperties": false
+                  }
+                }
+              },
+              "required": [
+                "id",
+                "kind",
+                "severity",
+                "status",
+                "disposition",
+                "resolveProposed",
+                "anchor",
+                "openedBy",
+                "unread",
+                "messages"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "thread"
+          ],
+          "additionalProperties": false
         }
       },
       {
@@ -310,6 +2150,73 @@
             "review",
             "groups"
           ]
+        },
+        "outputSchema": {
+          "type": "object",
+          "properties": {
+            "groups": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "order": {
+                    "type": "integer"
+                  },
+                  "title": {
+                    "type": "string"
+                  },
+                  "hunkIds": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "verdict": {
+                    "type": "string",
+                    "enum": [
+                      "pending",
+                      "accepted",
+                      "rejected"
+                    ]
+                  }
+                },
+                "required": [
+                  "id",
+                  "order",
+                  "title",
+                  "hunkIds",
+                  "verdict"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "kept": {
+              "type": "integer"
+            },
+            "retired": {
+              "type": "integer"
+            },
+            "threadsOutdated": {
+              "type": "integer"
+            },
+            "ungrouped": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "required": [
+            "groups",
+            "kept",
+            "retired",
+            "threadsOutdated",
+            "ungrouped"
+          ],
+          "additionalProperties": false
         }
       },
       {
@@ -327,6 +2234,82 @@
           "required": [
             "review"
           ]
+        },
+        "outputSchema": {
+          "type": "object",
+          "properties": {
+            "round": {
+              "type": "integer"
+            },
+            "unchanged": {
+              "type": "boolean"
+            },
+            "hunks": {
+              "type": "object",
+              "properties": {
+                "kept": {
+                  "type": "integer"
+                },
+                "reset": {
+                  "type": "integer"
+                },
+                "new": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "kept",
+                "reset",
+                "new"
+              ],
+              "additionalProperties": false
+            },
+            "threads": {
+              "type": "object",
+              "properties": {
+                "moved": {
+                  "type": "integer"
+                },
+                "drifted": {
+                  "type": "integer"
+                },
+                "outdated": {
+                  "type": "integer"
+                },
+                "dropped": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "moved",
+                "drifted",
+                "outdated",
+                "dropped"
+              ],
+              "additionalProperties": false
+            },
+            "groups": {
+              "type": "object",
+              "properties": {
+                "kept": {
+                  "type": "integer"
+                },
+                "dropped": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "kept",
+                "dropped"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "round",
+            "unchanged"
+          ],
+          "additionalProperties": false
         }
       }
     ]

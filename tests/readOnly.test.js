@@ -40,10 +40,12 @@ const call = async (method, url, body) => {
   assert.ok(res.status < 300, `${method} ${url}: ${res.status} ${JSON.stringify(json).slice(0, 300)}`);
   return json;
 };
+// Every MCP read runs in both formats, so the text rendering is proven read-only too.
 const mcp = async (tool, args) => {
-  const out = await call('POST', '/mcp', { tool, arguments: args, caller: { sessionId: 's-agent', project: 'app' } });
-  assert.ok(!out.error && out.result?.ok !== false, `${tool}: ${JSON.stringify(out).slice(0, 300)}`);
-  return out;
+  for (const format of ['json', 'text']) {
+    const out = await call('POST', '/mcp', { tool, arguments: args, caller: { sessionId: 's-agent', project: 'app' }, format });
+    assert.ok(!out.error && (format === 'json' ? out.structured : typeof out.text === 'string'), `${tool} ${format}: ${JSON.stringify(out).slice(0, 300)}`);
+  }
 };
 
 /** Path → content hash, size and mtime of every file, and path → mtime of every directory, under `dir` (symlinks not followed). */

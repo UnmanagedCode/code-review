@@ -63,9 +63,9 @@ export async function seed() {
       return json;
     };
     const mcp = async (tool, args, caller) => {
-      const { result } = await call('POST', 'mcp', { tool, arguments: args, caller: { project: 'app', ...caller } });
-      if (result?.ok === false) throw new Error(`${tool}: ${JSON.stringify(result)}`);
-      return result;
+      const out = await call('POST', 'mcp', { tool, arguments: args, caller: { project: 'app', ...caller }, format: 'json' });
+      if (out.error) throw new Error(`${tool}: ${JSON.stringify(out)}`);
+      return out.structured;
     };
     const rev = { sessionId: 's-rev' };
     const author = { sessionId: 's-author' };

@@ -329,7 +329,7 @@ export const getHunks = (id, { hunk, file, line } = {}) => attempt(() => viewRev
     picked = { f, hunks: hit };
   }
   return {
-    ok: true, file: picked.f.path,
+    ok: true, file: picked.f.path, binary: picked.f.binary, tooLarge: Boolean(picked.f.tooLarge),
     hunks: picked.hunks.map((h) => ({
       hunk: h, verdict: hunkView(review, h).verdict, groups: groupsHolding(review, h.id).map((g) => g.id),
       threadIds: review.threads.filter((t) => t.status !== 'outdated' && t.anchor.hunkId === h.id).map((t) => t.id),

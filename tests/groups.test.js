@@ -378,9 +378,8 @@ test('REST and MCP annotate store a group anchor with no file sig; bad group anc
   await s.propose([s.spec('one', 'a1')]);
   const rest = ok(await note(s.id, 'g1'));
   assert.equal(rest.fileSig, null);
-  const out = (await handle({ tool: 'annotate', arguments: { review: s.id, anchor: 'group', group: 'g1', kind: 'comment', body: 'via mcp' }, caller: { sessionId: 's-rev', project: 'app' } })).body.result;
-  assert.equal(out.ok, true, JSON.stringify(out));
-  assert.equal(out.fileSig, null);
+  const out = (await handle({ tool: 'annotate', arguments: { review: s.id, anchor: 'group', group: 'g1', kind: 'comment', body: 'via mcp' }, caller: { sessionId: 's-rev', project: 'app' }, format: 'json' })).body;
+  assert.equal(out.structured.thread.anchor.kind, 'group', JSON.stringify(out));
   assert.deepEqual(store.read(s.id).threads.map((t) => t.anchor), [{ kind: 'group', groupId: 'g1', round: 1 }, { kind: 'group', groupId: 'g1', round: 1 }]);
   assert.deepEqual((await s.view()).guide.threads.map((t) => t.anchor), [{ kind: 'group', groupId: 'g1', round: 1 }, { kind: 'group', groupId: 'g1', round: 1 }]);
   assert.equal(codeOf(await note(s.id, 'g9')), 'GROUP_UNKNOWN');
@@ -413,9 +412,9 @@ test('group threads reach guide.threads, counts, unread and list_threads, and no
   assert.ok(detail.files.every((f) => f.threads.open === 0));
   const listed = ok(await threads.listThreads(s.id, { status: 'all' }));
   assert.deepEqual(listed.threads.map((x) => x.anchor.kind), ['group']);
-  const mcp = (await handle({ tool: 'list_threads', arguments: { review: s.id }, caller: { sessionId: 's-rev', project: 'app' } })).body;
-  assert.match(mcp.text, /group g1/);
-  assert.equal(mcp.meta.threads[0].anchor, 'group');
+  const mcp = (await handle({ tool: 'list_threads', arguments: { review: s.id }, caller: { sessionId: 's-rev', project: 'app' }, format: 'json' })).body;
+  assert.equal(mcp.structured.threads[0].anchor.kind, 'group');
+  assert.equal(mcp.structured.threads[0].anchor.groupId, 'g1');
 
   s.wt.commit({ 'b.js': 'x\n' });
   ok(await reviews.refreshReview(s.id, HUMAN));

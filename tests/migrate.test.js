@@ -25,14 +25,15 @@ const EMPTY_GROUPS = { groups: [], retiredGroups: [], nextGroup: 1, sinceProposa
  * A review file in the shape written before `lastActivityAt` and `agentSeq` existed. It has the group fields and submission
  * kinds already, unless `legacy`: the shape before groups.
  */
-function seed(id, { messages = [], verdicts = {}, rounds = [], submissions = [], legacy = false, ...extra } = {}) {
+function seed(id, { messages = [], verdicts = {}, rounds = [], submissions = [], legacy = false, noAuthor = false, ...extra } = {}) {
   const review = {
-    id, project: 'app', worktree: null, status: 'open', createdAt: '2026-01-01T00:00:00.000Z', rev: 3, seq: 9, humanSeq: 0,
+    id, project: 'app', worktree: null, author: null, status: 'open', createdAt: '2026-01-01T00:00:00.000Z', rev: 3, seq: 9, humanSeq: 0,
     rounds: [{ n: 1, createdAt: '2026-01-01T00:00:00.000Z', submittedAt: null }, ...rounds],
     verdicts, threads: messages.length ? [{ id: 't1', messages }] : [],
     submissions: legacy ? submissions : submissions.map((s) => ({ kind: 'round', ...s })),
     ...(legacy ? {} : EMPTY_GROUPS), ...extra,
   };
+  if (noAuthor) delete review.author;
   fs.mkdirSync(path.dirname(fileOf(id)), { recursive: true });
   fs.writeFileSync(fileOf(id), JSON.stringify(review, null, 2));
 }
@@ -154,4 +155,15 @@ test('a review from before groups gains the missing group fields and round-kind 
   const bytes = ids.map((id) => fs.readFileSync(fileOf(id)));
   await migrateStore();
   assert.deepEqual(ids.map((id) => fs.readFileSync(fileOf(id))), bytes);
+});
+
+test('a review stored before `author` existed gains author null; a named author survives; a second run writes nothing', async () => {
+  // Invariant: authorField fills only an absent author (with null), so a named author is kept and a migrated review is byte-identical on a second run.
+  seed('r-000000000a', { noAuthor: true, lastActivityAt: '2026-02-01T00:00:00.000Z', agentSeq: 0 });
+  seed('r-000000000b', { author: 's-named', lastActivityAt: '2026-02-01T00:00:00.000Z', agentSeq: 0 });
+  await migrateStore();
+  assert.deepEqual(stored().map((r) => r.author), [null, 's-named']);
+  const bytes = fs.readFileSync(fileOf('r-000000000a'));
+  await migrateStore();
+  assert.deepEqual(fs.readFileSync(fileOf('r-000000000a')), bytes);
 });

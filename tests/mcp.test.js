@@ -25,18 +25,28 @@ beforeEach(async () => {
 });
 afterEach(() => w.cleanup());
 
-const call = async (tool, args, caller = { sessionId: 's-rev', project: 'app' }) => (await handle({ tool, arguments: args, caller })).body;
+// Replies go through JSON, as over the wire. `result` is a tool's json view, `text` its prose, `refusal` its {error, code}.
+const call = async (tool, args, caller = { sessionId: 's-rev', project: 'app' }, format = 'json') => JSON.parse(JSON.stringify((await handle({ tool, arguments: args, caller, format })).body));
 const result = async (tool, args, caller) => {
   const body = await call(tool, args, caller);
-  assert.ok(body.result, JSON.stringify(body));
-  return body.result;
+  assert.ok(body.structured, JSON.stringify(body));
+  return body.structured;
+};
+const text = async (tool, args, caller) => {
+  const body = await call(tool, args, caller, 'text');
+  assert.equal(typeof body.text, 'string', JSON.stringify(body));
+  return body.text;
+};
+const refusal = async (tool, args, caller) => {
+  const body = await call(tool, args, caller);
+  assert.ok(body.code && body.error && !body.structured, JSON.stringify(body));
+  return body;
 };
 
 async function reviewOnFeature(extra = {}) {
   const wt = w.addWorktree();
   wt.commit({ 'a.js': editLines({ 2: 'top-edit', 18: 'bottom-edit' }) });
   const out = await result('open_review', { project: 'app', worktree: 'feature', author: 's-author', ...extra }, { sessionId: 's-cond', project: '.conduct' });
-  assert.equal(out.ok, true, JSON.stringify(out));
   return { wt, review: out.review };
 }
 
@@ -50,15 +60,18 @@ test('a missing tool is 400; an unknown tool is 200 with an error', async () => 
   const unknown = await handle({ tool: 'nope', arguments: {}, caller: { sessionId: 's' } });
   assert.equal(unknown.status, 200);
   assert.match(unknown.body.error, /unknown tool/);
+  assert.equal(unknown.body.code, 'TOOL_UNKNOWN');
 });
 
-test('a domain refusal is 200 with {result:{ok:false, code}}; an unexpected failure is 200 {error}', async () => {
-  const refused = await handle({ tool: 'get_review', arguments: { review: 'r-0000000000' }, caller: { sessionId: 's-rev', project: 'app' } });
+test('a domain refusal is 200 with {error, code}; an unexpected failure is 200 {error}', async () => {
+  // Invariant: a service refusal keeps its code and reason as {error, code}, never as a success payload.
+  const refused = await handle({ tool: 'get_review', arguments: { review: 'r-0000000000' }, caller: { sessionId: 's-rev', project: 'app' }, format: 'json' });
   assert.equal(refused.status, 200);
-  assert.equal(refused.body.result.code, 'REVIEW_UNKNOWN');
+  assert.equal(refused.body.code, 'REVIEW_UNKNOWN');
+  assert.equal(typeof refused.body.error, 'string');
   w.cc.state.mode = 'error';
-  const down = await handle({ tool: 'open_review', arguments: { project: 'app' }, caller: { sessionId: 's-rev', project: 'app' } });
-  assert.equal(down.body.result.code, 'CONDUCTOR_UNAVAILABLE');
+  const down = await handle({ tool: 'open_review', arguments: { project: 'app' }, caller: { sessionId: 's-rev', project: 'app' }, format: 'json' });
+  assert.equal(down.body.code, 'CONDUCTOR_UNAVAILABLE');
 });
 
 test('roles: .conduct is conductor, the range recipient is author, everyone else reviewer', async () => {
@@ -82,10 +95,10 @@ test('list_threads passes owner; reply passes disposition and returns whether th
   const cond = { sessionId: 's-cond', project: '.conduct' };
   const finding = await result('annotate', { review: review.id, anchor: 'lines', kind: 'finding', severity: 'minor', body: 'x', file: 'a.js', startLine: 2 });
   const human = await threads.annotate(review.id, HUMAN, { anchor: { kind: 'lines', file: 'a.js', side: 'new', startLine: 18, endLine: 18 }, kind: 'comment', body: 'h' });
-  const count = (owner, status) => call('list_threads', { review: review.id, owner, status }, cond);
-  assert.equal((await count('agents')).meta.count, 1);
-  assert.equal((await count('user')).meta.count, 1);
-  assert.match((await count('agents', 'resolved')).text, /agents/);
+  const count = async (owner, status) => (await result('list_threads', { review: review.id, owner, status }, cond)).threads.length;
+  assert.equal(await count('agents'), 1);
+  assert.equal(await count('user'), 1);
+  assert.match(await text('list_threads', { review: review.id, owner: 'agents', status: 'resolved' }, cond), /agents/);
   const closed = await result('reply', { review: review.id, thread: finding.thread.id, body: 'ok', resolve: true, disposition: 'fixed' }, cond);
   assert.deepEqual([closed.thread.status, closed.thread.disposition], ['resolved', 'fixed']);
   const proposed = await result('reply', { review: review.id, thread: human.thread.id, body: 'ok', resolve: true }, cond);
@@ -105,22 +118,25 @@ test('no tool can set a verdict: no schema has a verdict property, and annotate/
   assert.deepEqual(after.counts.hunks, { pending: 1, accepted: 0, rejected: 1 });
 });
 
-test('get_review, list_threads and get_hunk answer {text, meta}; list_threads inlines cited code', async () => {
+test('get_review and list_threads json carry the review and its threads; list_threads text inlines cited code', async () => {
   const { review } = await reviewOnFeature();
   const hunk = (await reviews.diff(review.id, {})).files[0].hunks[0];
   const t = await result('annotate', { review: review.id, anchor: 'lines', kind: 'question', body: 'see a.js#L18-L18 and https://x/y.js#L1', file: 'a.js', startLine: 2 });
 
-  const rollup = await call('get_review', { review: review.id });
-  assert.equal(rollup.meta.id, review.id);
-  assert.match(rollup.text, /a\.js/);
+  const rollup = await result('get_review', { review: review.id });
+  assert.equal(rollup.review.id, review.id);
+  assert.equal(rollup.files[0].path, 'a.js');
+  assert.match(await text('get_review', { review: review.id }), /a\.js/);
 
-  const listed = await call('list_threads', { review: review.id });
-  assert.equal(listed.meta.count, 1);
-  assert.equal(listed.meta.counts.open, 1);
-  assert.match(listed.text, new RegExp(`\\[${t.thread.id}\\] question · open · a\\.js#L2`));
-  assert.match(listed.text, /bottom-edit/, 'the cited line is quoted');
-  assert.match(listed.text, /a\.js#L18 @[0-9a-f]{7}/);
-  assert.ok(!listed.text.includes('unresolved') && !/y\.js#L1 @/.test(listed.text), 'a URL is not a citation');
+  const listed = await result('list_threads', { review: review.id });
+  assert.equal(listed.threads.length, 1);
+  assert.equal(listed.counts.open, 1);
+  const body = await text('list_threads', { review: review.id });
+  assert.match(body, new RegExp(`\\[${t.thread.id}\\] question · open · a\\.js#L2`));
+  assert.match(body, /bottom-edit/, 'the cited line is quoted');
+  assert.match(body, /a\.js#L18 @[0-9a-f]{7}/);
+  assert.ok(!body.includes('unresolved') && !/y\.js#L1 @/.test(body), 'a URL is not a citation');
+  assert.deepEqual(listed.threads[0].messages[0].excerpts.map((e) => e.path), ['a.js'], 'json carries the one real citation as an excerpt');
 });
 
 test('list_threads filters by status and file; get_hunk finds a hunk by id or by file and line', async () => {
@@ -128,17 +144,19 @@ test('list_threads filters by status and file; get_hunk finds a hunk by id or by
   const [h1, h2] = (await reviews.diff(review.id, {})).files[0].hunks;
   const t = await result('annotate', { review: review.id, anchor: 'hunk', kind: 'comment', body: 'x', hunk: h1.id });
   await result('reply', { review: review.id, thread: t.thread.id, body: 'done', resolve: true }, { sessionId: 's-rev', project: 'app' }).catch(() => {});
-  assert.equal((await call('list_threads', { review: review.id, file: 'b.js' })).meta.count, 0);
-  assert.equal((await call('list_threads', { review: review.id, status: 'all' })).meta.count, 1);
+  const count = async (args) => (await result('list_threads', { review: review.id, ...args })).threads.length;
+  assert.equal(await count({ file: 'b.js' }), 0);
+  assert.equal(await count({ status: 'all' }), 1);
 
-  const byId = await call('get_hunk', { review: review.id, hunk: h2.id });
-  assert.deepEqual(byId.meta.hunks.map((h) => h.id), [h2.id]);
-  assert.match(byId.text, /bottom-edit/);
-  const byLine = await call('get_hunk', { review: review.id, file: 'a.js', line: h1.newStart + 1 });
-  assert.equal(byLine.meta.hunks[0].id, h1.id);
-  assert.deepEqual(byLine.meta.hunks[0].threadIds, [t.thread.id]);
-  assert.equal((await call('get_hunk', { review: review.id, file: 'a.js' })).meta.hunks.length, 2);
-  assert.equal((await result('get_hunk', { review: review.id })).code, 'INVALID_ARGUMENT');
+  const byId = await result('get_hunk', { review: review.id, hunk: h2.id });
+  assert.deepEqual(byId.hunks.map((h) => h.id), [h2.id]);
+  assert.ok(byId.hunks[0].lines.some((l) => l.text.includes('bottom-edit')), 'json carries the numbered lines');
+  assert.match(await text('get_hunk', { review: review.id, hunk: h2.id }), /bottom-edit/);
+  const byLine = await result('get_hunk', { review: review.id, file: 'a.js', line: h1.newStart + 1 });
+  assert.equal(byLine.hunks[0].id, h1.id);
+  assert.deepEqual(byLine.hunks[0].threadIds, [t.thread.id]);
+  assert.equal((await result('get_hunk', { review: review.id, file: 'a.js' })).hunks.length, 2);
+  assert.equal((await refusal('get_hunk', { review: review.id })).code, 'INVALID_ARGUMENT');
 });
 
 test('open_review: a conductor opening becomes the recipient and its author argument is stored', async () => {
@@ -155,8 +173,8 @@ test('open_review without a project: a worker gets its own checkout, a conductor
   const mine = await result('open_review', {}, { sessionId: 's-author', project: 'app' });
   assert.equal(mine.review.worktree, 'feature');
   assert.equal(mine.review.recipient, 's-author');
-  assert.equal((await result('open_review', { author: 's-author' }, { sessionId: 's-cond', project: '.conduct' })).code, 'INVALID_ARGUMENT');
-  assert.equal((await result('open_review', {}, { sessionId: 's-ghost', project: 'app' })).code, 'CHECKOUT_UNKNOWN');
+  assert.equal((await refusal('open_review', { author: 's-author' }, { sessionId: 's-cond', project: '.conduct' })).code, 'INVALID_ARGUMENT');
+  assert.equal((await refusal('open_review', {}, { sessionId: 's-ghost', project: 'app' })).code, 'CHECKOUT_UNKNOWN');
 });
 
 test('open_review reuse never reassigns, in both directions', async () => {
@@ -178,22 +196,22 @@ test('open_review reuse never reassigns, in both directions', async () => {
 
 test('get_review text names the conductor recipient and the author', async () => {
   const { review } = await reviewOnFeature();
-  const text = (await call('get_review', { review: review.id })).text;
-  assert.match(text, /recipient: s-cond \(conductor\)/);
-  assert.match(text, /author: s-author/);
+  const body = await text('get_review', { review: review.id });
+  assert.match(body, /recipient: s-cond \(conductor\)/);
+  assert.match(body, /author: s-author/);
 });
 
 test('open_review: a worktree without a project is refused; so is a write with no calling session', async () => {
-  assert.equal((await result('open_review', { worktree: 'feature' })).code, 'INVALID_ARGUMENT');
-  assert.equal((await result('open_review', { project: 'app' }, { project: 'app' })).code, 'CALLER_UNKNOWN');
+  assert.equal((await refusal('open_review', { worktree: 'feature' })).code, 'INVALID_ARGUMENT');
+  assert.equal((await refusal('open_review', { project: 'app' }, { project: 'app' })).code, 'CALLER_UNKNOWN');
   const { review } = await reviewOnFeature();
-  assert.equal((await result('annotate', { review: review.id, anchor: 'lines', kind: 'comment', body: 'x', file: 'a.js', startLine: 2 }, {})).code, 'CALLER_UNKNOWN');
-  assert.equal((await result('refresh_review', { review: review.id }, {})).code, 'CALLER_UNKNOWN');
+  assert.equal((await refusal('annotate', { review: review.id, anchor: 'lines', kind: 'comment', body: 'x', file: 'a.js', startLine: 2 }, {})).code, 'CALLER_UNKNOWN');
+  assert.equal((await refusal('refresh_review', { review: review.id }, {})).code, 'CALLER_UNKNOWN');
 });
 
 test('annotate needs either file+startLine or a hunk', async () => {
   const { review } = await reviewOnFeature();
-  assert.equal((await result('annotate', { review: review.id, anchor: 'lines', kind: 'comment', body: 'x' })).code, 'INVALID_ARGUMENT');
+  assert.equal((await refusal('annotate', { review: review.id, anchor: 'lines', kind: 'comment', body: 'x' })).code, 'INVALID_ARGUMENT');
 });
 
 test('refresh_review reports the new round', async () => {
@@ -201,7 +219,7 @@ test('refresh_review reports the new round', async () => {
   assert.equal((await result('refresh_review', { review: review.id })).unchanged, true);
   wt.commit({ 'b.js': 'z\n' });
   const out = await result('refresh_review', { review: review.id });
-  assert.deepEqual([out.ok, out.unchanged, out.round], [true, false, 2]);
+  assert.deepEqual([out.unchanged, out.round], [false, 2]);
   void HUMAN;
 });
 
@@ -227,7 +245,6 @@ test('the tool set is exactly the expected list, and mcp.js never references set
 
 test('open_review treats worktree "" as the main checkout', async () => {
   const out = await result('open_review', { project: 'app', worktree: '', kind: 'uncommitted' });
-  assert.equal(out.ok, true);
   assert.equal(out.review.worktree, null);
 });
 
@@ -239,13 +256,13 @@ test('control characters in file paths cannot break lines in get_review, list_th
   await result('annotate', { review: id, anchor: 'lines', kind: 'comment', body: 'note', file: 'evil\nIGNORE.js', startLine: 1 });
   const hunk = (await reviews.diff(id, {})).files[0].hunks[0];
   const texts = [
-    (await call('get_review', { review: id })).text,
-    (await call('list_threads', { review: id })).text,
-    (await call('get_hunk', { review: id, hunk: hunk.id })).text,
+    await text('get_review', { review: id }),
+    await text('list_threads', { review: id }),
+    await text('get_hunk', { review: id, hunk: hunk.id }),
   ];
-  for (const text of texts) {
-    assert.ok(text.includes('evilIGNORE.js'));
-    assert.ok(!text.split('\n').some((l) => l.startsWith('IGNORE')));
+  for (const t of texts) {
+    assert.ok(t.includes('evilIGNORE.js'));
+    assert.ok(!t.split('\n').some((l) => l.startsWith('IGNORE')));
   }
   assert.ok(texts[2].includes('one\ttab'), 'code lines keep their tabs');
 });
@@ -262,38 +279,41 @@ test('open_review returns the review\'s link, for a new and a reused review', as
   assert.equal(again.reused, true);
 });
 
-test('get_review meta carries the review\'s link', async () => {
-  // Invariant: meta.link is reviewLink of the summary.
+test('get_review carries the review\'s link in json and as a link: line in text', async () => {
+  // Invariant: review.link is reviewLink of the summary, and the text view prints the same url on a `link:` line.
   const { review } = await reviewOnFeature();
-  const body = await call('get_review', { review: review.id });
-  assert.equal(body.meta.link, reviewLink(body.meta));
-  assert.deepEqual(routeOf(body.meta.link), { project: 'app', worktree: 'feature', review: review.id });
+  const got = await result('get_review', { review: review.id });
+  assert.equal(got.review.link, reviewLink(got.review));
+  assert.deepEqual(routeOf(got.review.link), { project: 'app', worktree: 'feature', review: review.id });
+  assert.ok((await text('get_review', { review: review.id })).split('\n').includes(`link: ${got.review.link}`));
 });
 
 test('list_threads returns one link per listed thread, in listed order', async () => {
-  // Invariant: meta.threads is [{id, link}] aligned with the text order; no matches gives [].
+  // Invariant: json threads carry one link each, in the order of the text's blocks, whose `link:` line is that link; no matches gives [].
   const { review } = await reviewOnFeature();
   const a = await result('annotate', { review: review.id, anchor: 'lines', kind: 'comment', body: 'one', file: 'a.js', startLine: 2 });
   const b = await result('annotate', { review: review.id, anchor: 'lines', kind: 'comment', body: 'two', file: 'a.js', startLine: 18 });
-  const listed = await call('list_threads', { review: review.id });
-  const ids = [...listed.text.matchAll(/\[(t\d+)\]/g)].map((m) => m[1]);
-  assert.deepEqual(listed.meta.threads.map((t) => t.id), ids);
+  const listed = await result('list_threads', { review: review.id });
+  const body = await text('list_threads', { review: review.id });
+  const ids = [...body.matchAll(/^\[(t\d+)\]/gm)].map((m) => m[1]);
+  assert.deepEqual(listed.threads.map((t) => t.id), ids);
+  assert.deepEqual([...body.matchAll(/^link: (.+)$/gm)].map((m) => m[1]), listed.threads.map((t) => t.link));
   assert.deepEqual(new Set(ids), new Set([a.thread.id, b.thread.id]));
   const rv = { id: review.id, project: 'app', worktree: 'feature' };
-  for (const t of listed.meta.threads) {
+  for (const t of listed.threads) {
     const full = (await threads.listThreads(review.id, { status: 'all' })).threads.find((x) => x.id === t.id);
     assert.equal(t.link, threadLink(rv, full));
     const r = routeOf(t.link);
     assert.equal(r.thread, t.id);
     assert.equal(r.file, 'a.js');
   }
-  assert.deepEqual((await call('list_threads', { review: review.id, file: 'b.js' })).meta.threads, []);
+  assert.deepEqual((await result('list_threads', { review: review.id, file: 'b.js' })).threads, []);
 });
 
 test('a refusal carries no link', async () => {
   // Invariant: an unknown review is REVIEW_UNKNOWN with no link anywhere in the body.
   const body = await call('get_review', { review: 'r-0000000000' });
-  assert.equal(body.result.code, 'REVIEW_UNKNOWN');
+  assert.equal(body.code, 'REVIEW_UNKNOWN');
   assert.ok(!JSON.stringify(body).includes('link'));
 });
 
@@ -303,48 +323,50 @@ test('annotate maps `anchor` and its arguments for a file and for the review', a
   // Invariant: the handler passes {kind: anchor, file, ...} through, so a file anchor stores {kind, file, round} and a review one {kind, round}.
   const { review } = await reviewOnFeature();
   const f = await result('annotate', { review: review.id, anchor: 'file', kind: 'comment', body: 'x', file: 'a.js' });
-  assert.deepEqual([f.thread.anchor, f.fileSig.path], [{ kind: 'file', file: 'a.js', round: 1 }, 'a.js']);
+  assert.deepEqual(f.thread.anchor, { kind: 'file', file: 'a.js', round: 1 });
   const r = await result('annotate', { review: review.id, anchor: 'review', kind: 'question', body: 'overall?' });
-  assert.deepEqual([r.thread.anchor, r.fileSig], [{ kind: 'review', round: 1 }, null]);
+  assert.deepEqual(r.thread.anchor, { kind: 'review', round: 1 });
+  assert.equal('fileSig' in r, false, 'the UI cache token is not part of the MCP result');
 });
 
 test('annotate without `anchor`, or with a side on a file anchor, is refused INVALID_ARGUMENT', async () => {
   // Invariant: the handler adds no default kind or side, so buildAnchor refuses both.
   const { review } = await reviewOnFeature();
-  assert.equal((await result('annotate', { review: review.id, kind: 'comment', body: 'x', file: 'a.js', startLine: 2 })).code, 'INVALID_ARGUMENT');
-  assert.equal((await result('annotate', { review: review.id, anchor: 'file', kind: 'comment', body: 'x', file: 'a.js', side: 'new' })).code, 'INVALID_ARGUMENT');
-  assert.equal((await result('annotate', { review: review.id, anchor: 'review', kind: 'comment', body: 'x', hunk: 'h' })).code, 'INVALID_ARGUMENT');
+  assert.equal((await refusal('annotate', { review: review.id, kind: 'comment', body: 'x', file: 'a.js', startLine: 2 })).code, 'INVALID_ARGUMENT');
+  assert.equal((await refusal('annotate', { review: review.id, anchor: 'file', kind: 'comment', body: 'x', file: 'a.js', side: 'new' })).code, 'INVALID_ARGUMENT');
+  assert.equal((await refusal('annotate', { review: review.id, anchor: 'review', kind: 'comment', body: 'x', hunk: 'h' })).code, 'INVALID_ARGUMENT');
   assert.equal(store.read(review.id).threads.length, 0);
 });
 
-test('list_threads shows file and review threads by their label with no code fence, and tells their kind in meta', async () => {
-  // Invariant: renderThreads labels by anchorLabel and fences only line anchors; meta.threads[].anchor is the kind; file= keeps file threads, never review ones.
+test('list_threads shows file and review threads by their label with no code fence, and tells their kind in json', async () => {
+  // Invariant: renderThreads labels by anchorLabel and fences only line anchors; json threads[].anchor.kind is the kind; file= keeps file threads, never review ones.
   const { review } = await reviewOnFeature();
   const l = await result('annotate', { review: review.id, anchor: 'lines', kind: 'comment', body: 'one', file: 'a.js', startLine: 2 });
   const f = await result('annotate', { review: review.id, anchor: 'file', kind: 'comment', body: 'two', file: 'a.js' });
   const r = await result('annotate', { review: review.id, anchor: 'review', kind: 'comment', body: 'three' });
-  const all = await call('list_threads', { review: review.id });
-  assert.deepEqual(all.meta.threads.map((t) => [t.id, t.anchor]), [[l.thread.id, 'lines'], [f.thread.id, 'file'], [r.thread.id, 'review']]);
-  const blocks = all.text.split('\n\n');
+  const all = await result('list_threads', { review: review.id });
+  assert.deepEqual(all.threads.map((t) => [t.id, t.anchor.kind]), [[l.thread.id, 'lines'], [f.thread.id, 'file'], [r.thread.id, 'review']]);
+  const blocks = (await text('list_threads', { review: review.id })).split('\n\n');
   assert.match(blocks[1], new RegExp(`^\\[${f.thread.id}\\] comment · open · a\\.js \\(whole file\\) · by `));
   assert.match(blocks[2], new RegExp(`^\\[${r.thread.id}\\] comment · open · the review · by `));
   assert.ok(blocks[0].includes('```'), 'a lines thread shows its lines');
   for (const b of blocks.slice(1)) assert.ok(!b.includes('```'), b);
-  assert.deepEqual((await call('list_threads', { review: review.id, file: 'a.js' })).meta.threads.map((t) => t.id), [l.thread.id, f.thread.id]);
+  assert.deepEqual((await result('list_threads', { review: review.id, file: 'a.js' })).threads.map((t) => t.id), [l.thread.id, f.thread.id]);
   const rv = { id: review.id, project: 'app', worktree: 'feature' };
-  assert.deepEqual(routeOf(all.meta.threads[2].link), { project: 'app', worktree: 'feature', review: review.id, thread: r.thread.id, view: 'threads' });
-  assert.deepEqual(routeOf(all.meta.threads[1].link), { project: 'app', worktree: 'feature', review: review.id, file: 'a.js', thread: f.thread.id });
-  assert.equal(all.meta.threads[1].link, threadLink(rv, f.thread));
+  assert.deepEqual(routeOf(all.threads[2].link), { project: 'app', worktree: 'feature', review: review.id, thread: r.thread.id, view: 'threads' });
+  assert.deepEqual(routeOf(all.threads[1].link), { project: 'app', worktree: 'feature', review: review.id, file: 'a.js', thread: f.thread.id });
+  assert.equal(all.threads[1].link, threadLink(rv, f.thread));
 });
 
 test('get_review text has a review threads line once the review has any', async () => {
   // Invariant: renderRollup adds `review threads: N open/M resolved` only when getReview returns review threads.
   const { review } = await reviewOnFeature();
-  assert.ok(!(await call('get_review', { review: review.id })).text.includes('review threads:'));
+  assert.ok(!(await text('get_review', { review: review.id })).includes('review threads:'));
   const a = await result('annotate', { review: review.id, anchor: 'review', kind: 'comment', body: 'one' });
   await result('annotate', { review: review.id, anchor: 'review', kind: 'comment', body: 'two' });
   assert.equal((await threads.setThreadStatus(review.id, a.thread.id, { status: 'resolved' })).ok, true);
-  assert.match((await call('get_review', { review: review.id })).text, /^review threads: 1 open\/1 resolved$/m);
+  assert.match(await text('get_review', { review: review.id }), /^review threads: 1 open\/1 resolved$/m);
+  assert.deepEqual((await result('get_review', { review: review.id })).reviewThreads, { open: 1, resolved: 1, outdated: 0 });
 });
 
 // ---- Groups ----
@@ -356,47 +378,46 @@ test('propose_groups without a calling session is CALLER_UNKNOWN and writes noth
   const { review } = await reviewOnFeature();
   const [h1] = await hunkIdsOf(review.id);
   const body = await call('propose_groups', { review: review.id, groups: [{ title: 't', description: 'd', hunks: [h1] }] }, {});
-  assert.equal(body.result.code, 'CALLER_UNKNOWN');
+  assert.equal(body.code, 'CALLER_UNKNOWN');
   assert.deepEqual(store.read(review.id).groups, []);
 });
 
-test('get_review lists the groups, their verdicts and hunk ids and the ungrouped hunks in text and meta', async () => {
+test('get_review lists the groups, their verdicts and hunk ids and the ungrouped hunks in text and json', async () => {
   // Invariant: the agent sees what the human's Guided view shows: group order, verdict, hunks, ungrouped, guideMe.
   const { review } = await reviewOnFeature();
   const [h1, h2] = await hunkIdsOf(review.id);
-  const first = await call('get_review', { review: review.id });
-  assert.match(first.text, /groups: 0 \(0 accepted, 0 rejected, 0 pending\) · ungrouped hunks: 2 · guide me: offered/);
-  assert.equal(first.meta.guide.guideMe, true);
+  assert.match(await text('get_review', { review: review.id }), /groups: 0 \(0 accepted, 0 rejected, 0 pending\) · ungrouped hunks: 2 · guide me: offered/);
+  assert.equal((await result('get_review', { review: review.id })).guide.guideMe.offered, true);
   const res = await result('propose_groups', { review: review.id, groups: [{ title: 'Top edit', description: 'the **top**', hunks: [h1] }] });
-  assert.deepEqual([res.ok, res.groups, res.ungrouped], [true, [{ id: 'g1', order: 1, title: 'Top edit', hunkIds: [h1], verdict: 'pending' }], [h2]]);
-  const got = await call('get_review', { review: review.id });
-  assert.match(got.text, new RegExp(`groups: 1 \\(0 accepted, 0 rejected, 1 pending\\) · ungrouped hunks: 1 · guide me: no`));
-  assert.ok(got.text.includes(`1. [g1] pending · Top edit · h:${h1}`));
-  assert.ok(got.text.includes(`ungrouped: a.js h:${h2}`));
-  assert.deepEqual(got.meta.guide, {
-    groups: [{ id: 'g1', order: 1, title: 'Top edit', hunkIds: [h1], verdict: 'pending' }], ungrouped: [h2], guideMe: false,
-  });
+  assert.deepEqual([res.groups, res.ungrouped], [[{ id: 'g1', order: 1, title: 'Top edit', hunkIds: [h1], verdict: 'pending' }], [h2]]);
+  const body = await text('get_review', { review: review.id });
+  assert.match(body, new RegExp(`groups: 1 \\(0 accepted, 0 rejected, 1 pending\\) · ungrouped hunks: 1 · guide me: no`));
+  assert.ok(body.includes(`1. [g1] pending · Top edit · h:${h1}`));
+  assert.ok(body.includes(`ungrouped: a.js h:${h2}`));
+  const { guide } = await result('get_review', { review: review.id });
+  assert.deepEqual(guide.groups.map((g) => [g.id, g.order, g.title, g.description, g.hunks.map((h) => h.id), g.verdict]), [['g1', 1, 'Top edit', 'the **top**', [h1], 'pending']]);
+  assert.deepEqual(guide.ungrouped.map((h) => h.id), [h2]);
+  assert.equal(guide.guideMe.offered, false);
 });
 
-test('get_hunk shows the groups a hunk sits in, in text and meta', async () => {
+test('get_hunk shows the groups a hunk sits in, in text and json', async () => {
   // Invariant: every hunk read names its groups, so an agent sees a shared hunk's memberships.
   const { review } = await reviewOnFeature();
   const [h1, h2] = await hunkIdsOf(review.id);
   await result('propose_groups', { review: review.id, groups: [{ title: 'a', description: 'd', hunks: [h1, h2] }, { title: 'b', description: 'd', hunks: [h1] }] });
-  const got = await call('get_hunk', { review: review.id, hunk: h1 });
-  assert.match(got.text.split('\n')[0], /· groups g1, g2/);
-  assert.deepEqual(got.meta.hunks[0].groups, ['g1', 'g2']);
-  assert.deepEqual((await call('get_hunk', { review: review.id, hunk: h2 })).meta.hunks[0].groups, ['g1']);
+  assert.match((await text('get_hunk', { review: review.id, hunk: h1 })).split('\n')[0], /· groups g1, g2/);
+  assert.deepEqual((await result('get_hunk', { review: review.id, hunk: h1 })).hunks[0].groups, ['g1', 'g2']);
+  assert.deepEqual((await result('get_hunk', { review: review.id, hunk: h2 })).hunks[0].groups, ['g1']);
 });
 
-test('list_threads names a group thread `group g1` with anchor kind group in meta', async () => {
+test('list_threads names a group thread `group g1` with anchor kind group in json', async () => {
   // Invariant: a group thread lists with its group, and its link opens its Guided step at the thread.
   const { review } = await reviewOnFeature();
   const [h1] = await hunkIdsOf(review.id);
   await result('propose_groups', { review: review.id, groups: [{ title: 'a', description: 'd', hunks: [h1] }] });
   const t = await result('annotate', { review: review.id, anchor: 'group', group: 'g1', kind: 'question', body: 'why together?' });
-  const got = await call('list_threads', { review: review.id });
-  assert.match(got.text, /\[t1\] question · open · group g1 · by reviewer/);
-  assert.equal(got.meta.threads[0].anchor, 'group');
-  assert.deepEqual(routeOf(got.meta.threads[0].link), { project: 'app', worktree: 'feature', review: review.id, thread: t.thread.id, view: 'guided', step: 'g1' });
+  const got = await result('list_threads', { review: review.id });
+  assert.match(await text('list_threads', { review: review.id }), /\[t1\] question · open · group g1 · by reviewer/);
+  assert.equal(got.threads[0].anchor.kind, 'group');
+  assert.deepEqual(routeOf(got.threads[0].link), { project: 'app', worktree: 'feature', review: review.id, thread: t.thread.id, view: 'guided', step: 'g1' });
 });

@@ -5,7 +5,8 @@ import path from 'node:path';
 import { makeRepo, lines, localPlace } from './_git.js';
 import { fakeCc } from './_fakeCc.js';
 import { resolveTarget, buildSnapshot, isBinaryFile } from '../src/snapshot.js';
-import { parseCitations, resolveCitation, citationsForMessage, MAX_EXCERPT_LINES } from '../src/citations.js';
+import { parseCitations, resolveCitation, citationsForMessage } from '../src/citations.js';
+import { MAX_EXCERPT_LINES, renderThreads } from '../src/render.js';
 
 const fakeSnap = (files) => ({ lines: async (_side, p) => files[p] ?? null });
 const body = (n) => Array.from({ length: n }, (_, i) => `l${i + 1}`);
@@ -31,11 +32,13 @@ test('an excerpt is clamped to the file length; a start past the end is unresolv
   assert.ok((await resolveCitation({ path: 'nope.js', startLine: 1, endLine: 1 }, snap)).error);
 });
 
-test('an excerpt longer than the cap is truncated and says so', async () => {
+test('an excerpt longer than the text-view cap is returned whole by the service', async () => {
+  // Invariant: resolveCitation caps nothing; only the MCP text view cuts (MAX_EXCERPT_LINES lives in render.js).
   const snap = fakeSnap({ 'a.js': body(200) });
   const r = await resolveCitation({ path: 'a.js', startLine: 1, endLine: 200 }, snap);
-  assert.equal(r.lines.length, MAX_EXCERPT_LINES);
-  assert.equal(r.truncated, true);
+  assert.ok(MAX_EXCERPT_LINES < 200);
+  assert.equal(r.lines.length, 200);
+  assert.equal('truncated' in r, false);
 });
 
 test('absolute and ..-escaping paths are refused', async () => {
@@ -136,4 +139,14 @@ test('isBinaryFile decides from the snapshot flag first and only reads for a fil
   assert.equal(await isBinaryFile(snap, 'outside.txt', read), true);
   assert.equal(reads, 1);
   assert.equal(await isBinaryFile(snap, 'gone.txt', async () => null), false, 'an absent file is not binary; the caller reports it missing');
+});
+
+test('the text view cuts a long excerpt at the cap and names the hidden range and how to read it', () => {
+  // Invariant: renderThreads shows MAX_EXCERPT_LINES numbered lines, then a marker with the count, the L-range, path and ref of the rest.
+  const n = MAX_EXCERPT_LINES + 20;
+  const e = { path: 'a.js', startLine: 1, endLine: n, lines: body(n).map((text, i) => ({ n: i + 1, text })) };
+  const t = { id: 't1', kind: 'comment', severity: null, status: 'open', anchor: { kind: 'review', round: 1 }, openedBy: { kind: 'human' }, anchorLines: null, messages: [{ author: { kind: 'human' }, body: 'b', ref: 'abc1234', excerpts: [e] }] };
+  const text = renderThreads([t]);
+  assert.equal(text.split('\n').filter((l) => /^\s+\d+  l\d+$/.test(l)).length, MAX_EXCERPT_LINES);
+  assert.ok(text.includes(`… 20 more lines (L${MAX_EXCERPT_LINES + 1}-L${n}) not shown: read a.js lines ${MAX_EXCERPT_LINES + 1}-${n} at abc1234`));
 });

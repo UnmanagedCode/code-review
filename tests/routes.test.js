@@ -245,9 +245,14 @@ test('refusals map to their HTTP status', async () => {
 
 test('POST /mcp speaks the cc envelope', async () => {
   const id = (await openReview()).review.id;
-  const ok = await req('POST', '/mcp', { tool: 'get_review', arguments: { review: id }, caller: { sessionId: 's-author', project: 'app' } });
+  // Invariant: POST /mcp takes cc's envelope: format json answers {structured}, text {text}, a bad format or no tool is 400.
+  const caller = { sessionId: 's-author', project: 'app' };
+  const ok = await req('POST', '/mcp', { tool: 'get_review', arguments: { review: id }, caller, format: 'json' });
   assert.equal(ok.status, 200);
-  assert.equal(ok.body.meta.id, id);
+  assert.equal(ok.body.structured.review.id, id);
+  const prose = await req('POST', '/mcp', { tool: 'get_review', arguments: { review: id }, caller, format: 'text' });
+  assert.deepEqual(Object.keys(prose.body), ['text']);
+  assert.equal((await req('POST', '/mcp', { tool: 'get_review', arguments: { review: id }, caller, format: 'xml' })).status, 400);
   assert.equal((await req('POST', '/mcp', {})).status, 400);
 });
 
@@ -333,10 +338,10 @@ test('the group routes map their refusals to NO_GROUPS 409, GROUP_UNKNOWN 404 an
   const id = (await openReview()).review.id;
   const [h1, h2] = (await req('GET', `/reviews/${id}/diff`)).body.files[0].hunks.map((h) => h.id);
   const caller = { sessionId: 's-author', project: 'app' };
-  const empty = await req('POST', '/mcp', { tool: 'propose_groups', arguments: { review: id, groups: [{ title: 't', description: 'd', hunks: [] }] }, caller });
-  assert.deepEqual([empty.status, empty.body.result.code, HTTP_STATUS.GROUP_EMPTY], [200, 'GROUP_EMPTY', 400]);
-  const proposed = await req('POST', '/mcp', { tool: 'propose_groups', arguments: { review: id, groups: [{ title: 't', description: 'd', hunks: [h1] }] }, caller });
-  assert.equal(proposed.body.result.ok, true);
+  const empty = await req('POST', '/mcp', { tool: 'propose_groups', arguments: { review: id, groups: [{ title: 't', description: 'd', hunks: [] }] }, caller, format: 'json' });
+  assert.deepEqual([empty.status, empty.body.code, HTTP_STATUS.GROUP_EMPTY], [200, 'GROUP_EMPTY', 400]);
+  const proposed = await req('POST', '/mcp', { tool: 'propose_groups', arguments: { review: id, groups: [{ title: 't', description: 'd', hunks: [h1] }] }, caller, format: 'json' });
+  assert.deepEqual(proposed.body.structured.groups.map((g) => g.id), ['g1']);
   const unknown = await req('PUT', `/reviews/${id}/groups/g9/verdict`, { verdict: 'accepted' });
   assert.deepEqual([unknown.status, unknown.body.code], [404, 'GROUP_UNKNOWN']);
   const set = await req('PUT', `/reviews/${id}/groups/g1/verdict`, { verdict: 'rejected' });

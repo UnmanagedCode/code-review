@@ -3,8 +3,6 @@ import { isBinaryFile } from './snapshot.js';
 // `path#L10-L20` references inside message bodies. Paths are relative to the checkout root.
 const CITATION_RE = /(?<![\w\/.:-])((?:[\w.-]+\/)*[\w.-]+\.?[\w-]*)#L(\d+)(?:-L(\d+))?/g;
 
-export const MAX_EXCERPT_LINES = 80;
-
 /** [{raw, path, startLine, endLine}] for every citation in `body`. */
 export function parseCitations(body) {
   return [...String(body ?? '').matchAll(CITATION_RE)].map((m) => {
@@ -18,7 +16,7 @@ const unsafe = (p) => p.startsWith('/') || p.split('/').includes('..');
 
 /**
  * Resolves one citation against a snapshot's new side.
- * Returns {path, startLine, endLine, lines:[{n,text}], truncated} or {error}.
+ * Returns {path, startLine, endLine, lines:[{n,text}]} (every line of the range that exists) or {error}.
  */
 export async function resolveCitation(cit, snapshot) {
   if (unsafe(cit.path)) return { error: 'path must be relative to the checkout root' };
@@ -30,11 +28,9 @@ export async function resolveCitation(cit, snapshot) {
   if (cit.startLine > lines.length) return { error: `file has ${lines.length} lines` };
   const startLine = cit.startLine;
   const endLine = Math.min(cit.endLine, lines.length);
-  const shownEnd = Math.min(endLine, startLine + MAX_EXCERPT_LINES - 1);
   return {
     path: cit.path, startLine, endLine,
-    lines: lines.slice(startLine - 1, shownEnd).map((text, i) => ({ n: startLine + i, text })),
-    truncated: shownEnd < endLine,
+    lines: lines.slice(startLine - 1, endLine).map((text, i) => ({ n: startLine + i, text })),
   };
 }
 

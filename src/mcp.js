@@ -2,16 +2,10 @@ import * as reviews from './reviews.js';
 import * as threads from './threads.js';
 import * as groups from './groups.js';
 import { sessionCheckout, isConductorProject } from './checkouts.js';
-import { Refusal, attempt } from './refusals.js';
-import { reviewLink, threadLink } from './links.js';
-import { renderRollup, renderThreads, renderHunk } from './render.js';
+import { Refusal, attempt, isRefusal } from './refusals.js';
+import { views } from './mcpViews.js';
 
-const guideMeta = (g) => ({
-  groups: g.groups.map((x) => ({ id: x.id, order: x.order, title: x.title, hunkIds: x.hunks.map((h) => h.id), verdict: x.verdict })),
-  ungrouped: g.ungrouped && g.ungrouped.map((h) => h.id), guideMe: g.guideMe.offered,
-});
-
-// Every handler returns a service result: a refusal, `{ok:true, ...}`, or `{text, meta}` for prose tools.
+// Every handler returns a service result, a refusal or `{ok:true, ...}`; `views` (mcpViews.js) turns a success into json or text.
 const needCaller = (caller) => {
   if (!caller?.sessionId) throw new Refusal('CALLER_UNKNOWN', 'this tool needs the calling session; call it from a Claude Code session');
   return { kind: 'agent', sessionId: caller.sessionId, project: caller.project };
@@ -28,34 +22,14 @@ const handlers = {
       if (!co) throw new Refusal('CHECKOUT_UNKNOWN', `code-conductor does not know session ${actor.sessionId}`);
       ({ project, worktree } = co);
     }
-    const res = await reviews.openReview({ project, worktree: worktree || null, kind: a.kind, base: a.base, sha: a.sha, author: a.author, title: a.title }, actor);
-    return res.ok ? { ...res, review: { ...res.review, link: reviewLink(res.review) } } : res;
+    return reviews.openReview({ project, worktree: worktree || null, kind: a.kind, base: a.base, sha: a.sha, author: a.author, title: a.title }, actor);
   }),
 
-  get_review: async (a) => {
-    const res = await reviews.getReview(a.review);
-    return res.ok ? {
-      text: renderRollup(res.review, res.files, res.reviewThreads, res.guide),
-      meta: { ...res.review, link: reviewLink(res.review), guide: res.guide && guideMeta(res.guide) },
-    } : res;
-  },
+  get_review: (a) => reviews.getReview(a.review),
 
-  list_threads: async (a) => {
-    const res = await threads.listThreads(a.review, { status: a.status, file: a.file, owner: a.owner });
-    if (!res.ok) return res;
-    const text = res.threads.length ? renderThreads(res.threads) : `no ${a.status ?? 'open'} threads${a.owner ? ` opened by ${a.owner === 'user' ? 'the user' : 'agents'}` : ''}`;
-    const rv = { id: res.review, project: res.project, worktree: res.worktree };
-    return { text, meta: { review: res.review, count: res.threads.length, counts: res.counts, threads: res.threads.map((t) => ({ id: t.id, anchor: t.anchor.kind, link: threadLink(rv, t) })) } };
-  },
+  list_threads: (a) => threads.listThreads(a.review, { status: a.status, file: a.file, owner: a.owner }),
 
-  get_hunk: async (a) => {
-    const res = await reviews.getHunks(a.review, { hunk: a.hunk, file: a.file, line: a.line });
-    if (!res.ok) return res;
-    return {
-      text: res.hunks.map((h) => renderHunk(res.file, h)).join('\n\n'),
-      meta: { file: res.file, hunks: res.hunks.map((h) => ({ id: h.hunk.id, verdict: h.verdict, threadIds: h.threadIds, groups: h.groups })) },
-    };
-  },
+  get_hunk: (a) => reviews.getHunks(a.review, { hunk: a.hunk, file: a.file, line: a.line }),
 
   annotate: (a, caller) => attempt(async () => {
     const actor = needCaller(caller);
@@ -71,18 +45,34 @@ const handlers = {
   refresh_review: (a, caller) => attempt(async () => reviews.refreshReview(a.review, needCaller(caller))),
 };
 
+/** Test seam: the handler map, so a test can stand in a service result no real tool returns. */
+export const _handlers = handlers;
+
 /** Tool names this module implements (test seam: must equal the manifest's). */
 export const _toolNames = () => Object.keys(handlers);
 
-/** cc MCP envelope: {tool, arguments, caller:{sessionId, project}} -> {status, body}. */
+const FORMATS = ['json', 'text'];
+
+/** A refusal as the wire shows it: `{error, code}`, plus `details` (a plain object) when the refusal carries fields beyond `ok`/`code`/`reason`. */
+export function refusalBody({ ok, code, reason, ...extras }) {
+  return { error: reason, code, ...(Object.keys(extras).length ? { details: extras } : {}) };
+}
+
+/**
+ * cc MCP envelope {tool, arguments, caller:{sessionId, project}, format} -> {status, body}.
+ * `format` json answers `{structured}`, text (or absent: a host that predates `format`) `{text}`; a refusal is
+ * `{error, code[, details]}` in both and an unexpected failure `{error}`. Any other `format`, or no `tool`, is 400 and runs nothing.
+ */
 export async function handle(body) {
-  const { tool, arguments: args, caller } = body || {};
+  const { tool, arguments: args, caller, format = 'text' } = body || {};
   if (typeof tool !== 'string' || tool.length === 0) return { status: 400, body: { error: 'tool is required and must be a non-empty string' } };
-  const fn = handlers[tool];
-  if (!fn) return { status: 200, body: { error: `unknown tool: ${tool}` } };
+  if (!FORMATS.includes(format ?? 'text')) return { status: 400, body: { error: 'format must be "json" or "text"' } };
+  const fn = Object.hasOwn(handlers, tool) ? handlers[tool] : null;
+  if (!fn) return { status: 200, body: { error: `unknown tool: ${tool}`, code: 'TOOL_UNKNOWN' } };
   try {
-    const out = await fn(args ?? {}, caller);
-    return { status: 200, body: 'text' in out ? { text: out.text, meta: out.meta } : { result: out } };
+    const res = await fn(args ?? {}, caller);
+    if (isRefusal(res)) return { status: 200, body: refusalBody(res) };
+    return { status: 200, body: format === 'json' ? { structured: views[tool].json(res, args ?? {}) } : { text: views[tool].text(res, args ?? {}) } };
   } catch (e) {
     return { status: 200, body: { error: e.message } };
   }

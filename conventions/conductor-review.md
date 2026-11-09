@@ -1,6 +1,8 @@
 # Review in code-review (opt-in per task)
 
-Your default review flow is unchanged. Only when the user asks for a task to be reviewed in code-review:
+Only when the user asks for a task to be reviewed in code-review, invoke the `cc-conductor-code-review:review-in-code-review` skill.
+
+<!-- cc:skill Use when the user asks for a task to be reviewed in code-review. -->
 
 - Once the worker has committed, call `code-review__open_review({project, worktree, author: <worker sessionId>})` yourself and put the returned review id in every brief for that task.
 - If the returned review's recipient is not you, the worker already opened it and receives its rounds directly: don't relay them.

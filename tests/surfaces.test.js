@@ -47,3 +47,13 @@ test('the conductor convention opens a review naming the author and never passes
     assert.match(c, /author/);
   }
 });
+
+test('the conductor convention hands its procedure to a skill: one bare marker, a short trigger description, a pointer inline', () => {
+  const lines = surfaces.convention.split('\n');
+  const at = lines.flatMap((l, i) => (l.startsWith('<!-- cc:skill') ? [i] : []));
+  assert.equal(at.length, 1);
+  assert.match(lines[at[0]], /^<!-- cc:skill Use when the user asks for a task to be reviewed in code-review\. -->$/);
+  const inline = lines.slice(0, at[0]).join('\n');
+  assert.match(inline, /cc-conductor-code-review:review-in-code-review/);
+  assert.deepEqual(toolLike(inline), []);
+});

@@ -46,8 +46,7 @@ test('real Prism: Python comments, docstrings and builtins get their own classes
   expect(clsOf('"""Doc."""')).toBe(TOKEN_CLASS.string);
   expect(clsOf('len')).toBe(TOKEN_CLASS.builtin);
   expect(clsOf('def')).toBe(TOKEN_CLASS.keyword);
-  const others = new Set(segs.filter((s) => s.cls !== TOKEN_CLASS.comment).map((s) => s.cls));
-  expect(others.has(TOKEN_CLASS.comment)).toBe(false);
+  expect(segs.filter((s) => s.cls === TOKEN_CLASS.comment).map((s) => s.text)).toEqual(['# note', '# tail']);
 });
 
 test('real Prism: a comment in every supported language with comment syntax gets the comment class', () => {

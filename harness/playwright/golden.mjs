@@ -705,6 +705,15 @@ try {
       await shot('16-syntax-python');
       await page.goto(sq());
       await grid.locator('[data-token]').first().waitFor();
+      // A citation target (warning wash replaces the add/del tint): new 4-5 is a context row and the emphasised added line, old 5 the emphasised deleted line.
+      await page.goto(q({ worktree: 'syntax', review: syntax, file: 'hl.ts', side: 'new', lines: '4-5' }));
+      await page.locator('[data-line-target]').waitFor();
+      contrast['target ctx+add'] = await tokenContrast('[role=row].bg-warning\\/20');
+      await page.goto(q({ worktree: 'syntax', review: syntax, file: 'hl.ts', side: 'old', lines: '5' }));
+      await page.locator('[data-line-target]').waitFor();
+      contrast['target del'] = await tokenContrast('[role=row].bg-warning\\/20');
+      await page.goto(sq());
+      await grid.locator('[data-token]').first().waitFor();
       // A selection (info tint) over an emphasised changed line, deleted and added.
       for (const side of ['old', 'new']) {
         await cell(`${side}:5`).click();

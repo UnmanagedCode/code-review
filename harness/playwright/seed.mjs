@@ -9,6 +9,10 @@ import { editLines, world } from '../../tests/_world.js';
 const { bootServer } = await import(BROWSER);
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 
+// hl.py, a comment line, a docstring and a trailing comment on a return line the head changes (a paired del/add).
+const PY_BASE = '# comment\ndef f(x):\n    """docstring"""\n    return len(x)  # tail\n';
+const PY_HEAD = PY_BASE.replace('len(x)', 'str(x)');
+
 // hl.ts, 100 lines of filler (`const fN = N;`) with five edited spots, each far enough apart to be its own hunk.
 const filler = Array.from({ length: 100 }, (_, i) => `const f${i + 1} = ${i + 1};`);
 const HL_BASE_LINES = [...filler];
@@ -108,8 +112,8 @@ export async function seed() {
     // Highlighting and the Diff options, on their own worktree so the other reviews' files and counts don't move:
     // a range review of hl.ts from the commit that added it (a sha base) to its edit.
     const sx = w.addWorktree('syntax');
-    const hlBase = sx.commit({ 'hl.ts': HL_BASE }, 'add hl.ts');
-    sx.commit({ 'hl.ts': HL_HEAD }, 'edit hl.ts');
+    const hlBase = sx.commit({ 'hl.ts': HL_BASE, 'hl.py': PY_BASE }, 'add hl.ts and hl.py');
+    sx.commit({ 'hl.ts': HL_HEAD, 'hl.py': PY_HEAD }, 'edit hl.ts and hl.py');
     const syntax = (await call('POST', 'reviews', { project: 'app', worktree: 'syntax', kind: 'range', base: hlBase, recipient: 's-author', title: 'Syntax' })).review;
 
     // Guided review, on its own worktree so the other reviews' counts don't move: three 60-line files, five hunks (two lines

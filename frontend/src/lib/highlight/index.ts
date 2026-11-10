@@ -11,8 +11,8 @@ export const HIGHLIGHT_MAX_LINES = 5000;
 export const HIGHLIGHT_MAX_SIDE_CHARS = 1_000_000;
 
 /**
- * Prism token type → a class. A type not listed gets its enclosing token's class, or none. The `token-*` colours are
- * contrast-safe on every diff row tint (`--cr-token-*` in index.css).
+ * Prism token type → a class. A token's class comes from its type, else its first listed alias, else its enclosing
+ * token's class, else none. The `token-*` colours meet the contrast floors in `--cr-token-*` (index.css).
  */
 export const TOKEN_CLASS: Record<string, string> = {
   keyword: 'text-token-keyword',
@@ -27,6 +27,9 @@ export const TOKEN_CLASS: Record<string, string> = {
   'class-name': 'text-token-function',
   tag: 'text-token-tag',
   'attr-name': 'text-token-tag',
+  builtin: 'text-token-function',
+  regex: 'text-token-string',
+  'attr-value': 'text-token-string',
 };
 
 const EXT: Record<string, string> = {
@@ -73,6 +76,14 @@ export function languageFor(path: string): string | null {
   return Object.hasOwn(EXT, ext) ? EXT[ext] : null;
 }
 
+/** The class for a Prism token's type, else its first alias with a class; own keys only. */
+function classOf(t: Exclude<PrismToken, string>): string | null {
+  if (Object.hasOwn(TOKEN_CLASS, t.type)) return TOKEN_CLASS[t.type];
+  const aliases = t.alias === undefined ? [] : Array.isArray(t.alias) ? t.alias : [t.alias];
+  const hit = aliases.find((a) => Object.hasOwn(TOKEN_CLASS, a));
+  return hit === undefined ? null : TOKEN_CLASS[hit];
+}
+
 const plain = (lines: string[]) => ({ lines: lines.map((text): Seg[] => [{ text, cls: null }]), tokenized: false });
 
 /**
@@ -94,7 +105,7 @@ export function highlightLines(text: string, lang: string | null, tokenize: Toke
   const walk = (tokens: PrismToken[], cls: string | null) => {
     for (const t of tokens) {
       if (typeof t === 'string') { emit(t, cls); continue; }
-      const own = Object.hasOwn(TOKEN_CLASS, t.type) ? TOKEN_CLASS[t.type] : cls;
+      const own = classOf(t) ?? cls;
       if (typeof t.content === 'string') emit(t.content, own);
       else walk(Array.isArray(t.content) ? t.content : [t.content], own);
     }

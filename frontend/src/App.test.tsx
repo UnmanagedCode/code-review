@@ -141,10 +141,9 @@ test('colours come from tokens: no literal colours and no Tailwind palette colou
   expect(offenders(new RegExp(`\\b(?:bg|text|border|ring|fill|stroke|from|to|via|outline|divide)-${palette}-\\d`), tsx)).toEqual([]);
 });
 
-// Syntax token colours are plugin-specific: defined in index.css's own :root and .dark, never in the copied host palette,
-// and derived only from palette tokens (mixed toward --foreground), so they follow the host's theme. Their contrast on
-// the diff tints is measured in harness/playwright/golden.mjs step 16.
-test('syntax token colours are index.css properties derived from the palette, in both themes, and back every token class', () => {
+// Syntax token colours are plugin-specific fixed hues per theme: defined in index.css's own :root and .dark, never in the
+// copied host palette. Their contrast on the diff tints is measured in harness/playwright/golden.mjs step 16.
+test('syntax token colours are index.css properties, in both themes, and back every token class', () => {
   const css = readFileSync(path.join(src, 'index.css'), 'utf8');
   const block = (sel: string) => css.match(new RegExp(`^${sel.replace('.', '\\.')} \\{([^}]*)\\}`, 'm'))?.[1] ?? '';
   const props = (body: string) => Object.fromEntries([...body.matchAll(/(--[\w-]+):\s*([^;]+);/g)].map((m) => [m[1], m[2]]));
@@ -156,8 +155,8 @@ test('syntax token colours are index.css properties derived from the palette, in
   // Exactly the token properties, in both themes: index.css's own blocks add no palette token.
   expect(Object.keys(light).sort()).toEqual(names);
   expect(Object.keys(dark).sort()).toEqual(names);
-  const derived = /^color-mix\(in oklab, var\(--(plan|success|warning|info|primary|muted-foreground)\) \d{1,2}%, var\(--foreground\)\)$/;
-  for (const v of [...Object.values(light), ...Object.values(dark)]) expect(v).toMatch(derived);
+  const literal = /^oklch\(0?\.\d+ 0?\.\d+ \d+(?:\.\d+)?\)$/;
+  for (const v of [...Object.values(light), ...Object.values(dark)]) expect(v).toMatch(literal);
   for (const u of used) expect(css).toContain(`--color-${u}: var(--cr-${u});`);
   expect(readFileSync(path.join(src, 'cc-theme-fallback.css'), 'utf8')).not.toMatch(/--cr-|token-/);
 });

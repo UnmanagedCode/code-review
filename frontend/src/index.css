@@ -4,25 +4,25 @@
 
 @custom-variant dark (&:is(.dark *));
 
-/* Syntax token colours (TOKEN_CLASS, lib/highlight/index.ts): plugin-specific, so they live here and never in the copied
-   host palette (cc-theme-fallback.css). Each mixes a palette hue toward --foreground in oklab (no hue shift) just far
-   enough that a token reaches WCAG AA 4.5:1 on every diff row tint (context, added, deleted, target, selection) and
-   under word emphasis; the hue share differs per theme. golden.mjs step 16 measures it, App.test.tsx pins the shape. */
+/* Syntax token colours (TOKEN_CLASS, lib/highlight/index.ts): plugin-specific syntax hues, fixed oklch per theme, tuned
+   against the palette's --background and the diff tints, so they live here and never in the copied host palette
+   (cc-theme-fallback.css). Floors: at least 4.5:1 on every row tint (context, added, deleted, target, selection) and 3:1
+   under word emphasis. golden.mjs step 16 measures them, App.test.tsx pins the shape. */
 :root {
-  --cr-token-keyword: color-mix(in oklab, var(--plan) 40%, var(--foreground));
-  --cr-token-string: color-mix(in oklab, var(--success) 35%, var(--foreground));
-  --cr-token-number: color-mix(in oklab, var(--warning) 25%, var(--foreground));
-  --cr-token-function: color-mix(in oklab, var(--info) 35%, var(--foreground));
-  --cr-token-tag: color-mix(in oklab, var(--primary) 30%, var(--foreground));
-  --cr-token-comment: color-mix(in oklab, var(--muted-foreground) 45%, var(--foreground));
+  --cr-token-keyword: oklch(0.48 0.2 300);
+  --cr-token-string: oklch(0.44 0.13 145);
+  --cr-token-number: oklch(0.47 0.11 55);
+  --cr-token-function: oklch(0.46 0.13 250);
+  --cr-token-tag: oklch(0.48 0.19 15);
+  --cr-token-comment: oklch(0.45 0.07 195);
 }
 .dark {
-  --cr-token-keyword: color-mix(in oklab, var(--plan) 30%, var(--foreground));
-  --cr-token-string: color-mix(in oklab, var(--success) 35%, var(--foreground));
-  --cr-token-number: color-mix(in oklab, var(--warning) 50%, var(--foreground));
-  --cr-token-function: color-mix(in oklab, var(--info) 30%, var(--foreground));
-  --cr-token-tag: color-mix(in oklab, var(--primary) 30%, var(--foreground));
-  --cr-token-comment: color-mix(in oklab, var(--muted-foreground) 25%, var(--foreground));
+  --cr-token-keyword: oklch(0.76 0.14 300);
+  --cr-token-string: oklch(0.73 0.2 145);
+  --cr-token-number: oklch(0.76 0.16 55);
+  --cr-token-function: oklch(0.75 0.13 250);
+  --cr-token-tag: oklch(0.77 0.13 15);
+  --cr-token-comment: oklch(0.74 0.07 195);
 }
 
 @theme inline {

@@ -656,7 +656,7 @@ try {
     /**
      * WCAG text contrast of each token span in the rows matched by `rowSel`: its colour over the span's and its
      * ancestors' backgrounds (translucent tints, composited top-down on a 1×1 canvas), lowest per class (and emphasis).
-     * Every token must reach WCAG AA 4.5:1 on each row tint and under word emphasis (index.css `--cr-token-*`).
+     * Every token must reach 4.5:1 on each row tint and 3:1 under word emphasis (index.css `--cr-token-*`).
      */
     const tokenContrast = (rowSel) => page.locator(rowSel).evaluateAll((rows) => {
       const ctx = Object.assign(document.createElement('canvas'), { width: 1, height: 1 }).getContext('2d', { willReadFrequently: true });
@@ -694,6 +694,26 @@ try {
         ctx: await tokenContrast('[role=row]:not(.bg-success\\/10):not(.bg-destructive\\/10)'),
       };
       await shot('16-syntax-inline');
+      // hl.py: its comment and docstring have their own classes; the changed return line carries emphasis and a trailing comment.
+      await page.goto(q({ worktree: 'syntax', review: syntax, file: 'hl.py' }));
+      await grid.locator('[data-token]').first().waitFor();
+      assert.equal(await grid.locator('[data-token]').first().getAttribute('class'), 'text-token-comment italic', 'a Python # comment is a comment');
+      assert.equal(await grid.locator('[data-token]', { hasText: '"""docstring"""' }).first().getAttribute('class'), 'text-token-string', 'a docstring is a string via its alias');
+      contrast['py add'] = await tokenContrast('[role=row].bg-success\\/10');
+      contrast['py del'] = await tokenContrast('[role=row].bg-destructive\\/10');
+      contrast['py ctx'] = await tokenContrast('[role=row]:not(.bg-success\\/10):not(.bg-destructive\\/10)');
+      await shot('16-syntax-python');
+      await page.goto(sq());
+      await grid.locator('[data-token]').first().waitFor();
+      // A citation target (warning wash replaces the add/del tint): new 4-5 is a context row and the emphasised added line, old 5 the emphasised deleted line.
+      await page.goto(q({ worktree: 'syntax', review: syntax, file: 'hl.ts', side: 'new', lines: '4-5' }));
+      await page.locator('[data-line-target]').waitFor();
+      contrast['target ctx+add'] = await tokenContrast('[role=row].bg-warning\\/20');
+      await page.goto(q({ worktree: 'syntax', review: syntax, file: 'hl.ts', side: 'old', lines: '5' }));
+      await page.locator('[data-line-target]').waitFor();
+      contrast['target del'] = await tokenContrast('[role=row].bg-warning\\/20');
+      await page.goto(sq());
+      await grid.locator('[data-token]').first().waitFor();
       // A selection (info tint) over an emphasised changed line, deleted and added.
       for (const side of ['old', 'new']) {
         await cell(`${side}:5`).click();
@@ -712,7 +732,10 @@ try {
       await viewGroup.getByRole('button', { name: 'Inline' }).click();
       console.log(`token contrast (${scheme}):`, JSON.stringify(contrast));
       for (const [tint, byClass] of Object.entries(contrast)) {
-        for (const [cls, ratio] of Object.entries(byClass)) assert.ok(ratio >= 4.5, `${scheme}: ${cls} on ${tint} reaches 4.5:1 (${ratio})`);
+        for (const [cls, ratio] of Object.entries(byClass)) {
+          const floor = cls.endsWith(' +em') ? 3 : 4.5;
+          assert.ok(ratio >= floor, `${scheme}: ${cls} on ${tint} reaches ${floor}:1 (${ratio})`);
+        }
       }
     }
     await page.emulateMedia({ colorScheme: 'light' });

@@ -36,6 +36,46 @@ test('an unknown token type, including an Object.prototype key, gets no class; n
   expect(highlightLines(proto.join(''), 'x', tokens).lines).toEqual([proto.map((text) => ({ text, cls: null }))]);
 });
 
+test('real Prism: Python comments, docstrings and builtins get their own classes', () => {
+  // Invariant: a Python comment gets the comment class, and only comments do; a docstring (alias `string`) and a builtin resolve through TOKEN_CLASS.
+  const { lines } = highlightLines('# note\ndef f(x):\n    """Doc."""\n    return len(x)  # tail', 'python', tokenize);
+  const segs = lines.flat();
+  const clsOf = (text: string) => segs.find((s) => s.text === text)?.cls;
+  expect(clsOf('# note')).toBe(TOKEN_CLASS.comment);
+  expect(clsOf('# tail')).toBe(TOKEN_CLASS.comment);
+  expect(clsOf('"""Doc."""')).toBe(TOKEN_CLASS.string);
+  expect(clsOf('len')).toBe(TOKEN_CLASS.builtin);
+  expect(clsOf('def')).toBe(TOKEN_CLASS.keyword);
+  const others = new Set(segs.filter((s) => s.cls !== TOKEN_CLASS.comment).map((s) => s.cls));
+  expect(others.has(TOKEN_CLASS.comment)).toBe(false);
+});
+
+test('real Prism: a comment in every supported language with comment syntax gets the comment class', () => {
+  // Invariant: every supported language is either classified as having comment syntax and colours it, or explicitly exempt.
+  const exempt = ['diff'];
+  const syntax: Record<string, string> = {
+    markup: '<!-- c -->', markdown: '<!-- c -->', css: '/* c */',
+    javascript: '// c', jsx: '// c', typescript: '// c', tsx: '// c', json: '// c', go: '// c', rust: '// c', java: '// c', c: '// c', cpp: '// c', csharp: '// c', php: '// c',
+    bash: '# c', python: '# c', ruby: '# c', yaml: '# c', sql: '-- c',
+  };
+  expect([...HIGHLIGHT_LANGUAGES].sort()).toEqual([...Object.keys(syntax), ...exempt].sort());
+  for (const [lang, comment] of Object.entries(syntax)) {
+    const segs = highlightLines(comment, lang, tokenize).lines.flat();
+    expect(segs.find((s) => s.text === comment)?.cls, lang).toBe(TOKEN_CLASS.comment);
+  }
+});
+
+test('alias: the type wins, else the first listed own-key alias, else the enclosing class', () => {
+  // Invariant: class resolution is type, then first own-key alias, then the enclosing token's class; prototype keys never resolve.
+  const tok = (type: string, alias: string | string[] | undefined, content: unknown = type) => ({ type, alias, content, length: 1 }) as never;
+  const run = (token: unknown) => highlightLines('x', 'x', vi.fn(() => [token as never])).lines[0][0].cls;
+  expect(run(tok('x', 'string', 'x'))).toBe(TOKEN_CLASS.string);
+  expect(run(tok('x', ['nope', 'number'], 'x'))).toBe(TOKEN_CLASS.number);
+  expect(run(tok('keyword', 'string', 'x'))).toBe(TOKEN_CLASS.keyword);
+  expect(run(tok('comment', undefined, [tok('x', ['constructor', '__proto__'], 'x')]))).toBe(TOKEN_CLASS.comment);
+  expect(run(tok('x', undefined, 'x'))).toBeNull();
+});
+
 test('bounds: past the line length, line count or side size cap the side is plain and the tokenizer is never called', () => {
   // Invariant: past any HIGHLIGHT_MAX_* cap the tokenizer is never called and the side renders plain.
   const over = [

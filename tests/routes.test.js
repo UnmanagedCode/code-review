@@ -85,7 +85,7 @@ test('GET /checkout/lookup names a checkout from cc\'s data alone: no git, refus
 });
 
 test('GET /sessions/:id/places lists the session own checkout then its owned workers', async () => {
-  w.cc.state.instances.push({ sessionId: 'w-1', project: 'zed', status: 'idle', title: 't', worktree: { worktreeName: 'zw' }, ownerSessionId: 's-author' });
+  w.cc.state.instances.push({ sessionId: 'w-1', project: 'zed', status: 'idle', title: 't', worktree: { worktreeName: 'zw' }, rootSessionId: 's-author' });
   const places = (await req('GET', '/sessions/s-author/places')).body;
   assert.equal(places.ok, true);
   assert.deepEqual(places.places, [{ project: 'app', main: false, worktrees: ['feature'] }, { project: 'zed', main: false, worktrees: ['zw'] }]);

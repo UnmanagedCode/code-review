@@ -187,7 +187,7 @@ All through `CONDUCTOR_URL`. Each GET attempt times out after `CODE_REVIEW_CC_TI
 | `GET /api/projects/:name/location` | `system`, `remoteId` (`null` = the provider's default target), `path`: every checkout lookup (review, diff, list, inbox, `/checkout`). cc reads it from the project's config, running no command. 404 with `code: PROJECT_UNKNOWN` = no such project; any other answer, a 404 without that code included, is `CONDUCTOR_UNAVAILABLE`. **code-review needs a cc that serves this route** (no fallback) |
 | `GET /api/projects` | `name` only, and only for the plugin's own `GET /projects` (the picker). This route fans out git work per project in cc, so nothing else asks it |
 | `GET /api/projects/:name/worktrees` | `worktreeName`, `worktreePath`, `branch`, `baseBranch`, `baseSha`, `baseWorktree?` (absent = forked from the main checkout) |
-| `GET /api/instances` | `sessionId`, `project`, `status`, `title`, `displayLabel` (may be absent: a cc without it), `conducted`, `worktree.worktreeName`, `ownerSessionId` (root owner of the spawn chain; live conducted workers only) |
+| `GET /api/instances` | `sessionId`, `project`, `status`, `title`, `displayLabel` (may be absent: a cc without it), `conducted`, `worktree.worktreeName`, `rootSessionId` (root of the spawn chain; live conducted workers only) |
 | `GET /api/conductors/projects` | `[rootSessionId][].project`, `.lastSpawnAt`, `.worktrees` (absent or `null` = none recorded) |
 | `POST /api/exec` | every git command and checkout read (`src/exec.js`). Sent: `system`, `remoteId` (omitted when `null`), `cwd: "/"`, `argv`, `env`, `stdinB64?`, `encoding: "base64"`, `timeoutMs`, `maxOutputBytes`. Read: `exitCode`, `stdout`, `stderr`; on a refusal `code`, `error`, `errno` |
 

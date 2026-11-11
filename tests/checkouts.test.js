@@ -224,10 +224,10 @@ const row = (sessionId, project, worktreeName, extra = {}) => ({ sessionId, proj
 test('sessionPlaces of a conductor: live workers by project name, then spawn history deduped, worktrees merged and sorted, .conduct dropped', async () => {
   cc.state.instances = [
     row('root', '.conduct', null),
-    row('w1', 'zeta', 'wz', { ownerSessionId: 'root' }),
-    row('w2', 'alpha', null, { ownerSessionId: 'root' }),
-    row('w3', 'alpha', 'b-wt', { ownerSessionId: 'root' }),
-    row('other', 'beta', null, { ownerSessionId: 'someone-else' }),
+    row('w1', 'zeta', 'wz', { rootSessionId: 'root' }),
+    row('w2', 'alpha', null, { rootSessionId: 'root' }),
+    row('w3', 'alpha', 'b-wt', { rootSessionId: 'root' }),
+    row('other', 'beta', null, { rootSessionId: 'someone-else' }),
   ];
   cc.state.conductorProjects = { root: [
     { project: 'hist', lastSpawnAt: at(2), worktrees: ['h2', 'h1'] },
@@ -244,7 +244,7 @@ test('sessionPlaces of a conductor: live workers by project name, then spawn his
 });
 
 test('sessionPlaces of a plain session: its own checkout first, then its workers', async () => {
-  cc.state.instances = [row('me', 'zeta', 'mine'), row('w', 'alpha', null, { ownerSessionId: 'me' }), row('main', 'app', null)];
+  cc.state.instances = [row('me', 'zeta', 'mine'), row('w', 'alpha', null, { rootSessionId: 'me' }), row('main', 'app', null)];
   assert.deepEqual(await sessionPlaces('me'), [
     { project: 'zeta', main: false, worktrees: ['mine'] },
     { project: 'alpha', main: true, worktrees: [] },
@@ -280,7 +280,7 @@ test('sessionPlaces marks main for a history entry with null, absent or empty wo
 });
 
 test('sessionPlaces keeps the live places, with a logged warning, when only the history route fails', async () => {
-  cc.state.instances = [row('w', 'alpha', 'wt', { ownerSessionId: 'root' })];
+  cc.state.instances = [row('w', 'alpha', 'wt', { rootSessionId: 'root' })];
   cc.state.conductorProjects = null;
   const warnings = [];
   const warn = console.warn;

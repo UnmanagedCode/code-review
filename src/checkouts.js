@@ -96,7 +96,7 @@ export async function sessionPlaces(sessionId) {
   };
   const own = rows.find((i) => i.sessionId === sessionId);
   if (own) addRow(own);
-  rows.filter((i) => i.ownerSessionId === sessionId).sort((a, b) => a.project.localeCompare(b.project)).forEach(addRow);
+  rows.filter((i) => i.rootSessionId === sessionId).sort((a, b) => a.project.localeCompare(b.project)).forEach(addRow);
   const history = [...(spawned?.[sessionId] ?? [])]
     .sort(byNewestThenName);
   for (const e of history) {

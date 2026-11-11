@@ -35,7 +35,7 @@ export async function location(name) {
 }
 /** Rows {worktreeName, worktreePath, branch, baseBranch, baseSha, baseWorktree?, parentPath} */
 export const worktrees = (project) => get(`/api/projects/${encodeURIComponent(project)}/worktrees`);
-/** Rows {sessionId, project, status, cwd, title, displayLabel?, conducted, worktree, ownerSessionId?} */
+/** Rows {sessionId, project, status, cwd, title, displayLabel?, conducted, worktree, rootSessionId?} */
 export const instances = () => get('/api/instances');
 /** {[rootSessionId]: [{project, lastSpawnAt (ISO string), worktrees?: string[] | null}]}, newest spawn first: where each session's workers have ever been spawned. */
 export const conductorProjects = () => get('/api/conductors/projects');

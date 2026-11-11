@@ -97,7 +97,7 @@ A **group** is a set of hunks, possibly across files, with a title and a markdow
 
 - **MCP tools** (`code-review__<tool>`): `open_review`, `get_review`, `list_threads`, `get_hunk`, `annotate`, `reply`, `propose_groups`, `refresh_review`. Review and thread results carry a `link` that opens them in the plugin view. Each tool answers in cc's json format (complete structured data) or text format (prose; a long cited excerpt is cut there with a note saying how to read the rest). Schemas and results: [protocol.md](protocol.md#mcp).
 - **Skill** `review-dialog` (`skills/review-dialog/SKILL.md`): how an author or reviewer session works a review.
-- **Conductor convention** `review-in-code-review` (`conventions/conductor-review.md`, scope `conductor`, opt-in per task): one inline line names the trigger and the skill part, invoked as `cc-conductor-code-review:review-in-code-review`; the skill opens a review on the worker's checkout naming the worker as author, has reviewer lenses post findings, and holds `merge_worktree` while `mergeBlockers` is above 0.
+- **Conductor convention** `review-in-code-review` (`conventions/conductor-review.md`, scope `conductor`, opt-in per task): one inline line names the trigger and the skill part, invoked as `cc-conductor-code-review:review-in-code-review`; the skill opens a review on the worker's checkout naming the worker as author, has reviewer lenses post findings, closes each finding the conductor rules on with a disposition, and holds `merge_worktree` while `mergeBlockers` is above 0.
 
 ## Review UI
 

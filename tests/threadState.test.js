@@ -5,7 +5,7 @@ import { threadState, stateCounts, unsentActivity, lastDeliveredRoundSeq, NEEDS_
 const HUMAN = { kind: 'human' };
 const AGENT = { kind: 'session', sessionId: 's-a', role: 'author' };
 const msg = (seq, author) => ({ id: `m${seq}`, seq, author, body: 'x', proposeResolve: false });
-const thread = (messages, over = {}) => ({ id: 't1', status: 'open', resolveProposed: false, statusSeq: messages[0].seq, messages, ...over });
+const thread = (messages, over = {}) => ({ id: 't1', status: 'open', resolveProposed: false, statusSeq: messages[0].seq, anchor: { kind: 'review' }, messages, ...over });
 const sub = (seq, status, kind = 'round') => ({ id: `s${seq}`, seq, status, kind });
 const review = (submissions = [], threads = []) => ({ submissions, threads, humanSeq: 0 });
 
@@ -54,17 +54,32 @@ test('resolved and outdated threads have no state', () => {
   for (const status of ['resolved', 'outdated']) assert.equal(threadState(review(), thread([msg(1, AGENT)], { status })), null);
 });
 
-test('stateCounts partitions the open threads and unsentActivity follows the first-submission rule', () => {
-  // Invariant: the four counts sum to the open threads; the first round is always sendable, later ones need new human activity.
+test('an agent, human, agent thread is awaiting-human: the latest agent message is the agent act', () => {
+  // Invariant: agent act seq is the seq of the LATEST non-human message, not the first.
+  const t = thread([msg(1, AGENT), msg(2, HUMAN), msg(3, AGENT)]);
+  assert.equal(threadState(review(), t), 'awaiting-human');
+  assert.equal(threadState(review([sub(9, 'delivered')]), t), 'awaiting-human');
+});
+
+test('stateCounts partitions the open threads of every anchor, each state under its own key', () => {
+  // Invariant: the four counts sum to the open threads (a group thread included) and each state lands under its own key,
+  // pinned by unequal awaiting-human (2) and verify-resolution (1) counts.
+  const group = { kind: 'group', groupId: 'g1', round: 1 };
   const threads = [
     thread([msg(1, AGENT)]),
-    thread([msg(2, HUMAN), msg(3, AGENT)], { resolveProposed: true }),
-    thread([msg(4, HUMAN)]),
-    thread([msg(5, HUMAN)], { status: 'resolved' }),
+    thread([msg(2, AGENT)], { anchor: group }),
+    thread([msg(3, HUMAN), msg(4, AGENT)], { resolveProposed: true }),
+    thread([msg(5, HUMAN)]),
+    thread([msg(6, HUMAN)], { anchor: group, status: 'resolved' }),
   ];
-  const r = { ...review([sub(10, 'delivered')], threads), humanSeq: 4 };
-  assert.deepEqual(stateCounts(r), { awaitingHuman: 1, verifyResolution: 1, unsent: 0, awaitingAgent: 1 });
-  assert.equal(unsentActivity({ ...r, humanSeq: 4 }), false);
+  const r = { ...review([sub(10, 'delivered')], threads), humanSeq: 5 };
+  assert.deepEqual(stateCounts(r), { awaitingHuman: 2, verifyResolution: 1, unsent: 0, awaitingAgent: 1 });
+});
+
+test('unsentActivity follows the first-submission rule', () => {
+  // Invariant: the first round is always sendable; later ones need human activity newer than the last delivered round.
+  const r = { ...review([sub(10, 'delivered')]), humanSeq: 4 };
+  assert.equal(unsentActivity(r), false);
   assert.equal(unsentActivity({ ...r, humanSeq: 11 }), true);
   assert.equal(unsentActivity(review()), true);
 });

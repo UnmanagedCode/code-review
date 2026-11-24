@@ -26,15 +26,17 @@ type Placed = { anchor: Anchor };
 
 /**
  * Threads in place order: file tree order, old side before new, start line, a file thread before line threads; then group
- * threads, then review threads (each stable in the given order).
+ * threads in their group's step order (`guide`; the guide lists groups in step order), then review threads (each stable in the given order).
  */
-export function byPlace<T extends Placed>(threads: T[], files: FileState[]): T[] {
+export function byPlace<T extends Placed>(threads: T[], files: FileState[], guide: GuideView | null = null): T[] {
   const rank = new Map(treeOrder(files).map((f, i) => [f.path, i]));
+  // A group thread sits at its group's step; a group the guide no longer lists (retired) comes after the listed ones.
+  const step = new Map(guide?.groups.map((g, i) => [g.id, i]));
   const group = (a: Anchor) => (a.kind === 'group' ? 1 : a.kind === 'review' ? 2 : 0);
   const key = (a: Anchor): number[] => {
     if (a.kind === 'lines') return [rank.get(a.file) ?? Infinity, 1, a.side === 'old' ? 0 : 1, a.startLine];
     if (a.kind === 'file') return [rank.get(a.file) ?? Infinity, 0, 0, 0];
-    return [0, 0, 0, 0];
+    return [a.kind === 'group' ? step.get(a.groupId) ?? Infinity : 0, 0, 0, 0];
   };
   return [...threads].sort((x, y) => {
     const g = group(x.anchor) - group(y.anchor);

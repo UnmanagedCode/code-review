@@ -31,7 +31,7 @@ REST under `/api` (JSON), an SSE stream, and the cc MCP endpoint. Behaviour behi
   - `groups` is `{total, accepted, rejected, pending, ungrouped, guideMe}` (the current round's groups; `ungrouped` counts hunks in no group, `null` while the snapshot is unreadable; `guideMe` is a boolean), or `null` on uncommitted reviews.
   - `counts.hunks` is `{pending,accepted,rejected}`, or `{total}` for uncommitted reviews.
   - `counts.threadStates` is `{awaitingHuman, verifyResolution, unsent, awaitingAgent}`: the open threads of every anchor by `Thread.state`. The four sum to `counts.threads.open`.
-  - `unsent` (boolean): a Submit round would still send something (`unsentActivity` in `src/threadState.js`; true until the first round is delivered, then true while the newest human act is newer than the newest delivered round's `seq`).
+  - `unsent` (boolean): a Submit round would still send something (`unsentActivity` in `src/threadState.js`): true until the first round is delivered, then while there is human activity newer than the last delivered round.
   - `seq` and `lastViewedSeq`: the review's change counter and the point the human last viewed up to. UI-only: MCP json omits both.
   - `snapshotError` (`CHECKOUT_GONE|SNAPSHOT_GONE|DIFF_TOO_LARGE|TEMP_UNUSABLE|SYSTEM_UNREACHABLE|GIT_TIMEOUT|GIT_UNAVAILABLE`) is present when the diff is unreadable; `counts.files` and `counts.hunks` are then `null`. With `TEMP_UNUSABLE` or one of the last three the system could not serve the read: `checkoutGone` and `dirty` are then `false`, never a claim that the checkout is missing.
 - **InboxItem** (`GET /inbox`): `id, project, worktree, branch, kind, label, title, round, unread, seenByHuman, lastActivityAt, turn, checkoutGone`.

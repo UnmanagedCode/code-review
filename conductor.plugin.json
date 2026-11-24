@@ -376,7 +376,7 @@
                 },
                 "unsent": {
                   "type": "boolean",
-                  "description": "True when you did something the next Submit round would still send."
+                  "description": "True until the first round is delivered, then while there is human activity newer than the last delivered round."
                 }
               },
               "required": [
@@ -744,7 +744,7 @@
                 },
                 "unsent": {
                   "type": "boolean",
-                  "description": "True when you did something the next Submit round would still send."
+                  "description": "True until the first round is delivered, then while there is human activity newer than the last delivered round."
                 }
               },
               "required": [

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { world, HUMAN, agent, editLines } from './_world.js';
 import * as reviews from '../src/reviews.js';
 import * as threads from '../src/threads.js';
+import * as groups from '../src/groups.js';
 import * as submissions from '../src/submissions.js';
 import * as compare from '../src/compare.js';
 import { PREVIEW_CHARS, ACTIVITY_LIMIT } from '../src/overview.js';
@@ -54,8 +55,9 @@ test('thread states partition the open threads through a random walk of writes, 
   }
 });
 
-test('unsent threads are exactly those the next prompt lists, and become awaiting-agent once it is delivered', async () => {
-  // Invariant: "Will be sent" shares composeSubmission's baseline, so the prompt's threads match state === unsent.
+test('every unsent thread is in the next prompt, and a delivery makes it awaiting-agent', async () => {
+  // Invariant: "Will be sent" and the prompt share the delivered-round cutoff, so every unsent thread is listed. The converse does
+  // not hold: a human reply the agent then answers is listed but awaiting-human.
   const { id } = await open();
   const first = ok(await threads.annotate(id, HUMAN, { anchor: at('a.js', 2), kind: 'question', body: 'first' })).thread;
   await deliver(id);
@@ -66,9 +68,13 @@ test('unsent threads are exactly those the next prompt lists, and become awaitin
   assert.deepEqual(unsent, [first.id, second.id].sort());
   const { submission } = ok(await submissions.composeSubmission(id));
   for (const t of unsent) assert.match(submission.text, new RegExp(`\\[${t}\\]`));
+  // A human reply the agent answers is still in the prompt, but it is the human's move.
+  ok(await threads.reply(id, author, first.id, { body: 'answer' }));
+  assert.equal(stateOf((await detail(id)).openThreads, first.id), 'awaiting-human');
+  assert.match(submission.text, new RegExp(`\\[${first.id}\\]`));
   assert.equal(stateOf((await detail(id)).openThreads, second.id), 'unsent', 'pending is not sent');
   ok(await submissions.recordResult(id, submission.id, { ok: true }));
-  assert.deepEqual((await detail(id)).openThreads.map((t) => t.state), ['awaiting-agent', 'awaiting-agent']);
+  assert.deepEqual((await detail(id)).openThreads.map((t) => [t.id, t.state]), [[first.id, 'awaiting-human'], [second.id, 'awaiting-agent']]);
 });
 
 test('a thread has the same state in the diff, review threads, write results and list_threads', async () => {
@@ -146,4 +152,17 @@ test('MCP json carries thread state and threadStates, never the UI-only change m
   assert.equal(json.review.counts.threadStates.unsent, 1);
   assert.equal('openThreads' in json, false);
   assert.equal('activity' in json, false);
+});
+
+test('an open group thread is in openThreads and counts.threadStates, which still sum to the open threads', async () => {
+  // Invariant: counts and the digest list cover every anchor kind, a group thread included.
+  const { id } = await open();
+  const hunk = ok(await reviews.diff(id, {})).files[0].hunks[0].id;
+  ok(await groups.proposeGroups(id, author, [{ title: 'One', description: 'd', hunks: [hunk] }]));
+  const g = ok(await threads.annotate(id, author, { anchor: { kind: 'group', groupId: 'g1' }, kind: 'question', body: 'why?' })).thread;
+  ok(await threads.annotate(id, HUMAN, { anchor: { kind: 'review' }, kind: 'comment', body: 'mine' }));
+  const d = await detail(id);
+  assert.deepEqual(d.openThreads.map((t) => [t.id, t.anchor.kind]), [[g.id, 'group'], ['t2', 'review']]);
+  assert.deepEqual(d.review.counts.threadStates, { awaitingHuman: 1, verifyResolution: 0, unsent: 1, awaitingAgent: 0 });
+  assert.equal(d.review.counts.threads.open, 2);
 });

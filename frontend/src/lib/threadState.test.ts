@@ -35,3 +35,15 @@ test('placeLabel names a line range, a whole file, the review and a group', () =
   expect(placeLabel({ kind: 'review', round: 1 }, null)).toBe('Review');
   expect(placeLabel(groupAnchor({ groupId: 'g1' }), guide)).toBe('Group: Rename');
 });
+
+// Invariant: group threads sit in their group's step order, not thread-number order; a group the guide no longer lists comes last.
+test('byPlace ranks group threads by their group\'s step order', () => {
+  const guide = guideView({ groups: [guideGroup({ id: 'g1', order: 1 }), guideGroup({ id: 'g2', order: 2 })] });
+  const threads = [
+    at(groupAnchor({ groupId: 'g2' }), 't-1'),
+    at(groupAnchor({ groupId: 'gone' }), 't-2'),
+    at(groupAnchor({ groupId: 'g1' }), 't-3'),
+    at(groupAnchor({ groupId: 'g2' }), 't-4'),
+  ];
+  expect(byPlace(threads, [], guide).map((t) => t.id)).toEqual(['t-3', 't-1', 't-4', 't-2']);
+});

@@ -82,3 +82,24 @@ test('an uncommitted review shows pills and no hunk progress', () => {
   expect(within(strip).queryByText(/decided/)).toBeNull();
   expect(within(strip).getByRole('link', { name: '1 thread need you' })).toBeTruthy();
 });
+
+// Invariant: the strip's overview links leave the commit filter too, since the commit-filter view has no overview to show.
+test('Overview and "k undecided" leave the commit filter', async () => {
+  const user = userEvent.setup();
+  for (const name of ['Overview', '3 undecided →']) {
+    history.replaceState(null, '', '?review=r-1&commit=abc1234&view=threads');
+    const { unmount } = renderInReview(<ProgressStrip />, { review: withStates({ awaitingHuman: 1 }), commit: 'abc1234', readOnly: true });
+    await user.click(screen.getByRole('link', { name }));
+    expect(parseRoute(location.search), name).toEqual({ review: 'r-1', view: 'overview' });
+    unmount();
+  }
+});
+
+// Invariant: with the diff unreadable, file and line threads cannot load in the Threads tab, so the pills are plain counts, not links to a list that disagrees.
+test('with an unreadable snapshot the thread pills are plain counts, not links', () => {
+  renderInReview(<ProgressStrip />, { review: withStates({ awaitingHuman: 2, unsent: 1 }, { snapshotError: 'CHECKOUT_GONE' }) });
+  const strip = screen.getByRole('region', { name: 'Review progress' });
+  expect(within(strip).queryByRole('link', { name: /need you|will be sent|waiting on agent/ })).toBeNull();
+  expect(within(strip).getByText(/need you/).textContent).toContain('2');
+  expect(within(strip).getByText(/will be sent/).textContent).toContain('1');
+});

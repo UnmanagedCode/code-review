@@ -167,6 +167,13 @@ export async function seed() {
         const { review: r } = await call('POST', 'reviews', { project: 'app', worktree: 'spike', kind: 'range', base: 'main', title: 'Spike experiment' });
         return { id: r.id, destroy: () => wt.destroy() };
       },
+      /** Commits a file under a long directory path to `feature` and refreshes the `range` review: the first undecided file in tree order. Resolves its path. */
+      async longPath() {
+        const p = 'packages/a-very-long-directory-name-for-the-layout-check/another-long-directory-segment/components/ReviewOverviewHeaderButtonLayoutFixture.tsx';
+        wt.commit({ [p]: 'export const fixture = 1;\n' }, 'long path');
+        await call('POST', `reviews/${id}/refresh`);
+        return p;
+      },
       /** Makes the fake cc refuse every exec as SYSTEM_UNREACHABLE (true) or run them again (false). */
       systemDown(down) { w.cc.state.execHook = down ? () => ({ status: 502, body: { error: 'provider down', code: 'SYSTEM_UNREACHABLE' } }) : null; },
       async close() { await srv.close(); w.cleanup(); },

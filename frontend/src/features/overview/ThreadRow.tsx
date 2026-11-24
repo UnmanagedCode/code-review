@@ -19,22 +19,30 @@ export function useAuthorName(): (a: Author) => string {
  * newest (what needs a reply) or the first (what you asked). `withState` adds the state chip.
  */
 export function ThreadRow({ thread, which, withState = false }: { thread: ThreadDigest; which: 'last' | 'first'; withState?: boolean }) {
-  const { guide } = useReviewCtx();
+  const { guide, review } = useReviewCtx();
   const name = useAuthorName();
   const m = thread[which];
+  // A file or line thread opens its file, which cannot load while the diff is unreadable.
+  const unavailable = !!review.snapshotError && (thread.anchor.kind === 'lines' || thread.anchor.kind === 'file');
+  const row = 'flex min-w-0 items-start gap-2 rounded-md p-1.5';
+  const body = (
+    <>
+      <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+        <span className="flex flex-wrap items-center gap-1.5">
+          {withState && thread.state && <ThreadStateChip state={thread.state} />}
+          <KindBadge kind={thread.kind} severity={thread.severity} />
+          <span className="min-w-0 break-all font-mono text-xs text-muted-foreground">{placeLabel(thread.anchor, guide)}</span>
+        </span>
+        <span className="break-words text-sm"><span className="text-muted-foreground">{name(m.author)}: </span>{m.preview}</span>
+      </span>
+      <span className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground">
+        {ago(m.at)}{unavailable ? <span>diff unavailable</span> : <ChevronRightIcon className="size-4" aria-hidden />}
+      </span>
+    </>
+  );
   return (
     <li>
-      <RouteLink to={threadPlace(thread)} className="flex min-w-0 items-start gap-2 rounded-md p-1.5 hover:bg-accent">
-        <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-          <span className="flex flex-wrap items-center gap-1.5">
-            {withState && thread.state && <ThreadStateChip state={thread.state} />}
-            <KindBadge kind={thread.kind} severity={thread.severity} />
-            <span className="min-w-0 break-all font-mono text-xs text-muted-foreground">{placeLabel(thread.anchor, guide)}</span>
-          </span>
-          <span className="break-words text-sm"><span className="text-muted-foreground">{name(m.author)}: </span>{m.preview}</span>
-        </span>
-        <span className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground">{ago(m.at)}<ChevronRightIcon className="size-4" aria-hidden /></span>
-      </RouteLink>
+      {unavailable ? <div className={row}>{body}</div> : <RouteLink to={threadPlace(thread)} className={`${row} hover:bg-accent`}>{body}</RouteLink>}
     </li>
   );
 }

@@ -16,13 +16,14 @@ const VERB = (a: ActivityItem): string => ({
 /** What the round has been through: sent or not, and to whom. */
 function useRoundStatus(): string {
   const { review, submissions, sessions } = useReviewCtx();
-  const label = sessions.find((s) => s.sessionId === review.recipient)?.label || review.recipient;
-  const to = label ? ` to ${label}` : '';
-  if (review.unsent) return `Round ${review.round} not sent yet${to}${label ? '' : ' · no recipient set'}`;
+  const labelOf = (id: string | null) => (id ? sessions.find((s) => s.sessionId === id)?.label || id : null);
+  const pending = labelOf(review.recipient);
   const sent: Submission | undefined = submissions.findLast((s) => s.kind === 'round' && s.status === 'delivered');
-  if (!sent) return `Round ${review.round} not sent yet${to}${label ? '' : ' · no recipient set'}`;
+  if (review.unsent || !sent) return `Round ${review.round} not sent yet${pending ? ` to ${pending}` : ' · no recipient set'}`;
+  // The delivered round went to the recipient it was composed for, which may not be the review's recipient now.
+  const to = labelOf(sent.recipient);
   const at = sent.deliveredAt ? ` · ${ago(sent.deliveredAt)}` : '';
-  return `Round ${sent.round} sent${to}${label ? at : ` · no recipient set${at}`}`;
+  return `Round ${sent.round} sent${to ? ` to ${to}${at}` : ` · no recipient set${at}`}`;
 }
 
 /** The agent's thread events newer than the marker this visit started from. */

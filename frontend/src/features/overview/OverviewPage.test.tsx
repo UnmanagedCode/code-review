@@ -123,3 +123,26 @@ test('with every hunk decided the button gives way to text', () => {
   expect(screen.queryByRole('button', { name: /Review next undecided hunk/ })).toBeNull();
   expect(screen.getByText('All hunks decided')).toBeTruthy();
 });
+
+// Invariant: the sent line names the delivered submission's own recipient, not the review's current one.
+test('the sent line names the submission\'s recipient', () => {
+  const sub = { id: 's1', kind: 'round' as const, status: 'delivered' as const, code: null, round: 1, recipient: 's-old', text: '', deliveredAt: '2026-01-01T00:00:00Z' };
+  const session = (sessionId: string, label: string) => ({ sessionId, project: 'app', worktree: 'feature', label, status: 'idle', live: true, conductor: false, conducted: false, attached: true });
+  renderInReview(<OverviewPage />, { review: review({ unsent: false, recipient: 's-new' }), sessions: [session('s-old', 'Old agent'), session('s-new', 'New agent')], submissions: [sub] });
+  expect(screen.getByText(/^Round 1 sent to Old agent · /)).toBeTruthy();
+});
+
+// Invariant: while the diff is unreadable, rows for file and line threads are not links (their file would only error) and say so;
+// review and group rows stay links.
+test('with an unreadable snapshot file and line rows are not links, review and group rows are', () => {
+  const openThreads = [
+    digest('t-1', 'awaiting-human', { anchor: linesAnchor({ file: 'src/a.ts' }) }),
+    digest('t-2', 'awaiting-human', { anchor: { kind: 'file', file: 'src/a.ts', round: 1 } }),
+    digest('t-3', 'awaiting-human', { anchor: { kind: 'review', round: 1 } }),
+    digest('t-4', 'awaiting-human', { anchor: groupAnchor() }),
+  ];
+  renderInReview(<OverviewPage />, { review: review({ snapshotError: 'CHECKOUT_GONE' }), openThreads });
+  const card = region('Needs you');
+  expect(within(card).getAllByRole('link')).toHaveLength(2);
+  expect(within(card).getAllByText('diff unavailable')).toHaveLength(2);
+});

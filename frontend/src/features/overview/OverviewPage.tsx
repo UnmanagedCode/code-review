@@ -29,7 +29,7 @@ export function OverviewPage({ onBack }: { onBack?: () => void }) {
   const additions = files.reduce((n, f) => n + f.additions, 0);
   const deletions = files.reduce((n, f) => n + f.deletions, 0);
   return (
-    <div className="mx-auto flex w-full max-w-5xl flex-col gap-3 p-3 sm:p-4">
+    <div className="mx-auto flex w-full min-w-0 max-w-5xl flex-col gap-3 p-3 sm:p-4">
       {onBack && <Button variant="ghost" size="sm" className="w-fit" onClick={onBack}><ArrowLeftIcon />Back to files</Button>}
       <header className="flex flex-col gap-1">
         <p className="text-xs text-muted-foreground">
@@ -38,9 +38,13 @@ export function OverviewPage({ onBack }: { onBack?: () => void }) {
         <h2 className="text-lg font-semibold">{review.title || review.label}</h2>
         <div className="flex flex-wrap items-center gap-2">
           {next && (
-            <Button onClick={() => navigate({ file: next.path, side: undefined, lines: undefined, thread: undefined })}>
+            <Button
+              className="h-auto min-w-0 max-w-full flex-col items-start gap-0.5 py-2 text-left whitespace-normal"
+              title={next.path}
+              onClick={() => navigate({ file: next.path, side: undefined, lines: undefined, thread: undefined })}
+            >
               Review next undecided hunk
-              <span className="font-mono text-xs font-normal opacity-80">{next.path} · {next.verdicts!.pending} undecided</span>
+              <span className="max-w-full break-all font-mono text-xs font-normal opacity-80">{next.path} · {next.verdicts!.pending} undecided</span>
             </Button>
           )}
           {progress && !next && <p className="text-sm text-muted-foreground">All hunks decided</p>}

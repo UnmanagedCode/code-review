@@ -80,14 +80,14 @@ export interface ActivityItem {
 }
 
 export interface SubmissionRef { id: number | string; kind: 'round' | 'guide'; status: 'pending' | 'delivered' | 'failed' | 'superseded'; code: string | null; round: number }
-export interface Submission extends SubmissionRef { recipient: string; text: string; deliveredAt: string | null }
+export interface Submission extends SubmissionRef { recipient: string; text: string; deliveredAt?: string | null }
 
 export interface ReviewSummary {
   id: string; project: string; worktree: string | null; branch: string | null; kind: Kind; target: unknown;
   label: string; title: string | null; status: 'open' | 'closed'; recipient: string | null; author: string | null; recipientRole: Role | null;
   round: number; headSha: string; baseSha: string; headMoved: boolean; dirty: boolean; checkoutGone: boolean;
   counts: { files: number | null; hunks: ({ pending: number; accepted: number; rejected: number } | { total: number }) | null; threads: ThreadCounts; threadStates: ThreadStateCounts };
-  /** True when a Submit round would still send something. */
+  /** True until the first round is delivered, then while there is human activity newer than the last delivered round. */
   unsent: boolean;
   /** The review's change counter and the point the human last viewed up to ("since you last looked"). */
   seq: number; lastViewedSeq: number;

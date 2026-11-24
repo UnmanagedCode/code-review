@@ -6,8 +6,8 @@ import { ThreadRow } from './ThreadRow';
 
 /** Open threads where the human acted last: the ones the next round will send, and the ones the agent has. */
 export function YourThreadsCard() {
-  const { openThreads, files } = useReviewCtx();
-  const group = (state: ThreadState) => byPlace(openThreads.filter((t) => t.state === state), files);
+  const { openThreads, files, guide } = useReviewCtx();
+  const group = (state: ThreadState) => byPlace(openThreads.filter((t) => t.state === state), files, guide);
   const sections = [
     { title: 'Will be sent', rows: group('unsent'), note: 'Sent with the next Submit round' },
     { title: 'Waiting on agent', rows: group('awaiting-agent'), note: null },

@@ -1288,9 +1288,12 @@ try {
   // row opens its thread in place, "Review next undecided hunk" opens the expected file, and "since you last looked" shows the
   // agent's news once, then nothing after a reload, then the next event as it arrives. A phone never scrolls sideways.
   const { ping } = await overviewStates(world);
+  // The centre (`main`) is the scroller, so the page itself never reads wider: measure `main`, the pills and the overview's button in it.
   const noSideScroll = async (page, what) => {
     const { scroll, inner } = await page.evaluate(() => ({ scroll: document.scrollingElement.scrollWidth, inner: window.innerWidth }));
     assert.ok(scroll <= inner, `${what}: the page scrolls sideways (${scroll} > ${inner})`);
+    const mains = await page.locator('main').evaluateAll((els) => els.map((m) => ({ over: m.scrollWidth - m.clientWidth, cut: [...m.querySelectorAll('button, a')].filter((b) => b.getBoundingClientRect().right > m.getBoundingClientRect().right + 0.5).length })));
+    for (const m of mains) assert.deepEqual(m, { over: 0, cut: 0 }, `${what}: main scrolls sideways or cuts a control off`);
     const clipped = await page.locator('a[aria-label$="need you"], a[aria-label$="will be sent"], a[aria-label$="waiting on agent"]')
       .evaluateAll((els, w) => els.filter((e) => e.getBoundingClientRect().right > w).length, inner);
     assert.equal(clipped, 0, `${what}: a pill is clipped`);
@@ -1298,6 +1301,17 @@ try {
   const pillCount = async (page, name) => Number((await page.getByRole('link', { name }).getAttribute('aria-label')).split(' ')[0]);
   const NEED = /threads? need you$/;
   const WILL = /threads? will be sent$/;
+
+  // WCAG text contrast of an element's colour over its own and its ancestors' backgrounds (translucent tints composited top-down).
+  const textContrast = (locator) => locator.first().evaluate((el) => {
+    const ctx = Object.assign(document.createElement('canvas'), { width: 1, height: 1 }).getContext('2d', { willReadFrequently: true });
+    const paint = (colors) => { ctx.clearRect(0, 0, 1, 1); for (const c of colors) { ctx.fillStyle = c; ctx.fillRect(0, 0, 1, 1); } return [...ctx.getImageData(0, 0, 1, 1).data.slice(0, 3)]; };
+    const lum = (rgb) => { const [r, g, b] = rgb.map((v) => { v /= 255; return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }); return 0.2126 * r + 0.7152 * g + 0.0722 * b; };
+    const layers = [];
+    for (let n = el; n; n = n.parentElement) { const bg = getComputedStyle(n).backgroundColor; if (bg && bg !== 'rgba(0, 0, 0, 0)' && bg !== 'transparent') layers.unshift(bg); }
+    const [a, b] = [lum(paint([...layers, getComputedStyle(el).color])), lum(paint(layers))];
+    return Math.round(((Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05)) * 100) / 100;
+  });
 
   await withPage(async (page) => {
     const errors = watchErrors(page);
@@ -1363,6 +1377,30 @@ try {
     assert.equal(await feed.getByText('Nothing new since you last looked').count(), 0);
     await shot('22-new-event');
     void secondLoad;
+
+    // The small state text reaches WCAG AA (4.5:1) in both themes: the strip's pills and link, and the state chips.
+    for (const scheme of ['light', 'dark']) {
+      await page.emulateMedia({ colorScheme: scheme });
+      await page.goto(q({ review: range }));
+      await needs.waitFor();
+      const ratios = {
+        'need you pill': await textContrast(page.getByRole('link', { name: NEED })),
+        'will be sent pill': await textContrast(page.getByRole('link', { name: WILL })),
+        'waiting on agent pill': await textContrast(page.getByRole('link', { name: /threads? waiting on agent$/ })),
+        'k undecided link': await textContrast(page.getByRole('link', { name: /undecided →$/ })),
+        'Needs your reply chip': await textContrast(needs.getByText('Needs your reply')),
+        'Agent says fixed chip': await textContrast(needs.getByText('Agent says fixed — verify')),
+      };
+      await page.goto(q({ review: range, view: 'threads', need: 'unsent' }));
+      await page.getByRole('tabpanel').getByRole('article').first().waitFor();
+      ratios['Will be sent chip'] = await textContrast(page.getByRole('tabpanel').getByText('Will be sent', { exact: true }));
+      await page.goto(q({ review: range, view: 'threads', need: 'waiting' }));
+      await page.getByRole('tabpanel').getByRole('article').first().waitFor();
+      ratios['Waiting on agent chip'] = await textContrast(page.getByRole('tabpanel').getByText('Waiting on agent', { exact: true }));
+      console.log(`state text contrast (${scheme}):`, JSON.stringify(ratios));
+      for (const [what, ratio] of Object.entries(ratios)) assert.ok(ratio >= 4.5, `${scheme}: ${what} is ${ratio}:1, below 4.5:1`);
+    }
+    await page.emulateMedia({ colorScheme: 'light' });
     assert.deepEqual(errors, []);
   }, { headless: true, viewport: { width: 1280, height: 800 } });
 
@@ -1391,6 +1429,20 @@ try {
     await page.getByText(/^Showing: Needs you/).waitFor();
     await noSideScroll(page, 'the filtered Threads list');
     await shot('22-phone-filtered');
+
+    // A long path (the first undecided file, since directories come first) must wrap inside the button, at every narrow width.
+    const longPath = await world.longPath();
+    for (const [width, scheme] of [390, 320, 768].flatMap((w) => ['light', 'dark'].map((c) => [w, c]))) {
+      await page.emulateMedia({ colorScheme: scheme });
+      await page.setViewportSize({ width, height: 844 });
+      await page.goto(q({ review: range, view: 'overview' }));
+      const next = page.getByRole('button', { name: /Review next undecided hunk/ });
+      await next.waitFor();
+      assert.ok((await next.textContent()).includes(longPath), 'the button names the long path');
+      assert.equal(await next.getAttribute('title'), longPath, 'the full path is in the title');
+      await noSideScroll(page, `the overview at ${width}px (${scheme}) with a long path`);
+      await shot(`22-overview-long-path-${width}-${scheme}`);
+    }
     assert.deepEqual(errors, []);
   }, { headless: true, viewport: { width: 390, height: 844 } });
 

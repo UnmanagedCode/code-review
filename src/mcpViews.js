@@ -7,6 +7,8 @@ import { renderOpened, renderRollup, renderThreads, renderHunk, renderThreadWrit
 // `ok`; json also drops what only the UI reads (`sig`, `fileSig`).
 const bare = ({ ok, ...rest }) => rest;
 const noSig = ({ sig, ...rest }) => rest;
+// get_review's files also drop the UI-only viewed mark and hunk ids.
+const mcpFile = ({ sig, viewed, hunkIds, ...rest }) => rest;
 // UI-only change markers of a review summary.
 const noMarkers = ({ seq, lastViewedSeq, ...rest }) => rest;
 
@@ -24,7 +26,7 @@ export const views = {
   },
 
   get_review: {
-    json: (res) => ({ review: linked(res.review), files: res.files.map(noSig), guide: guideJson(res.guide), reviewThreads: tally(res.reviewThreads) }),
+    json: (res) => ({ review: linked(res.review), files: res.files.map(mcpFile), guide: guideJson(res.guide), reviewThreads: tally(res.reviewThreads) }),
     text: (res) => renderRollup(linked(res.review), res.files, res.reviewThreads, res.guide),
   },
 

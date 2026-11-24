@@ -47,6 +47,12 @@ const authorField = (review) => { review.author ??= null; };
 /** Sets the last-viewed marker of a review that predates it: a review the human has seen counts as seen up to now. */
 const lastViewed = (review) => { review.lastViewedSeq ??= review.seenByHuman ? review.seq : 0; };
 
+/** Gives a review the `viewedFiles` map it lacks. */
+const viewedFilesField = (review) => { review.viewedFiles ??= {}; };
+
+/** Gives a round stored before hunk ids were kept a null `hunkIds` (the inbox then shows no hunk tally for it). */
+const roundHunkIds = (review) => { for (const r of review.rounds) r.hunkIds ??= null; };
+
 const upgrade = (review) => {
   backfill(review);
   authorField(review);
@@ -54,6 +60,8 @@ const upgrade = (review) => {
   groupFields(review);
   submissionKinds(review);
   lastViewed(review);
+  viewedFilesField(review);
+  roundHunkIds(review);
 };
 
 /**

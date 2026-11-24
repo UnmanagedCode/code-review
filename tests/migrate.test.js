@@ -25,13 +25,13 @@ const EMPTY_GROUPS = { groups: [], retiredGroups: [], nextGroup: 1, sinceProposa
  * A review file in the shape written before `lastActivityAt` and `agentSeq` existed. It has the group fields and submission
  * kinds already, unless `legacy`: the shape before groups.
  */
-function seed(id, { messages = [], verdicts = {}, rounds = [], submissions = [], legacy = false, noAuthor = false, ...extra } = {}) {
+function seed(id, { messages = [], verdicts = {}, rounds = [], submissions = [], legacy = false, noAuthor = false, current = false, ...extra } = {}) {
   const review = {
     id, project: 'app', worktree: null, author: null, status: 'open', createdAt: '2026-01-01T00:00:00.000Z', rev: 3, seq: 9, humanSeq: 0,
-    rounds: [{ n: 1, createdAt: '2026-01-01T00:00:00.000Z', submittedAt: null }, ...rounds],
+    rounds: [{ n: 1, createdAt: '2026-01-01T00:00:00.000Z', submittedAt: null, ...(current ? { hunkIds: null } : {}) }, ...rounds],
     verdicts, threads: messages.length ? [{ id: 't1', messages }] : [],
     submissions: legacy ? submissions : submissions.map((s) => ({ kind: 'round', ...s })),
-    ...(legacy ? {} : EMPTY_GROUPS), ...extra,
+    ...(legacy ? {} : EMPTY_GROUPS), ...(current ? { viewedFiles: {} } : {}), ...extra,
   };
   if (noAuthor) delete review.author;
   fs.mkdirSync(path.dirname(fileOf(id)), { recursive: true });
@@ -64,7 +64,7 @@ test('agentSeq is backfilled from agent messages only, 0 without any', async () 
 test('migration is idempotent: a second run, or a review already in the current shape, writes nothing', async () => {
   // Invariant: backfill only fills missing fields, so a migrated or current review is not rewritten (rev unchanged).
   seed('r-000000000a', { messages: [msg(1, '2026-01-02T00:00:00.000Z', AGENT)] });
-  seed('r-000000000b', { lastActivityAt: '2026-02-01T00:00:00.000Z', agentSeq: 7, lastViewedSeq: 0 });
+  seed('r-000000000b', { current: true, lastActivityAt: '2026-02-01T00:00:00.000Z', agentSeq: 7, lastViewedSeq: 0 });
   await migrateStore();
   const first = stored();
   assert.deepEqual(first.map((r) => r.rev), [4, 3]);
@@ -95,7 +95,7 @@ test('a review whose anchors all carry a kind, file and review anchors included,
     { id: 't1', messages: [], anchor: { kind: 'file', file: 'a.js', round: 2 }, pastAnchors: [{ kind: 'file', file: 'b.js', round: 1 }] },
     { id: 't2', messages: [], anchor: { kind: 'review', round: 1 }, pastAnchors: [] },
   ];
-  seed('r-000000000a', { lastActivityAt: '2026-02-01T00:00:00.000Z', agentSeq: 0, lastViewedSeq: 0, threads: kinds });
+  seed('r-000000000a', { current: true, lastActivityAt: '2026-02-01T00:00:00.000Z', agentSeq: 0, lastViewedSeq: 0, threads: kinds });
   seed('r-000000000b', { threads: [{ id: 't1', messages: [], anchor: { file: 'a.js', side: 'new', startLine: 1, endLine: 1, round: 1 }, pastAnchors: [] }] });
   const current = fs.readFileSync(fileOf('r-000000000a'));
   await migrateStore();
@@ -175,6 +175,19 @@ test('lastViewedSeq is backfilled as the review seq when the human has seen it, 
   seed('r-000000000c', { seenByHuman: true, lastViewedSeq: 2 });
   await migrateStore();
   assert.deepEqual(stored().map((r) => [r.id.slice(-1), r.lastViewedSeq]), [['a', 9], ['b', 0], ['c', 2]]);
+  const bytes = fs.readFileSync(fileOf('r-000000000a'));
+  await migrateStore();
+  assert.deepEqual(fs.readFileSync(fileOf('r-000000000a')), bytes);
+});
+
+test('rounds gain a null hunkIds and reviews an empty viewedFiles; stored values are kept and a second run writes nothing', async () => {
+  // Invariant: roundHunkIds and viewedFilesField fill only what is undefined (existing ids and marks survive), so a second run is byte-identical.
+  seed('r-000000000a', { rounds: [{ n: 2, createdAt: '2026-01-02T00:00:00.000Z', submittedAt: null, hunkIds: ['h1', 'h2'] }] });
+  seed('r-000000000b', { viewedFiles: { 'a.js': ['h1'] } });
+  await migrateStore();
+  const [a, b] = stored();
+  assert.deepEqual(a.rounds.map((r) => r.hunkIds), [null, ['h1', 'h2']]);
+  assert.deepEqual([a.viewedFiles, b.viewedFiles, b.rounds[0].hunkIds], [{}, { 'a.js': ['h1'] }, null]);
   const bytes = fs.readFileSync(fileOf('r-000000000a'));
   await migrateStore();
   assert.deepEqual(fs.readFileSync(fileOf('r-000000000a')), bytes);

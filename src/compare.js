@@ -76,7 +76,7 @@ export const compareRounds = (id, { from, to }) => attempt(() => viewReview(id, 
   // Keeps upstream churn out when the base moved between the rounds, but keeps a file reverted to base in B.
   const files = delta.files.filter((f) => inB.has(f.path) || inA.has(f.oldPath ?? f.path));
   const { byFile, unplaced, counts } = placeThreads({ review, from: a.n, to: b.n, files });
-  const states = await diffFiles(delta, fileStates({ ...review, threads: [], verdicts: {} }, files).map((s) => ({ ...s, verdicts: null })), files, {
+  const states = await diffFiles(delta, fileStates({ ...review, threads: [], verdicts: {}, viewedFiles: {} }, files).map((s) => ({ ...s, verdicts: null })), files, {
     hunk: (h) => ({ ...h, verdict: null }), threads: (path) => byFile.get(path) ?? [],
   });
   return { ok: true, readOnly: true, from: a, to: b, files: states, counts, unplaced, reviewThreads: reviewThreadsAt(review, b.n) };

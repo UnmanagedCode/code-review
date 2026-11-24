@@ -18,7 +18,7 @@ export function pickRound(review, raw) {
 async function asOf(review, env, raw) {
   const round = pickRound(review, raw);
   const snap = await env.snapshot(round.n);
-  return { round, snap, then: { ...review, threads: threadsAt(review, round.n) } };
+  return { round, snap, then: { ...review, threads: threadsAt(review, round.n), viewedFiles: {} } };
 }
 
 const noVerdicts = (states) => states.map((s) => ({ ...s, verdicts: null }));

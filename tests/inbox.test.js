@@ -10,6 +10,7 @@ import * as reviews from '../src/reviews.js';
 import * as threads from '../src/threads.js';
 import * as submissions from '../src/submissions.js';
 import * as inbox from '../src/inbox.js';
+import * as groups from '../src/groups.js';
 import * as store from '../src/store.js';
 
 let w;
@@ -211,6 +212,9 @@ test('a row carries the review\'s identity, label, title, round, unread count an
     id: review.id, project: 'app', worktree: 'feature', branch: 'br-feature', kind: 'range', label: 'main...br-feature',
     title: 'main...br-feature', round: 2, unread: 2, seenByHuman: false, lastActivityAt: store.read(review.id).lastActivityAt,
     turn: 'human', checkoutGone: false,
+    recipient: 's-author', author: null, hunks: { pending: 2, accepted: 0, rejected: 0 }, groupsPending: 0,
+    threadStates: { awaitingHuman: 2, verifyResolution: 0, unsent: 0, awaitingAgent: 0 }, unsent: true, newActivity: true,
+    lastSubmission: null, lastAgentAction: { kind: 'update', at: null },
   });
   ok(await reviews.patchReview(review.id, { title: 'Named' }));
   ok(await threads.markRead(review.id));
@@ -318,4 +322,60 @@ test('GET /api/inbox serves {ok, reviews}', async (t) => {
   const body = await res.json();
   assert.equal(body.ok, true);
   assert.deepEqual(body.reviews.map((r) => [r.id, r.turn, r.checkoutGone]), [[review.id, 'human', false]]);
+});
+
+test('hunks is the stored tally and follows verdicts; null for uncommitted reviews and for a round stored without ids', async () => {
+  // Invariant: storedHunkTally counts the current round's stored hunk ids against the verdicts (no exec), and is null when the round holds none.
+  const { review } = await onFeature();
+  assert.deepEqual((await item(review.id)).hunks, { pending: 1, accepted: 0, rejected: 0 });
+  const [hunk] = ok(await reviews.diff(review.id, {})).files[0].hunks;
+  ok(await reviews.setVerdict(review.id, hunk.id, 'rejected'));
+  assert.deepEqual((await item(review.id)).hunks, { pending: 0, accepted: 0, rejected: 1 });
+  await store.mutate(review.id, (r) => { r.rounds[r.rounds.length - 1].hunkIds = null; return { ok: true }; });
+  assert.equal((await item(review.id)).hunks, null);
+  w.repo.write('a.js', editLines({ 5: 'dirty' }));
+  const unc = ok(await reviews.openReview({ project: 'app', kind: 'uncommitted' }, HUMAN)).review;
+  assert.equal((await item(unc.id)).hunks, null);
+});
+
+test('recipient, author, groupsPending, threadStates and lastSubmission mirror the stored review', async () => {
+  // Invariant: the new row fields are read from the store: session ids, groups with no verdict, stateCounts, and the newest submission's status and delivered-or-composed time.
+  const { review } = await onFeature();
+  const [hunk] = ok(await reviews.diff(review.id, {})).files[0].hunks;
+  const cond = agent('s-cond', '.conduct');
+  w.session('s-cond', { project: '.conduct' });
+  ok(await groups.proposeGroups(review.id, cond, [{ title: 'g', description: 'd', hunks: [hunk.id] }]));
+  assert.deepEqual([(await item(review.id)).recipient, (await item(review.id)).author, (await item(review.id)).groupsPending], ['s-author', null, 1]);
+  ok(await threads.annotate(review.id, HUMAN, { anchor: at('a.js', 2), kind: 'comment', body: 'x' }));
+  assert.equal((await item(review.id)).threadStates.unsent, 1);
+  assert.equal((await item(review.id)).lastSubmission, null);
+  await deliver(review.id);
+  const sub = store.read(review.id).submissions.at(-1);
+  assert.deepEqual((await item(review.id)).lastSubmission, { status: 'delivered', at: sub.deliveredAt ?? sub.composedAt });
+  assert.equal((await item(review.id)).threadStates.awaitingAgent, 1);
+});
+
+test('newActivity flips on an agent reply and clears after the last-viewed marker catches up', async () => {
+  // Invariant: newActivity is agentSeq > lastViewedSeq, so markViewed to the review's seq clears it.
+  const { review } = await onFeature();
+  assert.equal((await item(review.id)).newActivity, false);
+  ok(await threads.annotate(review.id, author, { anchor: at('a.js', 2), kind: 'comment', body: 'from the agent' }));
+  assert.equal((await item(review.id)).newActivity, true);
+  ok(await reviews.markViewed(review.id, { seq: store.read(review.id).seq }));
+  assert.equal((await item(review.id)).newActivity, false);
+});
+
+test('lastAgentAction names the agent\'s newest thread event, is an update after an agent refresh, and null before any agent activity', async () => {
+  // Invariant: a thread event is reported only while its seq is the review's agentSeq; a refresh moves agentSeq past it, and those store no event.
+  const { wt, review } = await onFeature();
+  assert.equal((await item(review.id)).lastAgentAction, null);
+  const tid = ok(await threads.annotate(review.id, author, { anchor: at('a.js', 2), kind: 'question', body: 'why?' })).thread.id;
+  const act = (await item(review.id)).lastAgentAction;
+  assert.deepEqual([act.kind, act.event, act.thread.id, act.thread.kind, act.thread.anchor.file], ['thread', 'opened', tid, 'question', 'a.js']);
+  ok(await threads.reply(review.id, HUMAN, tid, { body: 'because' }));
+  ok(await threads.reply(review.id, author, tid, { body: 'ok' }));
+  assert.equal((await item(review.id)).lastAgentAction.event, 'replied');
+  wt.commit({ 'b.js': 'agent\n' });
+  ok(await reviews.refreshReview(review.id, author));
+  assert.deepEqual((await item(review.id)).lastAgentAction, { kind: 'update', at: null });
 });

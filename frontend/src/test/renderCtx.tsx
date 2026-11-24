@@ -15,7 +15,7 @@ export function ctxValue(over: Partial<ReviewCtx> = {}): ReviewCtx {
     // As ReviewView derives it: a round view or a comparison.
     pastView: over.round !== undefined || over.compare !== undefined, threadCounts: rv.counts.threads,
     readOnly: false, version: 1, sessions: [], reload: vi.fn(), applyReview: vi.fn(),
-    guide: null, patchGuide: vi.fn(), diffs: { patchVerdicts: vi.fn(), patchThread: vi.fn(), patchSig: vi.fn() },
+    guide: null, patchGuide: vi.fn(), patchFiles: vi.fn(), diffs: { patchVerdicts: vi.fn(), patchThread: vi.fn(), patchSig: vi.fn() },
     ...over, fileDiff,
   };
 }

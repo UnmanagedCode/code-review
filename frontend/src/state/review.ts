@@ -1,6 +1,6 @@
 import { useCallback } from 'react';
 import * as ep from '@/lib/endpoints';
-import type { GuideView, ReviewSummary } from '@/lib/types';
+import type { FileState, GuideView, ReviewSummary } from '@/lib/types';
 import { usePolling } from './live';
 import { resourceKey } from './checkout';
 import { useResource } from './resource';
@@ -27,6 +27,10 @@ export function useReview(id: string | undefined) {
   const patchGuide = useCallback((fn: (g: GuideView) => GuideView) => {
     f.mutate((d) => (d.guide ? { ...d, guide: fn(d.guide) } : d));
   }, [f.mutate]);
-  return { ...f, deleted: f.gone, applyReview, patchGuide };
+  /** Patches the live file list inside the cached review (a viewed mark flips before the server answers). */
+  const patchFiles = useCallback((fn: (files: FileState[]) => FileState[]) => {
+    f.mutate((d) => ({ ...d, files: fn(d.files) }));
+  }, [f.mutate]);
+  return { ...f, deleted: f.gone, applyReview, patchGuide, patchFiles };
 }
 export type ReviewState = ReturnType<typeof useReview>;

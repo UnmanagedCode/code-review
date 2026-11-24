@@ -76,6 +76,9 @@ export const setVerdict = (id: string, hunkId: string, verdict: Verdict) =>
   api<{ hunkId: string; verdict: Verdict; clearedGroups: string[]; review: ReviewSummary; fileSig: FileSig }>(`${r(id)}/hunks/${encodeURIComponent(hunkId)}/verdict`, json('PUT', { verdict }));
 export const acceptFile = (id: string, file: string, hunkIds: string[]) =>
   api<{ file: string; accepted: string[]; clearedGroups: string[]; review: ReviewSummary; fileSig: FileSig }>(`${r(id)}/accept-file`, json('POST', { file, hunkIds }));
+/** Marks (`hunkIds`: the ids shown) or clears (`null`) a file's viewed mark; refused `STALE_HUNKS` when the file's hunks differ. */
+export const setFileViewed = (id: string, file: string, hunkIds: string[] | null) =>
+  api<{ file: string; viewed: boolean; review: ReviewSummary; fileSig: FileSig }>(`${r(id)}/files/viewed`, json('PUT', { file, hunkIds }));
 export const setGroupVerdict = (id: string, groupId: string, verdict: Verdict) =>
   api<{ groupId: string; verdict: Verdict; hunks: { id: string; verdict: Verdict }[]; fileSigs: FileSig[]; guide: GuideView; review: ReviewSummary }>(
     `${r(id)}/groups/${encodeURIComponent(groupId)}/verdict`, json('PUT', { verdict }));

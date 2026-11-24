@@ -23,6 +23,7 @@ import { Empty, ErrorState, Loading } from '@/features/common/States';
 import { JumpBar, type HunkStepper } from '@/features/nav/JumpBar';
 import { useJumpNav } from '@/features/nav/jumpNavContext';
 import { Tip } from '@/features/nav/Tip';
+import { ViewedToggle } from '@/features/files/ViewedToggle';
 import { Composer } from '@/features/threads/Composer';
 import { CitedExcerpt } from './CitedExcerpt';
 import { CompareNote } from './CompareNote';
@@ -86,6 +87,7 @@ function FileHeader({ ref, file, onBack, extra, view, options, onComment, hunk }
         <JumpBar hunk={hunk} />
         <span className="flex-1" />
         <FileVerdict file={file} />
+        <ViewedToggle path={file.path} />
         {onComment && <Tip label="Comment on file"><Button variant="ghost" size="sm" aria-label="Comment on file" onClick={onComment}><MessageSquarePlusIcon />Comment</Button></Tip>}
         <CodeGitFileLink file={file} />
         {view && <ViewToggle view={view.chosen} onChange={view.choose} />}

@@ -116,7 +116,7 @@ test('typing n/p/u/j/]/a/? into the composer changes neither the route nor any v
   expect(net.calls).toEqual([]);
 });
 
-// Invariant: ? lists exactly the shortcuts that act now (not v, / or s, which no feature registered here), plus the grid's line-selection keys; ? and Esc close it and focus returns to the opener.
+// Invariant: ? lists exactly the shortcuts that act now (v is there because a file is open; / and s are not, since no tree or submit control is mounted here), plus the grid's line-selection keys; ? and Esc close it and focus returns to the opener.
 test('? opens the overlay listing exactly the registered shortcuts plus the line-selection keys; ? and Esc close it; focus returns', async () => {
   mount('?file=a.ts');
   const user = userEvent.setup();
@@ -125,8 +125,8 @@ test('? opens the overlay listing exactly the registered shortcuts plus the line
   await user.keyboard('?');
   const dialog = await screen.findByRole('dialog', { name: 'Keyboard shortcuts' });
   const listed = within(dialog).getAllByRole('term').map((t) => t.textContent);
-  expect(listed).toEqual(expect.arrayContaining(['Next open thread', 'Next thread that needs you', 'Next hunk', 'Next file', 'Overview', 'Move the line selection']));
-  for (const absent of ['Mark the file viewed', 'Filter files', 'Submit round']) expect(listed).not.toContain(absent);
+  expect(listed).toEqual(expect.arrayContaining(['Next open thread', 'Next thread that needs you', 'Next hunk', 'Next file', 'Overview', 'Mark the file viewed', 'Move the line selection']));
+  for (const absent of ['Filter files', 'Submit round']) expect(listed).not.toContain(absent);
   await user.keyboard('?');
   await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
   expect(document.activeElement).toBe(opener);

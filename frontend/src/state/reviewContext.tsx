@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, type ReactNode } from 'react';
 import type { CompareView, ReviewDetail } from '@/lib/endpoints';
-import type { GuideView, ReviewSummary, Session, Thread, ThreadCounts } from '@/lib/types';
+import type { FileState, GuideView, ReviewSummary, Session, Thread, ThreadCounts } from '@/lib/types';
 import type { DiffPatchers } from './diffResource';
 import type { FileDiffState } from './fileDiff';
 import { forgetVisit } from './lastViewed';
@@ -33,6 +33,8 @@ export interface ReviewCtx extends Omit<ReviewDetail, 'review'> {
   diffs: DiffPatchers;
   /** Patches the cached guide in place; a no-op while there is none. */
   patchGuide: (fn: (g: GuideView) => GuideView) => void;
+  /** Patches the cached live file list in place (the optimistic viewed mark); a no-op in the past views, which show other lists. */
+  patchFiles: (fn: (files: FileState[]) => FileState[]) => void;
   sessions: Session[];
   reload: () => void;
   applyReview: (r: ReviewSummary) => void;

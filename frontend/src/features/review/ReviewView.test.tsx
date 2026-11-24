@@ -178,8 +178,8 @@ test('a comparison lists its files and is read-only: no verdicts, Accept file, S
   expect(cmp.every((c) => c.url.searchParams.get('from') === '1' && c.url.searchParams.get('to') === '3')).toBe(true);
   expect(net.calls.filter((c) => c.url.pathname.endsWith('/diff'))).toEqual([]);
   // The tree counts each thread once, though the comparison holds two copies of it.
-  const link = within(screen.getByRole('navigation', { name: 'Files' })).getByTitle('src/a.ts');
-  expect(link.textContent).toContain('1 open, 0 resolved, 0 outdated');
+  const link = within(screen.getByRole('navigation', { name: 'Files' })).getByTitle(/^src\/a\.ts/);
+  expect(within(link).getByRole('img', { name: '1 open thread' })).toBeTruthy();
   expect(screen.getByText('Exit comparison')).toBeTruthy();
   expect(screen.queryByRole('group', { name: 'Hunk verdict' })).toBeNull();
   expect(screen.queryByRole('button', { name: 'Accept file' })).toBeNull();
@@ -399,7 +399,7 @@ test('phone: the pane without a file, the diff with one, and its Threads button 
   expect(await screen.findByRole('tablist', { name: 'Review pane' })).toBeTruthy();
   expect(screen.queryByRole('grid')).toBeNull();
   const user = userEvent.setup();
-  await user.click(within(screen.getByRole('navigation', { name: 'Files' })).getByTitle('src/a.ts'));
+  await user.click(within(screen.getByRole('navigation', { name: 'Files' })).getByTitle(/^src\/a\.ts/));
   await screen.findByRole('grid');
   expect(screen.queryByRole('tablist', { name: 'Review pane' })).toBeNull();
   const button = screen.getByRole('button', { name: /^Threads/ });

@@ -12,7 +12,7 @@ import { diffFile, fileState, guideGroup, guideView, hunk, lines, message, revie
 import { renderDiff, renderInReview } from '@/test/renderCtx';
 import { stubFetch } from '@/test/stubFetch';
 import { FileDiff } from './FileDiff';
-import { hunkAt, nextHunk, prevHunk, stepTarget } from './useHunkStepper';
+import { hunkAt, nextHunk, prevHunk, readoutIndex, stepTarget } from './useHunkStepper';
 
 vi.mock('sonner', () => ({ toast: Object.assign(vi.fn(), { error: vi.fn() }) }));
 type ToastArgs = [string, { action?: { label: string; onClick: () => void } }?];
@@ -68,6 +68,13 @@ test('hunkAt, nextHunk and prevHunk read the tops against the header edge', () =
   expect(prevHunk([-300, 100, 500], 100)).toBe(0);
 });
 
+// Invariant: the readout names the focused hunk while it is in view (so it agrees with focus and the chevrons even when nothing can scroll), and follows the scroll once the focused hunk has left the view.
+test('readoutIndex prefers the focused hunk while in view and falls back to the scroll position', () => {
+  expect(readoutIndex([150, 400, 700], 100, 2, true)).toBe(2);
+  expect(readoutIndex([150, 400, 700], 100, -1, false)).toBe(0);
+  expect(readoutIndex([-900, -400, 98], 100, 0, false)).toBe(2);
+});
+
 // Invariant: with a hunk focused a step moves by index, one hunk at a time, never back over hunks the page could not scroll to the header; with none focused it reads the geometry.
 test('stepTarget steps by the focused hunk and clamps; k returns to a scrolled-past hunk first', () => {
   const fits = [150, 400, 700]; // every hunk already below the header: nothing can scroll
@@ -88,10 +95,10 @@ test('j and k step through hunks of a file that fits the viewport without bounci
   const label = () => (document.activeElement as HTMLElement).getAttribute('aria-label')!.split(':')[0];
   const next = () => screen.getByRole('button', { name: 'Next hunk' }) as HTMLButtonElement;
   const prev = () => screen.getByRole('button', { name: 'Previous hunk' }) as HTMLButtonElement;
-  for (const want of ['Hunk 1 of 3', 'Hunk 2 of 3', 'Hunk 3 of 3', 'Hunk 3 of 3']) { await keys('j'); expect(label()).toBe(want); }
+  for (const want of ['Hunk 1 of 3', 'Hunk 2 of 3', 'Hunk 3 of 3', 'Hunk 3 of 3']) { await keys('j'); expect(label()).toBe(want); await waitFor(() => expect(screen.getByText(want)).toBeTruthy()); }
   await waitFor(() => expect(next().disabled).toBe(true));
   expect(prev().disabled).toBe(false);
-  for (const want of ['Hunk 2 of 3', 'Hunk 1 of 3', 'Hunk 1 of 3']) { await keys('k'); expect(label()).toBe(want); }
+  for (const want of ['Hunk 2 of 3', 'Hunk 1 of 3', 'Hunk 1 of 3']) { await keys('k'); expect(label()).toBe(want); await waitFor(() => expect(screen.getByText(want)).toBeTruthy()); }
   await waitFor(() => expect(prev().disabled).toBe(true));
   expect(next().disabled).toBe(false);
 });

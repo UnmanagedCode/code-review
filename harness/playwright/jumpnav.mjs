@@ -140,9 +140,17 @@ try {
     await page.getByText('File 2 of 3').waitFor();
     assert.equal(await page.evaluate(() => { const m = document.querySelector('main'); return m.scrollHeight <= m.clientHeight; }), true, 'the whole diff fits');
     const hunkNo = async () => (await active(page)).label?.match(/^Hunk (\d) of 2/)?.[1];
-    for (const want of ['1', '2', '2']) { await press(page, 'j'); assert.equal(await hunkNo(), want, `j → hunk ${want}`); }
+    for (const want of ['1', '2', '2']) {
+      await press(page, 'j');
+      assert.equal(await hunkNo(), want, `j → hunk ${want}`);
+      await page.getByText(`Hunk ${want} of 2`, { exact: true }).waitFor({ timeout: 2000 }); // the readout agrees with focus
+    }
     assert.equal(await page.getByRole('button', { name: 'Next hunk' }).isDisabled(), true, 'Next hunk is disabled on the last hunk');
-    for (const want of ['1', '1']) { await press(page, 'k'); assert.equal(await hunkNo(), want, `k → hunk ${want}`); }
+    for (const want of ['1', '1']) {
+      await press(page, 'k');
+      assert.equal(await hunkNo(), want, `k → hunk ${want}`);
+      await page.getByText(`Hunk ${want} of 2`, { exact: true }).waitFor({ timeout: 2000 });
+    }
     assert.equal(await page.getByRole('button', { name: 'Previous hunk' }).isDisabled(), true);
     assert.equal(await page.getByRole('button', { name: 'Next hunk' }).isDisabled(), false);
 

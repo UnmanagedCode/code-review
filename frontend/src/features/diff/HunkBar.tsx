@@ -39,6 +39,37 @@ export function VerdictToggle({ label, value, labels, disabled, repeatable, onCh
   );
 }
 
+const CHIP: Record<'accepted' | 'rejected', { text: string; tint: string }> = {
+  accepted: { text: '✓ Accepted', tint: 'bg-success/25' },
+  rejected: { text: '✗ Rejected', tint: 'bg-destructive/25' },
+};
+
+/**
+ * A hunk's verdict: an undecided hunk offers Accept | Reject with neither drawn as chosen; a decided one shows its verdict as
+ * a chip with a Clear link. Both write through `onChange`, so the keys `a`, `x` and `0` and this bar stay one path.
+ */
+export function HunkVerdict({ value, disabled, onChange }: { value: Verdict; disabled?: boolean; onChange: (v: Verdict) => void }) {
+  if (value === 'pending') {
+    return (
+      <div role="group" aria-label="Hunk verdict" className="inline-flex items-center gap-2">
+        <span className="text-xs text-muted-foreground">undecided</span>
+        <span className="inline-flex rounded-md border">
+          {VERDICTS.slice(0, 2).map((v) => (
+            <Button key={v.value} size="sm" variant="ghost" aria-pressed={false} disabled={disabled} className={SEGMENT_SHAPE} onClick={() => onChange(v.value)}>{v.label}</Button>
+          ))}
+        </span>
+      </div>
+    );
+  }
+  const chip = CHIP[value];
+  return (
+    <div role="group" aria-label="Hunk verdict" className="inline-flex items-center gap-2">
+      <span className={cn('rounded-md px-2 py-1 text-xs font-medium text-foreground', chip.tint)}>{chip.text}</span>
+      <Button size="sm" variant="link" disabled={disabled} className="h-auto px-0" onClick={() => onChange('pending')}>Clear</Button>
+    </div>
+  );
+}
+
 /** Per-hunk verdict toggle and "comment on hunk". No bar at all in the commit-filter, past-round and comparison views. `path`: the hunk's file, whose cached diff the verdict patches. */
 export function HunkBar({ hunk, path, commentable }: { hunk: Hunk; path: string; commentable: boolean }) {
   const { review, readOnly, commit, pastView } = useReviewCtx();
@@ -50,10 +81,7 @@ export function HunkBar({ hunk, path, commentable }: { hunk: Hunk; path: string;
   return (
     <div className="flex flex-wrap items-center gap-2 py-1">
       {hasVerdicts && (
-        <VerdictToggle
-          label="Hunk verdict" value={hunk.verdict ?? 'pending'} labels={['Accept', 'Reject', 'Pending']} disabled={closed}
-          onChange={(v) => actions.setVerdict(path, hunk.id, v, hunk.verdict)}
-        />
+        <HunkVerdict value={hunk.verdict ?? 'pending'} disabled={closed} onChange={(v) => actions.setVerdict(path, hunk.id, v, hunk.verdict)} />
       )}
       {commentable && !readOnly && (
         <Button size="sm" variant="ghost" onClick={() => setComposing(true)}><MessageSquarePlusIcon />Comment on hunk</Button>

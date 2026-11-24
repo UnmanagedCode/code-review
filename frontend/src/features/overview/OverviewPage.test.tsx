@@ -5,7 +5,7 @@ import { parseRoute } from '@/lib/route';
 import type { ThreadDigest, ThreadState } from '@/lib/types';
 import { visitBaseline } from '@/state/lastViewed';
 import { activityItem, agent, fileState, guideGroup, groupAnchor, guideView, linesAnchor, review, threadDigest } from '@/test/fixtures';
-import { ReviewProvider } from '@/state/reviewContext';
+import { ReviewProvider } from '@/test/reviewProvider';
 import { ctxValue, renderInReview } from '@/test/renderCtx';
 import { OverviewPage } from './OverviewPage';
 
@@ -105,8 +105,8 @@ test('the Hunks card lists each file decided out of its hunks, in tree order', (
   expect(rows).toEqual(['dir/b.ts2/2', 'a.ts0/1']);
 });
 
-// Invariant: "Review next undecided hunk" opens the first file in tree order with a pending hunk.
-test('the next-undecided button opens firstUndecided', async () => {
+// Invariant: "Review next undecided hunk" opens the first file in tree order with a pending hunk, landing on that file's first pending hunk (`hunk=undecided`).
+test('the next-undecided button opens firstUndecided at its first pending hunk', async () => {
   const files = [
     fileState({ path: 'a.ts', verdicts: pending }),
     fileState({ path: 'dir/b.ts', verdicts: { pending: 1, accepted: 0, rejected: 0 } }),
@@ -115,7 +115,7 @@ test('the next-undecided button opens firstUndecided', async () => {
   const button = screen.getByRole('button', { name: /Review next undecided hunk/ });
   expect(button.textContent).toContain('dir/b.ts · 1 undecided');
   await userEvent.setup().click(button);
-  expect(parseRoute(location.search)).toEqual({ file: 'dir/b.ts' });
+  expect(parseRoute(location.search)).toEqual({ file: 'dir/b.ts', hunk: 'undecided' });
 });
 
 test('with every hunk decided the button gives way to text', () => {

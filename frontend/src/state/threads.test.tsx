@@ -6,7 +6,7 @@ import { sampleGuide } from '@/test/guideWorld';
 import { useClearedGroups } from './clearedGroups';
 import { ctxValue } from '@/test/renderCtx';
 import { stubFetch } from '@/test/stubFetch';
-import { ReviewProvider } from './reviewContext';
+import { ReviewProvider } from '@/test/reviewProvider';
 import { useReviewActions } from './threads';
 
 const actions = (version = 1) => {

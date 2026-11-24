@@ -6,7 +6,7 @@ import { parseRoute } from '@/lib/route';
 import { ctxValue } from '@/test/renderCtx';
 import { stubFetch } from '@/test/stubFetch';
 import type { ComparedThread, Thread, UnplacedThread } from '@/lib/types';
-import { ReviewProvider } from '@/state/reviewContext';
+import { ReviewProvider } from '@/test/reviewProvider';
 import { ThreadPanel } from './ThreadPanel';
 
 test('the All list refreshes when the review reloads, even with no file open', async () => {

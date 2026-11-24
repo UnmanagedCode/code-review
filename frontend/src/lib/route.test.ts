@@ -117,3 +117,16 @@ test('view=overview and need= parse, other values are dropped, and REVIEW_SCOPED
   expect(REVIEW_SCOPED.need).toBeUndefined();
   expect('need' in REVIEW_SCOPED).toBe(true);
 });
+
+// Invariant: `hunk` carries only the one landing it names; anything else is dropped, and leaving the file or the review clears it.
+test('hunk accepts only `undecided`; LEAVE_FILE and REVIEW_SCOPED clear it', () => {
+  expect(parseRoute('?file=a.js&hunk=undecided')).toEqual({ file: 'a.js', hunk: 'undecided' });
+  expect(parseRoute('?file=a.js&hunk=3')).toEqual({ file: 'a.js' });
+  expect(toSearch({ file: 'a.js', hunk: 'undecided' })).toBe('?file=a.js&hunk=undecided');
+  history.replaceState(null, '', '?review=r-1&file=a.js&hunk=undecided&view=threads');
+  navigate(LEAVE_FILE);
+  expect(parseRoute(location.search)).toEqual({ review: 'r-1', view: 'threads' });
+  history.replaceState(null, '', '?review=r-1&file=a.js&hunk=undecided');
+  navigate({ review: 'r-2', ...REVIEW_SCOPED });
+  expect(parseRoute(location.search)).toEqual({ review: 'r-2' });
+});

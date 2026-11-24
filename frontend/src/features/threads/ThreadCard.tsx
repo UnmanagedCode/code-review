@@ -9,6 +9,7 @@ import type { ComparedThread, GuideView, Thread } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import { useReviewCtx } from '@/state/reviewContext';
 import { useReviewActions } from '@/state/threads';
+import { useJumpNav } from '@/features/nav/jumpNavContext';
 import { AuthorBadge } from './AuthorBadge';
 import { KindBadge } from './KindBadge';
 import { MessageBody } from './MessageBody';
@@ -70,17 +71,21 @@ const wasAt = (t: Thread): string => (t.anchor.kind === 'lines'
   : t.anchor.kind === 'group' ? `outdated · its group was retired after round ${t.anchor.round}`
     : `outdated · its file left the diff after round ${t.anchor.round}`);
 
-/** One thread. `unplaced`: a comparison has no place for it, so Focus never moves the file position. `dropped`: a session-local tombstone of an uncommitted thread whose lines changed. `note`: shown under the header. */
-export function ThreadCard({ thread, dropped = false, showLocation = false, unplaced = false, note }: { thread: Thread; dropped?: boolean; showLocation?: boolean; unplaced?: boolean; note?: ReactNode }) {
+/** One thread. `unplaced`: a comparison has no place for it, so Focus never moves the file position. `inDiff`: the card sits beside the code, where a step's focus request for a line or file thread lands. `dropped`: a session-local tombstone of an uncommitted thread whose lines changed. `note`: shown under the header. */
+export function ThreadCard({ thread, dropped = false, showLocation = false, unplaced = false, inDiff = false, note }: { thread: Thread; dropped?: boolean; showLocation?: boolean; unplaced?: boolean; inDiff?: boolean; note?: ReactNode }) {
   const { readOnly, compare, guide } = useReviewCtx();
   const actions = useReviewActions();
   const route = useRoute();
   const ref = useRef<HTMLElement>(null);
+  const nav = useJumpNav();
   const focused = route.thread === thread.id;
+  const walked = nav.threads.available ? nav.threads.order.findIndex((t) => t.id === thread.id) : -1;
   const marked = useRef(false);
   useEffect(() => {
     if (!focused) { marked.current = false; return; }
     ref.current?.scrollIntoView?.({ block: 'center' });
+    // A step (n/p/u) routed here: take focus so Tab reaches the reply box. A hidden copy (a force-mounted tab) leaves the request to the visible one.
+    if (ref.current && !ref.current.closest('[hidden]') && nav.takeThreadFocus(thread.id, inDiff)) ref.current.focus({ preventScroll: true });
     if (thread.unread > 0 && !marked.current && !dropped) { marked.current = true; void actions.markRead(thread.id); }
   }, [focused, thread.unread, dropped]);
 
@@ -98,8 +103,9 @@ export function ThreadCard({ thread, dropped = false, showLocation = false, unpl
   return (
     <article
       ref={ref}
+      tabIndex={-1}
       aria-label={`${thread.kind} thread`}
-      className={cn('flex flex-col gap-2 rounded-md border bg-card p-3 text-card-foreground', focused && 'ring-2 ring-ring', dropped && 'opacity-70')}
+      className={cn('flex flex-col gap-2 rounded-md border bg-card p-3 text-card-foreground focus:outline-none', focused && 'ring-2 ring-ring', dropped && 'opacity-70')}
     >
       <header className="flex flex-wrap items-center gap-1.5">
         <KindBadge kind={thread.kind} severity={thread.severity} />
@@ -108,6 +114,7 @@ export function ThreadCard({ thread, dropped = false, showLocation = false, unpl
         {thread.state && thread.state !== 'verify-resolution' && <ThreadStateChip state={thread.state} />}
         {thread.disposition && <Badge variant="success">{thread.disposition}</Badge>}
         {thread.anchor.kind === 'lines' && thread.anchor.drifted && <Badge variant="info" title="Found again by its surrounding context">re-anchored by context</Badge>}
+        {walked >= 0 && <span className="text-xs text-muted-foreground">thread {walked + 1} of {nav.threads.order.length}</span>}
         {thread.unread > 0 && <Badge variant="default">{thread.unread} unread</Badge>}
         {showLocation && !dropped ? (
           <Button variant="link" size="sm" className="h-auto p-0 font-mono text-xs"

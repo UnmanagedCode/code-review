@@ -7,17 +7,19 @@ export interface Route {
   step?: string;
   /** Threads tab: only the open threads in this state group (`stateGroup` in `lib/threadState.ts`). */
   need?: 'needs-you' | 'unsent' | 'waiting';
+  /** The open file: land on its first pending hunk (the only value). A routed thread or `lines` wins. */
+  hunk?: 'undecided';
   /** New review prefill (`view=new`), kept raw: `lib/prefill.ts` reads them so the dialog can say why one is unusable. */
   range?: string; sha?: string;
 }
-const KEYS = ['project', 'worktree', 'review', 'file', 'side', 'lines', 'thread', 'commit', 'round', 'compare', 'view', 'step', 'need', 'range', 'sha'] as const;
+const KEYS = ['project', 'worktree', 'review', 'file', 'side', 'lines', 'thread', 'commit', 'round', 'compare', 'view', 'step', 'need', 'hunk', 'range', 'sha'] as const;
 
 /**
  * Every key that belongs to the open review (its file position, filters, views). Spread it into any patch that opens,
  * leaves or deletes a review, so nothing of one review leaks into the next: `navigate` merges into the current route.
  */
 export const REVIEW_SCOPED = {
-  file: undefined, side: undefined, lines: undefined, thread: undefined, commit: undefined, round: undefined, compare: undefined, view: undefined, step: undefined, need: undefined,
+  file: undefined, side: undefined, lines: undefined, thread: undefined, commit: undefined, round: undefined, compare: undefined, view: undefined, step: undefined, need: undefined, hunk: undefined,
   range: undefined, sha: undefined,
 } as const satisfies Route;
 
@@ -25,7 +27,7 @@ export const REVIEW_SCOPED = {
 export const NEW_REVIEW_CLOSED = { view: undefined, range: undefined, sha: undefined } as const satisfies Route;
 
 /** Leaves the open file position (file, lines, side, focused thread) and nothing else: filters, views, the pane tab and the guided step stay. */
-export const LEAVE_FILE = { file: undefined, lines: undefined, side: undefined, thread: undefined } as const satisfies Route;
+export const LEAVE_FILE = { file: undefined, lines: undefined, side: undefined, thread: undefined, hunk: undefined } as const satisfies Route;
 
 const COMPARE_RE = /^([1-9]\d*)\.\.([1-9]\d*)$/;
 
@@ -44,6 +46,7 @@ export function parseRoute(search: string): Route {
     if (k === 'side' && v !== 'old' && v !== 'new') continue;
     if (k === 'view' && v !== 'new' && v !== 'threads' && v !== 'history' && v !== 'guided' && v !== 'inbox' && v !== 'overview') continue;
     if (k === 'need' && v !== 'needs-you' && v !== 'unsent' && v !== 'waiting') continue;
+    if (k === 'hunk' && v !== 'undecided') continue;
     if (k === 'step' && !/^(g[1-9]\d*|other)$/.test(v)) continue;
     if (k === 'lines' && !/^\d+(-\d+)?$/.test(v)) continue;
     if (k === 'round' && !/^[1-9]\d*$/.test(v)) continue;

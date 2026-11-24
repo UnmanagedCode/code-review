@@ -8,7 +8,7 @@ import { ctxValue } from '@/test/renderCtx';
 import { stubFetch } from '@/test/stubFetch';
 import { noteCleared, useClearedGroups } from './clearedGroups';
 import { useGroupActions } from './groups';
-import { ReviewProvider } from './reviewContext';
+import { ReviewProvider } from '@/test/reviewProvider';
 
 const setup = () => {
   const value = ctxValue();

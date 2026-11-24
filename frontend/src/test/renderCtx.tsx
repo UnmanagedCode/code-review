@@ -2,7 +2,8 @@ import { render } from '@testing-library/react';
 import type { ReactElement } from 'react';
 import { vi } from 'vitest';
 import type { FileDiffState } from '@/state/fileDiff';
-import { ReviewProvider, type ReviewCtx } from '@/state/reviewContext';
+import type { ReviewCtx } from '@/state/reviewContext';
+import { ReviewProvider } from './reviewProvider';
 import { diffFile, fileState, review } from './fixtures';
 
 export function ctxValue(over: Partial<ReviewCtx> = {}): ReviewCtx {

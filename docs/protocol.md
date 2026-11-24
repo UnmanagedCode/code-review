@@ -241,6 +241,7 @@ The page keeps its state in the query string (`?…`, never the hash) and writes
 | `side` | `old` or `new`, for `lines` (default `new`) |
 | `lines` | `10` or `10-20`: highlight, scroll to, and expand context to reach it |
 | `thread` | Focused thread: scrolled to, marked read |
+| `hunk` | With `file`: `undecided` lands on that file's first pending hunk (focused, scrolled under the header) once per arrival; any other value is dropped by the parser. A routed `thread` or `lines` wins. Overview's **Review next undecided hunk** writes it. Cleared by leaving the file, by a file change and by a review-scoped reset |
 | `commit` | Range reviews: commit-filter view (read-only) |
 | `round` | Range reviews: past-round view (read-only), a positive integer; ignored with `commit`, dropped when it names the current round or a later one. Focusing a thread there marks nothing read |
 | `compare` | Range reviews: round comparison (read-only), `A..B` of positive integers. Ignored with `commit`; beats `round` (which is dropped); dropped when the review is not a range review, `A` ≥ `B`, or `B` is past the current round. There `side=old` means round A's lines and `new` round B's |

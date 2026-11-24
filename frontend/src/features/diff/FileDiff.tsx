@@ -1,4 +1,4 @@
-import { ArrowLeftIcon, ChevronLeftIcon, ChevronRightIcon, MessageSquarePlusIcon } from 'lucide-react';
+import { ArrowLeftIcon, ChevronLeftIcon, ChevronRightIcon, KeyboardIcon, MessageSquarePlusIcon } from 'lucide-react';
 import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode, type Ref } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -7,17 +7,22 @@ import { decorateRows } from '@/lib/decorate';
 import { collapseRows, type Row } from '@/lib/diffRows';
 import { languageFor } from '@/lib/highlight';
 import { onFile, onLines, rangeLabel, rangeMarks } from '@/lib/ranges';
-import { navigate, parseLines, useRoute } from '@/lib/route';
+import { parseLines, useRoute } from '@/lib/route';
 import { lineOn, selectionTouches, type Selection } from '@/lib/selection';
 import { pairLine, splitRows, type SplitRow as SplitRowT } from '@/lib/splitRows';
 import type { DiffFile, DiffLine, Side, TextHunk, Thread } from '@/lib/types';
 import { cn } from '@/lib/utils';
+import { TOUCH_QUERY } from '@/lib/textEntry';
+import { useMediaQuery, WIDE_QUERY } from '@/lib/useMediaQuery';
 import { isWhitespaceOnly } from '@/lib/whitespace';
 import { useDiffPrefs } from '@/state/diffPrefs';
 import { useDropped } from '@/state/dropped';
 import { useReviewCtx } from '@/state/reviewContext';
 import { CodeGitFileLink } from '@/features/common/CodeGitLink';
 import { Empty, ErrorState, Loading } from '@/features/common/States';
+import { JumpBar, type HunkStepper } from '@/features/nav/JumpBar';
+import { useJumpNav } from '@/features/nav/jumpNavContext';
+import { Tip } from '@/features/nav/Tip';
 import { Composer } from '@/features/threads/Composer';
 import { CitedExcerpt } from './CitedExcerpt';
 import { CompareNote } from './CompareNote';
@@ -31,6 +36,7 @@ import { SettledThread } from './SettledThread';
 import { SplitRow } from './SplitRow';
 import { useCollapse } from './useCollapse';
 import { useDiffView, type DiffView } from './useDiffView';
+import { useHunkStepper } from './useHunkStepper';
 import { useLineSelection } from './useLineSelection';
 import { useTokenizer } from './useTokenizer';
 import { ViewToggle } from './ViewToggle';
@@ -38,29 +44,54 @@ import { ViewToggle } from './ViewToggle';
 export const CHUNK_ROWS = 1500;
 const byId = (a: Thread, b: Thread) => a.id.localeCompare(b.id, undefined, { numeric: true });
 
-function FileHeader({ ref, file, files, onBack, extra, view, options, onComment }: { ref?: Ref<HTMLDivElement>; file: DiffFile; files: { path: string }[]; onBack?: () => void; extra?: ReactNode; view?: { chosen: DiffView; choose: (v: DiffView) => void }; options: boolean; onComment?: () => void }) {
+function FileHeader({ ref, file, onBack, extra, view, options, onComment, hunk }: { ref?: Ref<HTMLDivElement>; file: DiffFile; onBack?: () => void; extra?: ReactNode; view?: { chosen: DiffView; choose: (v: DiffView) => void }; options: boolean; onComment?: () => void; hunk?: HunkStepper }) {
   const { round, compare } = useReviewCtx();
-  const i = files.findIndex((f) => f.path === file.path);
-  const go = (path: string) => navigate({ file: path, lines: undefined, side: undefined, thread: undefined });
-  return (
-    <div ref={ref} className="sticky top-0 z-10 flex flex-wrap items-center gap-2 border-b bg-background px-3 py-2">
-      {onBack && <Button variant="ghost" size="icon-sm" aria-label="Back to files" onClick={onBack}><ArrowLeftIcon /></Button>}
-      <div className="min-w-0 flex-1 basis-24">
-        <p className="truncate font-mono text-sm font-medium" title={file.path}>{file.path}</p>
-        {file.oldPath && <p className="truncate font-mono text-xs text-muted-foreground">renamed from {file.oldPath}</p>}
-      </div>
+  const { files, overlay } = useJumpNav();
+  const touch = useMediaQuery(TOUCH_QUERY);
+  const wide = useMediaQuery(WIDE_QUERY);
+  // Where the badges and counts sit: beside the path on a wide screen, under it on a narrow one, so the file stepper stays on the path line.
+  const meta = (
+    <>
       {round !== undefined && <Badge variant="info">round {round} · read-only</Badge>}
       {compare && <Badge variant="info">round {compare.from} → {compare.to} · read-only</Badge>}
       <Badge variant="outline">{file.status}</Badge>
       <span className="text-xs"><span className="text-success">+{file.additions}</span> <span className="text-destructive">−{file.deletions}</span></span>
-      <FileVerdict file={file} />
-      <CodeGitFileLink file={file} />
-      {onComment && <Button variant="ghost" size="icon-sm" aria-label="Comment on file" title="Comment on file" onClick={onComment}><MessageSquarePlusIcon /></Button>}
-      {view && <ViewToggle view={view.chosen} onChange={view.choose} />}
+    </>
+  );
+  // The secondary controls share the path line on a wide screen (keeping the second row for the review's own controls); on a narrow one they wrap with the actions.
+  const secondary = (
+    <>
       {options && <DiffOptions />}
-      <Button variant="ghost" size="icon-sm" aria-label="Previous file" disabled={i <= 0} onClick={() => go(files[i - 1].path)}><ChevronLeftIcon /></Button>
-      <Button variant="ghost" size="icon-sm" aria-label="Next file" disabled={i < 0 || i >= files.length - 1} onClick={() => go(files[i + 1].path)}><ChevronRightIcon /></Button>
-      {extra}
+      {!touch && <Tip label="Keyboard shortcuts" id="shortcuts"><Button variant="ghost" size="icon-sm" aria-label="Keyboard shortcuts" onClick={() => overlay.setOpen(true)}><KeyboardIcon /></Button></Tip>}
+    </>
+  );
+  return (
+    <div ref={ref} className="sticky top-0 z-10 flex flex-col border-b bg-background">
+      <div className="flex flex-wrap items-center gap-2 px-3 pt-2 pb-1">
+        {onBack && <Tip label="Back to files"><Button variant="ghost" size="icon-sm" aria-label="Back to files" onClick={onBack}><ArrowLeftIcon /></Button></Tip>}
+        <div className="min-w-0 flex-1 basis-24">
+          <p className="truncate font-mono text-sm font-medium" title={file.path}>{file.path}</p>
+          {file.oldPath && <p className="truncate font-mono text-xs text-muted-foreground">renamed from {file.oldPath}</p>}
+          {!wide && <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">{meta}</div>}
+        </div>
+        {wide && meta}
+        <div className="flex shrink-0 items-center gap-0.5">
+          <Tip label="Previous file" id="prev-file"><Button variant="ghost" size="icon-sm" aria-label="Previous file" disabled={!files.canStep(-1) || files.index < 0} onClick={() => files.step(-1)}><ChevronLeftIcon /></Button></Tip>
+          {files.index >= 0 && <span className="px-0.5 text-xs whitespace-nowrap text-muted-foreground">File {files.index + 1} of {files.total}</span>}
+          <Tip label="Next file" id="next-file"><Button variant="ghost" size="icon-sm" aria-label="Next file" disabled={!files.canStep(1) || files.index < 0} onClick={() => files.step(1)}><ChevronRightIcon /></Button></Tip>
+        </div>
+        {wide && secondary}
+      </div>
+      <div className="flex flex-wrap items-center gap-2 px-3 pt-1 pb-2">
+        <JumpBar hunk={hunk} />
+        <span className="flex-1" />
+        <FileVerdict file={file} />
+        {onComment && <Tip label="Comment on file"><Button variant="ghost" size="sm" aria-label="Comment on file" onClick={onComment}><MessageSquarePlusIcon />Comment</Button></Tip>}
+        <CodeGitFileLink file={file} />
+        {view && <ViewToggle view={view.chosen} onChange={view.choose} />}
+        {!wide && secondary}
+        {extra}
+      </div>
     </div>
   );
 }
@@ -113,6 +144,8 @@ export function FileDiff({ onBack, extra }: { onBack?: () => void; extra?: React
   const visible = useMemo(() => collapseRows(rows, (id) => collapse.collapsed.has(`h:${id}`)), [rows, collapse.collapsed]);
   const sel = useLineSelection(visible, textFile && !ctx.readOnly, resetKey);
   selRef.current = sel.selection;
+  const headerRef = useRef<HTMLDivElement>(null);
+  const stepper = useHunkStepper({ file: file ?? null, textFile, rows: visible, limit, setLimit, headerRef, gridRef: sel.grid });
   const marks = useMemo(() => rangeMarks(file?.threads ?? [], route.thread), [file, route.thread]);
   const tokenize = useTokenizer(true);
   const lang = file ? languageFor(file.path) : null;
@@ -142,7 +175,6 @@ export function FileDiff({ onBack, extra }: { onBack?: () => void; extra?: React
   // clear of the header (its height varies as it wraps).
   // Keyed on the composer being shown, so it also runs when the composer reappears (writes back on after a read-only view).
   const composingFile = !!file && composingOn === file.path && !ctx.readOnly;
-  const headerRef = useRef<HTMLDivElement>(null);
   const fileComposerRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const el = fileComposerRef.current;
@@ -270,8 +302,8 @@ export function FileDiff({ onBack, extra }: { onBack?: () => void; extra?: React
     <div ref={diffView.paneRef} aria-busy={switching || undefined} inert={switching || undefined} className={cn('flex min-w-0 flex-col', switching && 'opacity-60')}>
       <FileHeader
         ref={headerRef}
-        file={file} files={ctx.files} onBack={onBack} extra={extra} view={textFile && diffView.available ? diffView : undefined} options={textFile}
-        onComment={enabled ? () => setComposingOn(file.path) : undefined}
+        file={file} onBack={onBack} extra={extra} view={textFile && diffView.available ? diffView : undefined} options={textFile}
+        onComment={enabled ? () => setComposingOn(file.path) : undefined} hunk={stepper.hunk}
       />
       {(fileThreads.length > 0 || fileTombstones.length > 0 || composingFile) && (
         <section aria-label="File threads" className="flex flex-col gap-2 border-b px-3 py-2 text-sm">
@@ -288,11 +320,19 @@ export function FileDiff({ onBack, extra }: { onBack?: () => void; extra?: React
       )}
       {textFile && (
         <div ref={sel.grid} role="grid" aria-label={`Changes in ${file.path}`} aria-multiselectable className="font-mono text-xs leading-5 pointer-coarse:leading-7">
-          {blocks.map((block, bi) => (
-            <div key={block[0].key} role="rowgroup" className={cn(!split && 'overflow-x-auto', '[contain-intrinsic-size:auto_400px] [content-visibility:auto]')}>
-              {block.map((r) => render(r, bi))}
-            </div>
-          ))}
+          {blocks.map((block, bi) => {
+            const first = block[0];
+            const hunk = first.kind === 'hunk' && first.hunk.kind === 'text' ? first.hunk : null;
+            const at = hunk ? stepper.hunkIds.indexOf(hunk.id) : -1;
+            return (
+              <div
+                key={first.key} role="rowgroup" className={cn(!split && 'overflow-x-auto', '[contain-intrinsic-size:auto_400px] [content-visibility:auto]', hunk && 'focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring')}
+                {...(hunk && { 'data-hunk-id': hunk.id, tabIndex: -1, 'aria-label': `Hunk ${at + 1} of ${stepper.hunkIds.length}: ${hunk.header}` })}
+              >
+                {block.map((r) => render(r, bi))}
+              </div>
+            );
+          })}
           {visible.length > limit && (
             <div className="p-3">
               <Button variant="outline" size="sm" onClick={() => setLimit(limit + CHUNK_ROWS)}>Show next {CHUNK_ROWS} lines ({visible.length - limit} left)</Button>

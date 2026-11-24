@@ -6,7 +6,7 @@ import { refusal, review } from '@/test/fixtures';
 import { sampleGuide } from '@/test/guideWorld';
 import { ctxValue, renderInReview } from '@/test/renderCtx';
 import { resetInFlight } from '@/state/submit';
-import { ReviewProvider } from '@/state/reviewContext';
+import { ReviewProvider } from '@/test/reviewProvider';
 import { stubFetch } from '@/test/stubFetch';
 import { GuideMeButton } from '@/features/guide/GuideMeButton';
 import { SubmitControls } from './SubmitControls';

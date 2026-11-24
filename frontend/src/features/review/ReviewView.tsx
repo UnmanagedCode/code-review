@@ -19,6 +19,8 @@ import { Empty, ErrorState, Loading } from '@/features/common/States';
 import { FileDiff } from '@/features/diff/FileDiff';
 import { DesktopLayout, PhoneLayout } from '@/features/layout/layouts';
 import { GuideStepView } from '@/features/guide/GuideStepView';
+import { Tip } from '@/features/nav/Tip';
+import { JumpNavProvider } from '@/features/nav/JumpNavProvider';
 import { OverviewPage } from '@/features/overview/OverviewPage';
 import { useLastViewed } from '@/state/lastViewed';
 import { paneTab, ReviewPane, UnreadBadge } from './ReviewPane';
@@ -34,9 +36,11 @@ const asFileState = (f: { path: string; oldPath: string | null; status: FileStat
 /** Phone: the open file's way to the pane's Threads tab (the pane and the diff never share the screen there). */
 function PhoneThreadsButton() {
   return (
-    <Button variant="outline" size="sm" onClick={() => navigate({ ...LEAVE_FILE, view: 'threads' })}>
-      <MessagesSquareIcon />Threads <UnreadBadge />
-    </Button>
+    <Tip label="Open the Threads tab">
+      <Button variant="outline" size="sm" onClick={() => navigate({ ...LEAVE_FILE, view: 'threads' })}>
+        <MessagesSquareIcon />Threads <UnreadBadge />
+      </Button>
+    </Tip>
   );
 }
 
@@ -135,8 +139,10 @@ export function ReviewView({ id, chrome }: { id: string; chrome?: ReactNode }) {
       reviewThreads: past ? past.data?.reviewThreads ?? [] : detail.reviewThreads,
       threadCounts: past ? past.data?.counts ?? NO_THREADS : detail.review.counts.threads,
     }}>
-      {chrome}
-      <Body />
+      <JumpNavProvider>
+        {chrome}
+        <Body />
+      </JumpNavProvider>
     </ReviewProvider>
   );
 }

@@ -30,7 +30,7 @@ export function SettledThread({ thread, collapsed, toggleable, onToggle, note }:
           {thread.disposition && <Badge variant="success">{thread.disposition}</Badge>}
         </Button>
       )}
-      <div id={id} hidden={collapsed}><ThreadCard thread={thread} note={note} /></div>
+      <div id={id} hidden={collapsed}><ThreadCard thread={thread} inDiff note={note} /></div>
     </div>
   );
 }

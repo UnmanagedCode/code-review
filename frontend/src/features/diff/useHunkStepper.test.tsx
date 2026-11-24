@@ -12,7 +12,7 @@ import { diffFile, fileState, guideGroup, guideView, hunk, lines, message, revie
 import { renderDiff, renderInReview } from '@/test/renderCtx';
 import { stubFetch } from '@/test/stubFetch';
 import { FileDiff } from './FileDiff';
-import { hunkAt, nextHunk, prevHunk } from './useHunkStepper';
+import { hunkAt, nextHunk, prevHunk, stepTarget } from './useHunkStepper';
 
 vi.mock('sonner', () => ({ toast: Object.assign(vi.fn(), { error: vi.fn() }) }));
 type ToastArgs = [string, { action?: { label: string; onClick: () => void } }?];
@@ -62,11 +62,38 @@ test('hunkAt, nextHunk and prevHunk read the tops against the header edge', () =
   expect(hunkAt([101, 500], 100)).toBe(0);
   expect(nextHunk([100, 500, 900], 100)).toBe(1);
   expect(nextHunk([102, 500], 100)).toBe(1);
-  expect(nextHunk([100, 500, 900], 100, 1)).toBe(2);
   expect(nextHunk([100, 500], 600)).toBe(-1);
   expect(prevHunk([-300, -50, 400], 100)).toBe(1);
   expect(prevHunk([100, 500], 100)).toBe(-1);
   expect(prevHunk([-300, 100, 500], 100)).toBe(0);
+});
+
+// Invariant: with a hunk focused a step moves by index, one hunk at a time, never back over hunks the page could not scroll to the header; with none focused it reads the geometry.
+test('stepTarget steps by the focused hunk and clamps; k returns to a scrolled-past hunk first', () => {
+  const fits = [150, 400, 700]; // every hunk already below the header: nothing can scroll
+  expect(stepTarget(fits, 100, -1, 1)).toBe(0);
+  expect(stepTarget(fits, 100, 0, 1)).toBe(1);
+  expect(stepTarget(fits, 100, 2, 1)).toBe(-1);
+  expect(stepTarget(fits, 100, 2, -1)).toBe(1);
+  expect(stepTarget(fits, 100, 0, -1)).toBe(-1);
+  expect(stepTarget([-300, -50, 400], 100, 1, -1)).toBe(1);
+  expect(stepTarget([-300, 100, 400], 100, 1, -1)).toBe(0);
+});
+
+// Invariant: when every hunk fits the viewport (nothing scrolls), j walks 1 → 2 → 3 and stops, k walks back and stops, and the chevrons disable at the ends.
+test('j and k step through hunks of a file that fits the viewport without bouncing', async () => {
+  Element.prototype.scrollIntoView = () => {};
+  tops = { h1: 150, h2: 400, h3: 700 };
+  mount('?file=src/a.ts');
+  const label = () => (document.activeElement as HTMLElement).getAttribute('aria-label')!.split(':')[0];
+  const next = () => screen.getByRole('button', { name: 'Next hunk' }) as HTMLButtonElement;
+  const prev = () => screen.getByRole('button', { name: 'Previous hunk' }) as HTMLButtonElement;
+  for (const want of ['Hunk 1 of 3', 'Hunk 2 of 3', 'Hunk 3 of 3', 'Hunk 3 of 3']) { await keys('j'); expect(label()).toBe(want); }
+  await waitFor(() => expect(next().disabled).toBe(true));
+  expect(prev().disabled).toBe(false);
+  for (const want of ['Hunk 2 of 3', 'Hunk 1 of 3', 'Hunk 1 of 3']) { await keys('k'); expect(label()).toBe(want); }
+  await waitFor(() => expect(prev().disabled).toBe(true));
+  expect(next().disabled).toBe(false);
 });
 
 // Invariant: j focuses the hunk region (not its Accept button) below the sticky header, k from the middle of a hunk returns to that hunk's start, and neither wraps.

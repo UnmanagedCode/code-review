@@ -17,10 +17,22 @@ export function hunkAt(tops: number[], line: number): number {
   tops.forEach((t, i) => { if (t <= line + SLOP) at = i; });
   return at;
 }
-/** The first hunk wholly below `line`, skipping `skip`; -1 when none. */
-export const nextHunk = (tops: number[], line: number, skip = -1): number => tops.findIndex((t, i) => t > line + SLOP && i !== skip);
+/** The first hunk wholly below `line`; -1 when none. */
+export const nextHunk = (tops: number[], line: number): number => tops.findIndex((t) => t > line + SLOP);
 /** The last hunk that starts above `line`, so from the middle of a hunk this is its own start; -1 when none. */
 export const prevHunk = (tops: number[], line: number): number => tops.findLastIndex((t) => t < line - SLOP);
+
+/**
+ * The hunk a step goes to, or -1 at an end. With a hunk holding focus (`active` ≥ 0) it steps by index, so it can never
+ * bounce between hunks the page cannot scroll to the header; `k` first returns to the focused hunk's own start when
+ * the view has scrolled past it. With none focused it reads the geometry.
+ */
+export function stepTarget(tops: number[], line: number, active: number, dir: 1 | -1): number {
+  if (active < 0) return dir === 1 ? nextHunk(tops, line) : prevHunk(tops, line);
+  if (dir === 1) return active < tops.length - 1 ? active + 1 : -1;
+  if (tops[active] < line - SLOP) return active;
+  return active > 0 ? active - 1 : -1;
+}
 
 const WORD: Record<Verdict, string> = { accepted: 'accepted', rejected: 'rejected', pending: 'cleared' };
 
@@ -53,7 +65,8 @@ export function useHunkStepper({ file, textFile, rows, limit, setLimit, headerRe
 
   const measure = () => {
     const t = tops(), l = line();
-    const next = { k: hunkAt(t, l) + 1, prev: prevHunk(t, l) !== -1, next: nextHunk(t, l, activeIndex()) !== -1 };
+    const a = activeIndex();
+    const next = { k: hunkAt(t, l) + 1, prev: stepTarget(t, l, a, -1) !== -1, next: stepTarget(t, l, a, 1) !== -1 };
     setPos((p) => (p.k === next.k && p.prev === next.prev && p.next === next.next ? p : next));
   };
 
@@ -82,7 +95,7 @@ export function useHunkStepper({ file, textFile, rows, limit, setLimit, headerRe
 
   const step = (dir: 1 | -1) => {
     const t = tops(), l = line();
-    const i = dir === 1 ? nextHunk(t, l, activeIndex()) : prevHunk(t, l);
+    const i = stepTarget(t, l, activeIndex(), dir);
     if (i === -1) return false;
     goTo(i);
   };
@@ -93,9 +106,11 @@ export function useHunkStepper({ file, textFile, rows, limit, setLimit, headerRe
     const scroller: HTMLElement | Window = headerRef.current?.closest('main') ?? window;
     let frame = 0;
     const onScroll = () => { if (!frame) frame = requestAnimationFrame(() => { frame = 0; measure(); }); };
+    const grid = gridRef.current;
     scroller.addEventListener('scroll', onScroll, { passive: true });
+    grid?.addEventListener('focusin', onScroll);
     measure();
-    return () => { scroller.removeEventListener('scroll', onScroll); if (frame) cancelAnimationFrame(frame); };
+    return () => { scroller.removeEventListener('scroll', onScroll); grid?.removeEventListener('focusin', onScroll); if (frame) cancelAnimationFrame(frame); };
   }, [textFile, file?.path, hunkIds.join(), limit]);
 
   // `hunk=undecided` lands on the first pending hunk once per arrival; a routed thread or lines win. Not on the previous

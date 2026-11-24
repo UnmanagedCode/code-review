@@ -15,8 +15,8 @@ function Stepper({ noun, label, tinted, prev, next }: {
     <div role="group" aria-label={noun} className={cn('inline-flex items-center gap-0.5 rounded-md border pl-2', tinted && 'border-primary/40 bg-primary/10')}>
       {tinted && <span aria-hidden className="size-1.5 rounded-full bg-primary" />}
       <span aria-live="polite" className="px-1 text-xs whitespace-nowrap">{label}</span>
-      <Tip label={`Previous ${noun}`} id={prev.id}><Button variant="ghost" size="icon-sm" className="size-7" aria-label={`Previous ${noun}`} disabled={prev.disabled} onClick={prev.go}><ChevronUpIcon /></Button></Tip>
-      <Tip label={`Next ${noun}`} id={next.id}><Button variant="ghost" size="icon-sm" className="size-7" aria-label={`Next ${noun}`} disabled={next.disabled} onClick={next.go}><ChevronDownIcon /></Button></Tip>
+      <Tip label={`Previous ${noun}`} id={prev.id}><Button variant="ghost" size="icon-sm" className="size-6" aria-label={`Previous ${noun}`} disabled={prev.disabled} onClick={prev.go}><ChevronUpIcon /></Button></Tip>
+      <Tip label={`Next ${noun}`} id={next.id}><Button variant="ghost" size="icon-sm" className="size-6" aria-label={`Next ${noun}`} disabled={next.disabled} onClick={next.go}><ChevronDownIcon /></Button></Tip>
     </div>
   );
 }

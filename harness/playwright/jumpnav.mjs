@@ -37,8 +37,11 @@ const shotter = (page) => async (name) => {
   await page.screenshot({ path: file, animations: 'disabled' });
   console.log(`screenshot: ${file}`);
 };
+// About a fifth of a 844px-tall phone: the path line, the steppers, and the actions on two wrapped lines.
+const PHONE_HEADER_MAX = 190;
 const HEADER = 'div.sticky.top-0.z-10';
 const histLen = (page) => page.evaluate(() => history.length);
+const headerHeight = (page) => page.locator(HEADER).evaluate((el) => Math.round(el.getBoundingClientRect().height));
 const blur = (page) => page.evaluate(() => document.activeElement instanceof HTMLElement && document.activeElement.blur());
 /** Presses `key` with focus on the page body, and waits for the app to settle. */
 const press = async (page, key) => { await page.keyboard.press(key); await page.waitForTimeout(250); };
@@ -75,6 +78,10 @@ try {
     await page.getByRole('button', { name: 'Comment on file' }).waitFor();
     assert.ok(await page.getByRole('button', { name: /^Diff options/ }).textContent().then((t) => /Options/.test(t)), 'Options is labelled');
     assert.ok(await page.getByText(/^6 open threads$/).count(), 'the thread stepper counts the six open threads');
+    // Two rows at 1280px with open threads (a third row appears when the steppers push the controls onto a new line).
+    const desktopH = await headerHeight(page);
+    console.log(`header height at 1280px: ${desktopH}px`);
+    assert.ok(desktopH <= 100, `the header stays two rows at 1280px (${desktopH}px)`);
     await shot('stepper-desktop');
 
     // 2. n visits the needs-you threads first, in place order, then the rest; history grows only on file changes.
@@ -126,6 +133,18 @@ try {
     await press(page, '['); assert.equal(params(page).file, 'g2.js');
     await press(page, '['); assert.equal(params(page).file, 'g1.js');
     await press(page, ']');
+
+    // 5a. When every hunk fits the viewport nothing scrolls: j walks 1 → 2 and stops, k walks back and stops, and the chevrons follow.
+    await page.setViewportSize({ width: 1280, height: 1600 });
+    await page.goto(q({ file: 'g2.js' }));
+    await page.getByText('File 2 of 3').waitFor();
+    assert.equal(await page.evaluate(() => { const m = document.querySelector('main'); return m.scrollHeight <= m.clientHeight; }), true, 'the whole diff fits');
+    const hunkNo = async () => (await active(page)).label?.match(/^Hunk (\d) of 2/)?.[1];
+    for (const want of ['1', '2', '2']) { await press(page, 'j'); assert.equal(await hunkNo(), want, `j → hunk ${want}`); }
+    assert.equal(await page.getByRole('button', { name: 'Next hunk' }).isDisabled(), true, 'Next hunk is disabled on the last hunk');
+    for (const want of ['1', '1']) { await press(page, 'k'); assert.equal(await hunkNo(), want, `k → hunk ${want}`); }
+    assert.equal(await page.getByRole('button', { name: 'Previous hunk' }).isDisabled(), true);
+    assert.equal(await page.getByRole('button', { name: 'Next hunk' }).isDisabled(), false);
 
     // 5. j and k land a hunk region just under the sticky header (a short window, so the page can scroll that far).
     await page.setViewportSize({ width: 1280, height: 340 });
@@ -228,6 +247,9 @@ try {
     await page.getByText('File 2 of 3').waitFor();
     const clipped = await page.locator(HEADER).evaluate((el) => el.scrollWidth > el.clientWidth);
     assert.equal(clipped, false, 'the header does not scroll sideways at 390px');
+    const phoneH = await headerHeight(page);
+    console.log(`header height at 390px: ${phoneH}px`);
+    assert.ok(phoneH <= PHONE_HEADER_MAX, `the phone header stays compact (${phoneH}px)`);
     await shot('stepper-phone');
     await page.keyboard.press('?');
     const dialog = page.getByRole('dialog', { name: 'Keyboard shortcuts' });
@@ -239,6 +261,15 @@ try {
     await page.getByRole('button', { name: 'Next thread' }).click();
     await page.waitForFunction(() => new URL(location.href).searchParams.has('thread'));
     assert.equal(params(page).thread, g2Old, 'the first needs-you thread (g2 file was answered in step 3)');
+    // A three-digit thread count with a thread routed: the steppers still share one line.
+    for (let i = 0; i < 110; i++) await call('POST', `reviews/${guided}/threads`, { anchor: { kind: 'lines', file: 'g3.js', side: 'new', startLine: 1 + (i % 59), endLine: 1 + (i % 59) }, kind: 'comment', body: `Bulk ${i}` });
+    await page.goto(q({ file: 'g2.js', thread: g2Old }));
+    await page.getByText(/^Thread \d+ of 11\d open$/).waitFor();
+    const bigH = await headerHeight(page);
+    console.log(`header height at 390px with 3-digit thread count: ${bigH}px`);
+    assert.ok(bigH <= PHONE_HEADER_MAX, `the phone header stays compact with a 3-digit count (${bigH}px)`);
+    assert.equal(await page.locator(HEADER).evaluate((el) => el.scrollWidth > el.clientWidth), false);
+    await shot('stepper-phone-routed');
     assert.deepEqual(errors, []);
   }, { headless: true, viewport: { width: 390, height: 844 } });
 

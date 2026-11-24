@@ -13,7 +13,7 @@ import { pairLine, splitRows, type SplitRow as SplitRowT } from '@/lib/splitRows
 import type { DiffFile, DiffLine, Side, TextHunk, Thread } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import { TOUCH_QUERY } from '@/lib/textEntry';
-import { useMediaQuery } from '@/lib/useMediaQuery';
+import { useMediaQuery, WIDE_QUERY } from '@/lib/useMediaQuery';
 import { isWhitespaceOnly } from '@/lib/whitespace';
 import { useDiffPrefs } from '@/state/diffPrefs';
 import { useDropped } from '@/state/dropped';
@@ -48,23 +48,39 @@ function FileHeader({ ref, file, onBack, extra, view, options, onComment, hunk }
   const { round, compare } = useReviewCtx();
   const { files, overlay } = useJumpNav();
   const touch = useMediaQuery(TOUCH_QUERY);
+  const wide = useMediaQuery(WIDE_QUERY);
+  // Where the badges and counts sit: beside the path on a wide screen, under it on a narrow one, so the file stepper stays on the path line.
+  const meta = (
+    <>
+      {round !== undefined && <Badge variant="info">round {round} · read-only</Badge>}
+      {compare && <Badge variant="info">round {compare.from} → {compare.to} · read-only</Badge>}
+      <Badge variant="outline">{file.status}</Badge>
+      <span className="text-xs"><span className="text-success">+{file.additions}</span> <span className="text-destructive">−{file.deletions}</span></span>
+    </>
+  );
+  // The secondary controls share the path line on a wide screen (keeping the second row for the review's own controls); on a narrow one they wrap with the actions.
+  const secondary = (
+    <>
+      {options && <DiffOptions />}
+      {!touch && <Tip label="Keyboard shortcuts" id="shortcuts"><Button variant="ghost" size="icon-sm" aria-label="Keyboard shortcuts" onClick={() => overlay.setOpen(true)}><KeyboardIcon /></Button></Tip>}
+    </>
+  );
   return (
     <div ref={ref} className="sticky top-0 z-10 flex flex-col border-b bg-background">
-      <div className="flex flex-wrap items-center gap-2 px-3 pt-2 pb-1">
+      <div className="flex items-center gap-2 px-3 pt-2 pb-1">
         {onBack && <Tip label="Back to files"><Button variant="ghost" size="icon-sm" aria-label="Back to files" onClick={onBack}><ArrowLeftIcon /></Button></Tip>}
-        <div className="min-w-0 flex-1 basis-24">
+        <div className="min-w-0 flex-1">
           <p className="truncate font-mono text-sm font-medium" title={file.path}>{file.path}</p>
           {file.oldPath && <p className="truncate font-mono text-xs text-muted-foreground">renamed from {file.oldPath}</p>}
+          {!wide && <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">{meta}</div>}
         </div>
-        {round !== undefined && <Badge variant="info">round {round} · read-only</Badge>}
-        {compare && <Badge variant="info">round {compare.from} → {compare.to} · read-only</Badge>}
-        <Badge variant="outline">{file.status}</Badge>
-        <span className="text-xs"><span className="text-success">+{file.additions}</span> <span className="text-destructive">−{file.deletions}</span></span>
-        <div className="flex items-center gap-0.5">
+        {wide && meta}
+        <div className="flex shrink-0 items-center gap-0.5">
           <Tip label="Previous file" id="prev-file"><Button variant="ghost" size="icon-sm" aria-label="Previous file" disabled={!files.canStep(-1) || files.index < 0} onClick={() => files.step(-1)}><ChevronLeftIcon /></Button></Tip>
           {files.index >= 0 && <span className="px-0.5 text-xs whitespace-nowrap text-muted-foreground">File {files.index + 1} of {files.total}</span>}
           <Tip label="Next file" id="next-file"><Button variant="ghost" size="icon-sm" aria-label="Next file" disabled={!files.canStep(1) || files.index < 0} onClick={() => files.step(1)}><ChevronRightIcon /></Button></Tip>
         </div>
+        {wide && secondary}
       </div>
       <div className="flex flex-wrap items-center gap-2 px-3 pt-1 pb-2">
         <JumpBar hunk={hunk} />
@@ -73,9 +89,8 @@ function FileHeader({ ref, file, onBack, extra, view, options, onComment, hunk }
         {onComment && <Tip label="Comment on file"><Button variant="ghost" size="sm" aria-label="Comment on file" onClick={onComment}><MessageSquarePlusIcon />Comment</Button></Tip>}
         <CodeGitFileLink file={file} />
         {view && <ViewToggle view={view.chosen} onChange={view.choose} />}
-        {options && <DiffOptions />}
+        {!wide && secondary}
         {extra}
-        {!touch && <Tip label="Keyboard shortcuts" id="shortcuts"><Button variant="ghost" size="icon-sm" aria-label="Keyboard shortcuts" onClick={() => overlay.setOpen(true)}><KeyboardIcon /></Button></Tip>}
       </div>
     </div>
   );

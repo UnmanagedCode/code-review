@@ -35,3 +35,11 @@ export function buildTree(files: FileState[]): TreeNode {
   sort(root);
   return root;
 }
+
+/** The files in the order the tree shows them: depth-first, directories before files, each by name. */
+export function treeOrder(files: FileState[]): FileState[] {
+  const out: FileState[] = [];
+  const walk = (n: TreeNode) => { for (const c of n.children) { if (c.file) out.push(c.file); walk(c); } };
+  walk(buildTree(files));
+  return out;
+}

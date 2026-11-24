@@ -387,3 +387,51 @@ test('a group card\'s location link routes to its Guided step, and Next unread r
   await user.click(screen.getByRole('button', { name: 'Step 1 · Wire it up' }));
   expect(parseRoute(location.search)).toEqual({ review: 'r-1', view: 'guided', step: 'g1', thread: 't-4' });
 });
+
+const stateful = (id: string, state: Thread['state']) => thread({ id, state });
+
+// Invariant: need=needs-you opens All with open threads of any owner, lists exactly the NEEDS_YOU threads, and its chip count equals the list.
+test('need=needs-you lists exactly the awaiting-human and verify-resolution threads, with a chip counting them', async () => {
+  history.replaceState(null, '', '?review=r-1&view=threads&need=needs-you');
+  const threads = [stateful('t-1', 'awaiting-human'), stateful('t-2', 'verify-resolution'), stateful('t-3', 'unsent'), stateful('t-4', 'awaiting-agent'), stateful('t-5', null)];
+  stubFetch({ 'GET api/reviews/r-1/diff': { review: review(), files: [diffFile({ threads })] } });
+  const files = [fileState({ threads: { open: 5, resolved: 0, outdated: 0 } })];
+  render(<ReviewProvider value={ctxValue({ files, fileDiff: { file: undefined } as never })}><ThreadPanel /></ReviewProvider>);
+  await waitFor(() => expect(screen.getAllByRole('article')).toHaveLength(2));
+  expect(screen.getByRole('tab', { name: /^All/ }).getAttribute('aria-selected')).toBe('true');
+  expect(screen.getByText('Showing: Needs you · 2')).toBeTruthy();
+});
+
+// Invariant: the filter chip's ✕ drops `need` with replace, so the list shows every open thread again and Back is untouched.
+test('the chip\'s ✕ clears need with a replace', async () => {
+  history.replaceState(null, '', '?review=r-1&view=threads&need=unsent');
+  stubFetch({ 'GET api/reviews/r-1/diff': { review: review(), files: [diffFile({ threads: [stateful('t-1', 'unsent'), stateful('t-2', 'awaiting-agent')] })] } });
+  const push = vi.spyOn(history, 'pushState');
+  const files = [fileState({ threads: { open: 2, resolved: 0, outdated: 0 } })];
+  render(<ReviewProvider value={ctxValue({ files, fileDiff: { file: undefined } as never })}><ThreadPanel /></ReviewProvider>);
+  await waitFor(() => expect(screen.getAllByRole('article')).toHaveLength(1));
+  await userEvent.setup().click(screen.getByRole('button', { name: 'Show all threads' }));
+  expect(parseRoute(location.search)).toEqual({ review: 'r-1', view: 'threads' });
+  await waitFor(() => expect(screen.getAllByRole('article')).toHaveLength(2));
+  expect(screen.queryByText(/^Showing:/)).toBeNull();
+  expect(push).not.toHaveBeenCalled();
+});
+
+// Invariant: any other filter choice (tab, status, owner) drops need, so the list never disagrees with the URL.
+test('changing the tab, status or owner clears need', async () => {
+  stubFetch({ 'GET api/reviews/r-1/diff': { review: review(), files: [diffFile({ threads: [stateful('t-1', 'unsent')] })] } });
+  const files = [fileState({ threads: { open: 1, resolved: 0, outdated: 0 } })];
+  const user = userEvent.setup();
+  for (const change of [
+    () => user.click(screen.getByRole('tab', { name: /^Review/ })),
+    () => user.selectOptions(screen.getByLabelText('Status'), 'all'),
+    () => user.selectOptions(screen.getByLabelText('Owner'), 'agents'),
+  ]) {
+    history.replaceState(null, '', '?review=r-1&view=threads&need=unsent');
+    const { unmount } = render(<ReviewProvider value={ctxValue({ files, fileDiff: { file: undefined } as never })}><ThreadPanel /></ReviewProvider>);
+    await screen.findByText(/^Showing:/);
+    await change();
+    expect(parseRoute(location.search).need).toBeUndefined();
+    unmount();
+  }
+});

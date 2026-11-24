@@ -147,7 +147,7 @@ export const annotate = (id, actor, { anchor, kind, severity, body }) => attempt
     humanReadSeq: actor.kind === 'human' ? first.seq : 0, createdAt: now(), messages: [first],
   };
   review.threads.push(thread);
-  return { ok: true, thread: threadView(thread), fileSig: onFile(built) ? liveSig(review, snap, built.file) : null };
+  return { ok: true, thread: threadView(review, thread), fileSig: onFile(built) ? liveSig(review, snap, built.file) : null };
 }));
 
 /** Adds a message. `resolve` closes a thread the caller may close (`mayClose`), otherwise it proposes resolution. */
@@ -178,7 +178,7 @@ export const reply = (id, actor, tid, { body, resolve = false, disposition }) =>
     thread.resolveProposed = true;
   }
   thread.messages.push(msg);
-  return { ok: true, thread: threadView(thread), fileSig: await sigAfterWrite(review, env, thread) };
+  return { ok: true, thread: threadView(review, thread), fileSig: await sigAfterWrite(review, env, thread) };
 }));
 
 /** Human-only: resolve (a finding needs a disposition) or reopen. */
@@ -203,7 +203,7 @@ export const setThreadStatus = (id, tid, { status, disposition } = {}) => attemp
     thread.disposition = null;
     thread.resolution = null;
   }
-  return { ok: true, thread: threadView(thread), fileSig: await sigAfterWrite(review, env, thread) };
+  return { ok: true, thread: threadView(review, thread), fileSig: await sigAfterWrite(review, env, thread) };
 }));
 
 /** Marks one thread, or (no threadId) the whole review, as read by the human. */
@@ -227,7 +227,7 @@ export const listThreads = (id, { status = 'open', file, owner } = {}) => attemp
     && (!owner || (t.openedBy.kind === 'human') === (owner === 'user')));
   const out = [];
   for (const t of picked) {
-    const view = threadView(t);
+    const view = threadView(review, t);
     out.push({
       ...view, anchorLines: t.anchor.kind === 'lines' ? t.anchor.lines : null,
       messages: await Promise.all(t.messages.map(async (m, i) => {

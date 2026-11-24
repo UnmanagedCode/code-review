@@ -95,6 +95,7 @@ export function apiRouter() {
   r.post('/reviews/:id/submissions', route((req) => submissions.composeSubmission(req.params.id)));
   r.post('/reviews/:id/guide', route((req) => submissions.composeGuide(req.params.id)));
   r.post('/reviews/:id/submissions/:sid/result', route((req) => submissions.recordResult(req.params.id, req.params.sid, req.body ?? {})));
+  r.post('/reviews/:id/viewed', route((req) => reviews.markViewed(req.params.id, req.body ?? {})));
   r.post('/reviews/:id/read', route((req) => threads.markRead(req.params.id, req.body ?? {})));
 
   r.get('/events', (req, res) => {

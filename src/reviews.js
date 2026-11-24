@@ -11,6 +11,7 @@ import { followThreads } from './follow.js';
 import { currentRound, authorFor, assertOpen, inReview, viewReview } from './context.js';
 import { summarize, fileStates, hunkView, threadView, targetLabel, liveView, signStates, diffFiles, liveSig } from './rollup.js';
 import { pickRound, roundDiff } from './rounds.js';
+import { openThreadDigests, agentActivity } from './overview.js';
 import { groupsHolding, contradictedGroups, carryGroups, groupCounts, guideView } from './grouping.js';
 
 const KINDS = ['range', 'commit', 'uncommitted'];
@@ -127,7 +128,7 @@ export const openReview = (args, actor) => attempt(() => withLock('create', asyn
   const review = {
     id: store.newId(), project: args.project, worktree, branch, kind, target,
     baseLabel: kind === 'range' ? target.base : null, title: '', status: 'open', createdAt, lastActivityAt: createdAt, createdBy: null,
-    recipient, author: args.author ?? null, seenByHuman: actor.kind === 'human', rev: 0, seq: 0, humanSeq: 0, agentSeq: 0, nextThread: 1, nextSubmission: 1,
+    recipient, author: args.author ?? null, seenByHuman: actor.kind === 'human', rev: 0, seq: 0, humanSeq: 0, agentSeq: 0, lastViewedSeq: 0, nextThread: 1, nextSubmission: 1,
     rounds: [{ n: 1, ...shas, fingerprint: snap.fingerprint, createdAt, submittedAt: null }],
     verdicts: {}, threads: [], droppedThreads: [], submissions: [],
     groups: [], retiredGroups: [], nextGroup: 1, sinceProposal: { dropped: 0, newHunkIds: [] },
@@ -155,8 +156,9 @@ export const getReview = (id) => attempt(() => viewReview(id, async (review, env
   return {
     ok: true, review: summary, files, rounds: review.rounds, submissions: review.submissions,
     guide: guideView(review, snap?.files ?? null),
-    outdatedThreads: review.threads.filter((t) => t.status === 'outdated' && t.anchor.kind !== 'group').map(threadView),
-    reviewThreads: review.threads.filter((t) => t.anchor.kind === 'review').map(threadView),
+    outdatedThreads: review.threads.filter((t) => t.status === 'outdated' && t.anchor.kind !== 'group').map((t) => threadView(review, t)),
+    reviewThreads: review.threads.filter((t) => t.anchor.kind === 'review').map((t) => threadView(review, t)),
+    openThreads: openThreadDigests(review), activity: agentActivity(review),
   };
 }));
 
@@ -167,6 +169,19 @@ export const patchReview = (id, { recipient, title, status } = {}) => attempt(as
     if (recipient !== undefined) review.recipient = recipient || null;
     if (typeof title === 'string' && title.trim()) review.title = title.trim();
     if (status) review.status = status;
+    return { ok: true };
+  });
+  return res.ok ? summaryById(id) : res;
+});
+
+/**
+ * Records that the human has seen the review up to `seq` ("since you last looked"). The marker never moves back or past
+ * the review's own `seq`. Not activity: no seq, no `lastActivityAt`, and an unchanged marker writes nothing.
+ */
+export const markViewed = (id, { seq } = {}) => attempt(async () => {
+  if (!Number.isInteger(seq) || seq < 0) throw invalid('seq must be a non-negative integer');
+  const res = await store.mutate(id, (review) => {
+    review.lastViewedSeq = Math.max(review.lastViewedSeq, Math.min(seq, review.seq));
     return { ok: true };
   });
   return res.ok ? summaryById(id) : res;

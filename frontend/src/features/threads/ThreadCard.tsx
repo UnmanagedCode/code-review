@@ -14,6 +14,7 @@ import { KindBadge } from './KindBadge';
 import { MessageBody } from './MessageBody';
 import { ReplyBox } from './ReplyBox';
 import { ResolveControls } from './ResolveControls';
+import { ThreadStateChip } from './ThreadStateChip';
 
 /**
  * The route that shows `t` in place. An outdated thread's anchor is its last located one, so round `anchor.round` still holds
@@ -25,7 +26,7 @@ import { ResolveControls } from './ResolveControls';
  * pane, beside whatever file is open. A group thread opens its Guided step, whatever its status: groups live only in the
  * current round, so it leaves every read-only view and the open file. `src/links.js` `threadLink` mirrors this.
  */
-export const threadPlace = (t: Thread): Route => {
+export const threadPlace = (t: Pick<Thread, 'id' | 'status' | 'anchor'>): Route => {
   if (t.anchor.kind === 'review') return { view: 'threads', thread: t.id };
   if (t.anchor.kind === 'group') return { ...LEAVE_FILE, commit: undefined, round: undefined, compare: undefined, view: 'guided', step: t.anchor.groupId, thread: t.id };
   if (t.anchor.kind === 'file') {
@@ -103,6 +104,8 @@ export function ThreadCard({ thread, dropped = false, showLocation = false, unpl
       <header className="flex flex-wrap items-center gap-1.5">
         <KindBadge kind={thread.kind} severity={thread.severity} />
         <Badge variant={thread.status === 'open' ? 'warning' : 'secondary'}>{thread.status}</Badge>
+        {/* A proposed resolution has its own chip and banner below. */}
+        {thread.state && thread.state !== 'verify-resolution' && <ThreadStateChip state={thread.state} />}
         {thread.disposition && <Badge variant="success">{thread.disposition}</Badge>}
         {thread.anchor.kind === 'lines' && thread.anchor.drifted && <Badge variant="info" title="Found again by its surrounding context">re-anchored by context</Badge>}
         {thread.unread > 0 && <Badge variant="default">{thread.unread} unread</Badge>}

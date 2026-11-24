@@ -7,8 +7,10 @@ import { renderOpened, renderRollup, renderThreads, renderHunk, renderThreadWrit
 // `ok`; json also drops what only the UI reads (`sig`, `fileSig`).
 const bare = ({ ok, ...rest }) => rest;
 const noSig = ({ sig, ...rest }) => rest;
+// UI-only change markers of a review summary.
+const noMarkers = ({ seq, lastViewedSeq, ...rest }) => rest;
 
-const linked = (review) => ({ ...review, link: reviewLink(review) });
+const linked = (review) => ({ ...noMarkers(review), link: reviewLink(review) });
 const threadsLinked = (res) => {
   const rv = { id: res.review, project: res.project, worktree: res.worktree };
   return res.threads.map((t) => ({ ...t, link: threadLink(rv, t) }));

@@ -6,7 +6,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { BROWSER } from './resolve.mjs';
 import { threadLink } from '../../src/links.js';
-import { seed } from './seed.mjs';
+import { overviewStates, seed } from './seed.mjs';
 
 const { withPage } = await import(BROWSER);
 
@@ -1175,7 +1175,7 @@ try {
 
     // The syntax worktree has one open review: it opens.
     await page.goto(cc({ ccProject: 'app', ccWorktree: 'syntax' }));
-    await page.getByRole('heading', { name: 'Syntax' }).waitFor();
+    await page.getByRole('heading', { level: 1, name: 'Syntax' }).waitFor();
     await page.waitForFunction(() => !location.search.includes('cc'));
     assert.deepEqual(params(page), { project: 'app', worktree: 'syntax', review: syntax });
     await shot('20-menu-one-review');
@@ -1203,16 +1203,16 @@ try {
     // With a review open, cc's navigate to an unknown worktree toasts and keeps the review; to the main checkout it
     // retargets in place (no reload) onto that checkout's one open review.
     await page.goto(q({ review: syntax }));
-    await page.getByRole('heading', { name: 'Syntax' }).waitFor();
+    await page.getByRole('heading', { level: 1, name: 'Syntax' }).waitFor();
     await page.evaluate(() => { window.__noReload = true; });
     const length = await page.evaluate(() => history.length);
     await navigateCc({ ccProject: 'app', ccWorktree: 'gone' });
     await toast('project “app” has no worktree “gone”').waitFor();
     assert.deepEqual(params(page), { project: 'app', worktree: 'feature', review: syntax });
-    assert.ok(await page.getByRole('heading', { name: 'Syntax' }).isVisible(), 'the open review stays');
+    assert.ok(await page.getByRole('heading', { level: 1, name: 'Syntax' }).isVisible(), 'the open review stays');
     await shot('20-menu-retarget-refused');
     await navigateCc({ ccProject: 'app' });
-    await page.getByRole('heading', { name: 'Main checkout tidy-up' }).waitFor();
+    await page.getByRole('heading', { level: 1, name: 'Main checkout tidy-up' }).waitFor();
     assert.deepEqual(params(page), { project: 'app', review: main });
     assert.equal(await page.evaluate(() => window.__noReload), true, 'retargeted without a reload');
     assert.equal(await page.evaluate(() => history.length), length, 'no history entry added');
@@ -1240,7 +1240,7 @@ try {
     await shot('17-inbox');
 
     await row('Main checkout tidy-up').getByRole('link').click();
-    const heading = page.getByRole('heading', { name: 'Main checkout tidy-up' });
+    const heading = page.getByRole('heading', { level: 1, name: 'Main checkout tidy-up' });
     await heading.waitFor();
     assert.deepEqual(params(page), { project: 'app', review: main });
     await page.evaluate(() => window.__emit({ sessionId: 's-rev', project: 'other', worktree: null }));
@@ -1283,6 +1283,169 @@ try {
     await page.unroute(/\/diff\?.*file=c\.js/);
     assert.deepEqual(errors, []);
   }, { headless: true, viewport: { width: 1280, height: 800 } });
+
+  // 22. The overview and the progress strip: every number agrees across the strip, the overview and the filtered Threads list, a
+  // row opens its thread in place, "Review next undecided hunk" opens the expected file, and "since you last looked" shows the
+  // agent's news once, then nothing after a reload, then the next event as it arrives. A phone never scrolls sideways.
+  const { ping } = await overviewStates(world);
+  // The centre (`main`) is the scroller, so the page itself never reads wider: measure `main`, the pills and the overview's button in it.
+  const noSideScroll = async (page, what) => {
+    const { scroll, inner } = await page.evaluate(() => ({ scroll: document.scrollingElement.scrollWidth, inner: window.innerWidth }));
+    assert.ok(scroll <= inner, `${what}: the page scrolls sideways (${scroll} > ${inner})`);
+    const mains = await page.locator('main').evaluateAll((els) => els.map((m) => ({ over: m.scrollWidth - m.clientWidth, cut: [...m.querySelectorAll('button, a')].filter((b) => b.getBoundingClientRect().right > m.getBoundingClientRect().right + 0.5).length })));
+    for (const m of mains) assert.deepEqual(m, { over: 0, cut: 0 }, `${what}: main scrolls sideways or cuts a control off`);
+    const clipped = await page.locator('a[aria-label$="need you"], a[aria-label$="will be sent"], a[aria-label$="waiting on agent"]')
+      .evaluateAll((els, w) => els.filter((e) => e.getBoundingClientRect().right > w).length, inner);
+    assert.equal(clipped, 0, `${what}: a pill is clipped`);
+  };
+  const pillCount = async (page, name) => Number((await page.getByRole('link', { name }).getAttribute('aria-label')).split(' ')[0]);
+  const NEED = /threads? need you$/;
+  const WILL = /threads? will be sent$/;
+
+  // WCAG text contrast of an element's colour over its own and its ancestors' backgrounds (translucent tints composited top-down).
+  const textContrast = (locator) => locator.first().evaluate((el) => {
+    const ctx = Object.assign(document.createElement('canvas'), { width: 1, height: 1 }).getContext('2d', { willReadFrequently: true });
+    const paint = (colors) => { ctx.clearRect(0, 0, 1, 1); for (const c of colors) { ctx.fillStyle = c; ctx.fillRect(0, 0, 1, 1); } return [...ctx.getImageData(0, 0, 1, 1).data.slice(0, 3)]; };
+    const lum = (rgb) => { const [r, g, b] = rgb.map((v) => { v /= 255; return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }); return 0.2126 * r + 0.7152 * g + 0.0722 * b; };
+    const layers = [];
+    for (let n = el; n; n = n.parentElement) { const bg = getComputedStyle(n).backgroundColor; if (bg && bg !== 'rgba(0, 0, 0, 0)' && bg !== 'transparent') layers.unshift(bg); }
+    const [a, b] = [lum(paint([...layers, getComputedStyle(el).color])), lum(paint(layers))];
+    return Math.round(((Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05)) * 100) / 100;
+  });
+
+  await withPage(async (page) => {
+    const errors = watchErrors(page);
+    const shot = shotter(page);
+    const viewed = () => page.waitForResponse((r) => /\/viewed$/.test(r.url()) && r.request().method() === 'POST');
+    const firstLoad = viewed();
+    await page.goto(q({ review: range }));
+    const needs = page.getByRole('region', { name: /^Needs you/ });
+    await needs.waitFor();
+    await firstLoad;
+    const feed = page.getByRole('region', { name: /^What the agent did/ });
+    assert.ok(await feed.getByRole('listitem').count() > 0, 'the first visit lists the agent news');
+    assert.equal(await feed.getByText('Nothing new since you last looked').count(), 0);
+
+    // The numbers agree: strip pill = overview card rows.
+    const need = await pillCount(page, NEED);
+    assert.equal(await needs.getByRole('listitem').count(), need, 'Needs you rows equal the "need you" pill');
+    assert.ok(need > 0);
+    const will = await pillCount(page, WILL);
+    const yours = page.getByRole('region', { name: /^Your threads/ });
+    assert.equal(await yours.getByRole('heading', { name: /^Will be sent/ }).locator('xpath=..').getByRole('listitem').count(), will, '"Will be sent" rows equal the pill');
+    assert.ok(await yours.getByText('Sent with the next Submit round').isVisible());
+    await shot('22-overview');
+
+    // A row opens its thread in place; the card names whose move it is.
+    const row = needs.getByRole('link').first();
+    const chip = (await row.textContent()).includes('Agent says fixed') ? null : 'Needs your reply';
+    await row.click();
+    await page.getByRole('grid').waitFor();
+    assert.ok(params(page).file && params(page).thread, 'the row opens its file and thread');
+    const card = page.locator(`article[aria-label$="thread"]:visible`).filter({ has: page.getByText(chip ?? 'An agent proposes resolving this thread.') }).first();
+    await card.waitFor();
+    await shot('22-row-opens-thread');
+
+    // The "will be sent" pill opens the Threads list filtered to those threads: chip count = pill = list length.
+    await page.getByRole('link', { name: WILL }).click();
+    await page.getByText(/^Showing: Will be sent/).waitFor();
+    assert.equal(params(page).need, 'unsent');
+    await page.getByText(new RegExp(`^Showing: Will be sent · ${will}$`)).waitFor();
+    await page.getByRole('tabpanel').getByRole('article').first().waitFor();
+    assert.equal(await page.getByRole('tabpanel').getByRole('article').count(), will, 'the filtered list length equals the pill');
+    await shot('22-filtered-threads');
+    await page.getByRole('button', { name: 'Show all threads' }).click();
+    assert.equal(params(page).need, undefined);
+
+    // "Review next undecided hunk" opens the first file in tree order that has an undecided hunk.
+    const files = (await world.call('GET', `reviews/${range}`)).files;
+    assert.ok(files.every((f) => !f.path.includes('/')), 'the seeded files are at the root: name order is tree order');
+    const expected = files.map((f) => f).sort((a, b) => a.path.localeCompare(b.path)).find((f) => f.verdicts.pending > 0).path;
+    await page.goto(q({ review: range }));
+    await page.getByRole('button', { name: /Review next undecided hunk/ }).click();
+    await page.waitForURL((u) => new URL(u).searchParams.get('file') === expected);
+    assert.equal(params(page).file, expected);
+    await shot('22-next-undecided');
+
+    // Reload: nothing is new. An agent reply then arrives live and joins the feed.
+    const secondLoad = viewed().catch(() => null);
+    await page.goto(q({ review: range }));
+    await feed.getByText('Nothing new since you last looked').waitFor();
+    await shot('22-nothing-new');
+    await ping('Second look: all good.');
+    await feed.getByText(/replied on/).first().waitFor();
+    assert.equal(await feed.getByText('Nothing new since you last looked').count(), 0);
+    await shot('22-new-event');
+    void secondLoad;
+
+    // The small state text reaches WCAG AA (4.5:1) in both themes: the strip's pills and link, and the state chips.
+    for (const scheme of ['light', 'dark']) {
+      await page.emulateMedia({ colorScheme: scheme });
+      await page.goto(q({ review: range }));
+      await needs.waitFor();
+      const ratios = {
+        'need you pill': await textContrast(page.getByRole('link', { name: NEED })),
+        'will be sent pill': await textContrast(page.getByRole('link', { name: WILL })),
+        'waiting on agent pill': await textContrast(page.getByRole('link', { name: /threads? waiting on agent$/ })),
+        'k undecided link': await textContrast(page.getByRole('link', { name: /undecided →$/ })),
+        'Needs your reply chip': await textContrast(needs.getByText('Needs your reply')),
+        'Agent says fixed chip': await textContrast(needs.getByText('Agent says fixed — verify')),
+      };
+      await page.goto(q({ review: range, view: 'threads', need: 'unsent' }));
+      await page.getByRole('tabpanel').getByRole('article').first().waitFor();
+      ratios['Will be sent chip'] = await textContrast(page.getByRole('tabpanel').getByText('Will be sent', { exact: true }));
+      await page.goto(q({ review: range, view: 'threads', need: 'waiting' }));
+      await page.getByRole('tabpanel').getByRole('article').first().waitFor();
+      ratios['Waiting on agent chip'] = await textContrast(page.getByRole('tabpanel').getByText('Waiting on agent', { exact: true }));
+      console.log(`state text contrast (${scheme}):`, JSON.stringify(ratios));
+      for (const [what, ratio] of Object.entries(ratios)) assert.ok(ratio >= 4.5, `${scheme}: ${what} is ${ratio}:1, below 4.5:1`);
+    }
+    await page.emulateMedia({ colorScheme: 'light' });
+    assert.deepEqual(errors, []);
+  }, { headless: true, viewport: { width: 1280, height: 800 } });
+
+  await withPage(async (page) => {
+    const errors = watchErrors(page);
+    const shot = shotter(page);
+    // The pane with the strip, then the overview behind its link; a row opens its thread and Back returns to the overview.
+    await page.goto(q({ review: range }));
+    await page.getByRole('region', { name: 'Review progress' }).waitFor();
+    await noSideScroll(page, 'the pane');
+    await shot('22-phone-strip');
+    await page.getByRole('link', { name: 'Overview', exact: true }).click();
+    await page.getByRole('region', { name: /^Needs you/ }).waitFor();
+    assert.equal(params(page).view, 'overview');
+    await noSideScroll(page, 'the overview');
+    await shot('22-phone-overview');
+    await page.getByRole('region', { name: /^Needs you/ }).getByRole('link').first().click();
+    await page.getByRole('grid').waitFor();
+    await page.getByRole('button', { name: 'Back to files' }).click();
+    await page.getByRole('region', { name: /^Needs you/ }).waitFor();
+    assert.deepEqual(params(page), { project: 'app', worktree: 'feature', review: range, view: 'overview' });
+    await page.getByRole('button', { name: 'Back to files' }).click();
+    await page.getByRole('tablist', { name: 'Review pane' }).waitFor();
+    // The "need you" pill shows the filtered list on the pane's Threads tab.
+    await page.getByRole('link', { name: NEED }).click();
+    await page.getByText(/^Showing: Needs you/).waitFor();
+    await noSideScroll(page, 'the filtered Threads list');
+    await shot('22-phone-filtered');
+
+    // A long path (the first undecided file, since directories come first) must wrap inside the button, at every narrow width.
+    const longPath = await world.longPath();
+    for (const [width, scheme] of [390, 320, 768].flatMap((w) => ['light', 'dark'].map((c) => [w, c]))) {
+      await page.emulateMedia({ colorScheme: scheme });
+      await page.setViewportSize({ width, height: 844 });
+      await page.goto(q({ review: range, view: 'overview' }));
+      const next = page.getByRole('button', { name: /Review next undecided hunk/ });
+      await next.waitFor();
+      assert.ok((await next.textContent()).includes(longPath), 'the button names the long path');
+      assert.equal(await next.getAttribute('title'), longPath, 'the full path is in the title');
+      await noSideScroll(page, `the overview at ${width}px (${scheme}) with a long path`);
+      await shot(`22-overview-long-path-${width}-${scheme}`);
+    }
+    assert.deepEqual(errors, []);
+  }, { headless: true, viewport: { width: 390, height: 844 } });
+
   console.log('golden path ok');
 } finally {
   await world.close();

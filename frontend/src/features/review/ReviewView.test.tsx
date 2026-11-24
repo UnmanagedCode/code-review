@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, expect, test, vi } from 'vitest';
 import { WIDE_QUERY } from '@/lib/useMediaQuery';
@@ -15,7 +15,7 @@ beforeEach(() => installFakeEventSource());
 function world(status: 'open' | 'closed') {
   const file = diffFile({ threads: [thread()] });
   stubFetch({
-    'GET api/reviews/r-1': { review: review({ status }), files: [fileState()], rounds: [], submissions: [], outdatedThreads: [], reviewThreads: [] },
+    'GET api/reviews/r-1': { review: review({ status }), files: [fileState()], rounds: [], submissions: [], outdatedThreads: [], reviewThreads: [], openThreads: [], activity: [] },
     'GET api/reviews/r-1/diff': (u: URL) => (u.searchParams.has('commit')
       ? { readOnly: true, commit: { sha: 'abc1234', subject: 's' }, files: [{ ...file, threads: [] }] }
       : { review: review({ status }), files: [file] }),
@@ -73,7 +73,7 @@ function twoRounds(roundView: unknown = undefined) {
   const rounds = [1, 2].map((n) => ({ n, headSha: `${n}`.repeat(40), baseSha: 'b'.repeat(40), createdAt: '', submittedAt: null }));
   const then = diffFile({ path: 'old.ts', hunks: [{ ...diffFile().hunks[0], verdict: null }], threads: [thread({ anchor: linesAnchor({ file: 'old.ts' }), laterMessages: 1 })] });
   return stubFetch({
-    'GET api/reviews/r-1': { review: review({ round: 2 }), files: [fileState()], rounds, submissions: [], outdatedThreads: [], reviewThreads: [] },
+    'GET api/reviews/r-1': { review: review({ round: 2 }), files: [fileState()], rounds, submissions: [], outdatedThreads: [], reviewThreads: [], openThreads: [], activity: [] },
     'GET api/reviews/r-1/rounds/1': roundView ?? { readOnly: true, round: rounds[0], files: [fileState({ path: 'old.ts', verdicts: null })], counts: { open: 1, resolved: 0, outdated: 0 }, outdatedThreads: [], reviewThreads: [] },
     'GET api/reviews/r-1/diff': (u: URL) => (u.searchParams.get('round') === '1'
       ? { readOnly: true, round: rounds[0], files: [then] }
@@ -134,7 +134,7 @@ test('a refused round view shows its error in the Files tab, with History still 
 
 test('a closed review in a past-round view says it is closed but offers no Reopen', async () => {
   stubFetch({
-    'GET api/reviews/r-1': { review: review({ round: 2, status: 'closed' }), files: [fileState()], rounds: [1, 2].map((n) => ({ n, headSha: `${n}`.repeat(40), baseSha: 'b'.repeat(40), createdAt: '', submittedAt: null })), submissions: [], outdatedThreads: [], reviewThreads: [] },
+    'GET api/reviews/r-1': { review: review({ round: 2, status: 'closed' }), files: [fileState()], rounds: [1, 2].map((n) => ({ n, headSha: `${n}`.repeat(40), baseSha: 'b'.repeat(40), createdAt: '', submittedAt: null })), submissions: [], outdatedThreads: [], reviewThreads: [], openThreads: [], activity: [] },
     'GET api/reviews/r-1/rounds/1': { readOnly: true, round: { n: 1, headSha: '1'.repeat(40), baseSha: 'b'.repeat(40), createdAt: '', submittedAt: null }, files: [fileState({ verdicts: null })], counts: { open: 0, resolved: 0, outdated: 0 }, outdatedThreads: [], reviewThreads: [] },
     'GET api/reviews/r-1/commits': { commits: [] },
     'GET api/sessions': { sessions: [] },
@@ -152,7 +152,7 @@ function threeRounds(kind: 'range' | 'commit' = 'range', current = 3) {
     ({ ...thread({ anchor: linesAnchor({ side, round }) }), placement, outdatedIn: null });
   const cmpFile = diffFile({ hunks: [{ ...diffFile().hunks[0], verdict: null }], threads: [copy('from', 'old', 1), copy('to', 'new', 3)] });
   return stubFetch({
-    'GET api/reviews/r-1': { review: review({ kind, round: current }), files: [fileState()], rounds, submissions: [], outdatedThreads: [thread({ id: 't-9', status: 'outdated' })], reviewThreads: [] },
+    'GET api/reviews/r-1': { review: review({ kind, round: current }), files: [fileState()], rounds, submissions: [], outdatedThreads: [thread({ id: 't-9', status: 'outdated' })], reviewThreads: [], openThreads: [], activity: [] },
     'GET api/reviews/r-1/compare': (u: URL) => ({
       readOnly: true, from: rounds[Number(u.searchParams.get('from')) - 1], to: rounds[Number(u.searchParams.get('to')) - 1],
       files: [cmpFile], counts: { open: 1, resolved: 0, outdated: 0 }, unplaced: [], reviewThreads: [],
@@ -243,7 +243,7 @@ test('Exit comparison clears the comparison and the file position', async () => 
 test('Retry in the file pane of a failed comparison fetches the comparison again', async () => {
   const rounds = [1, 2].map((n) => ({ n, headSha: `${n}`.repeat(40), baseSha: 'b'.repeat(40), createdAt: '', submittedAt: null }));
   const net = stubFetch({
-    'GET api/reviews/r-1': { review: review({ round: 2 }), files: [fileState()], rounds, submissions: [], outdatedThreads: [], reviewThreads: [] },
+    'GET api/reviews/r-1': { review: review({ round: 2 }), files: [fileState()], rounds, submissions: [], outdatedThreads: [], reviewThreads: [], openThreads: [], activity: [] },
     'GET api/reviews/r-1/compare': refusal('SNAPSHOT_GONE', 410),
     'GET api/sessions': { sessions: [] },
   });
@@ -262,7 +262,7 @@ function twoFiles() {
   const one = { open: 1, resolved: 0, outdated: 0 };
   const b = (id: string) => thread({ id, anchor: linesAnchor({ file: 'src/b.ts', startLine: 3, endLine: 3 }) });
   return stubFetch({
-    'GET api/reviews/r-1': { review: review(), files: [fileState({ threads: one }), fileState({ path: 'src/b.ts', threads: one })], rounds: [], submissions: [], outdatedThreads: [], reviewThreads: [] },
+    'GET api/reviews/r-1': { review: review(), files: [fileState({ threads: one }), fileState({ path: 'src/b.ts', threads: one })], rounds: [], submissions: [], outdatedThreads: [], reviewThreads: [], openThreads: [], activity: [] },
     'GET api/reviews/r-1/diff': (u: URL) => ({
       review: review(),
       files: u.searchParams.get('file') === 'src/b.ts'
@@ -310,7 +310,7 @@ function outdatedWorld(files: ReturnType<typeof diffFile>[], unread = 0) {
   const t9 = thread({ id: 't-9', status: 'outdated', unread, anchor: linesAnchor({ round: 2, startLine: 3, endLine: 3 }) });
   const from = { ...thread({ id: 't-9', anchor: linesAnchor({ side: 'old', round: 2 }) }), placement: 'from', outdatedIn: 3 };
   return stubFetch({
-    'GET api/reviews/r-1': { review: review({ kind: 'range', round: 3 }), files: [fileState()], rounds, submissions: [], outdatedThreads: [t9], reviewThreads: [] },
+    'GET api/reviews/r-1': { review: review({ kind: 'range', round: 3 }), files: [fileState()], rounds, submissions: [], outdatedThreads: [t9], reviewThreads: [], openThreads: [], activity: [] },
     'GET api/reviews/r-1/compare': (u: URL) => ({
       readOnly: true, from: rounds[Number(u.searchParams.get('from')) - 1], to: rounds[Number(u.searchParams.get('to')) - 1],
       files: files.map((f) => ({ ...f, threads: [from] })), counts: { open: 1, resolved: 0, outdated: 0 }, unplaced: [], reviewThreads: [],
@@ -390,7 +390,7 @@ test('jumping from the Outdated tab to an unread outdated thread marks it read',
 test('phone: the pane without a file, the diff with one, and its Threads button lands on the Threads tab', async () => {
   installMedia({ [WIDE_QUERY]: false });
   stubFetch({
-    'GET api/reviews/r-1': { review: review({ unread: 2 }), files: [fileState()], rounds: [], submissions: [], outdatedThreads: [], reviewThreads: [] },
+    'GET api/reviews/r-1': { review: review({ unread: 2 }), files: [fileState()], rounds: [], submissions: [], outdatedThreads: [], reviewThreads: [], openThreads: [], activity: [] },
     'GET api/reviews/r-1/diff': { review: review({ unread: 2 }), files: [diffFile({ threads: [thread()] })] },
     'GET api/sessions': { sessions: [] },
   });
@@ -430,7 +430,7 @@ test('wide: focusing an unread thread posts exactly one read mark, though two ca
   let read = false;
   const t1 = () => thread({ unread: read ? 0 : 1 });
   const net = stubFetch({
-    'GET api/reviews/r-1': () => ({ review: review(), files: [fileState({ sig: read ? 's2' : 's1' })], rounds: [], submissions: [], outdatedThreads: [], reviewThreads: [] }),
+    'GET api/reviews/r-1': () => ({ review: review(), files: [fileState({ sig: read ? 's2' : 's1' })], rounds: [], submissions: [], outdatedThreads: [], reviewThreads: [], openThreads: [], activity: [] }),
     'GET api/reviews/r-1/diff': () => ({ review: review(), files: [diffFile({ sig: read ? 's2' : 's1', threads: [t1()] })] }),
     'GET api/reviews/r-1/commits': { commits: [] },
     'POST api/reviews/r-1/read': () => { read = true; return { review: review() }; },
@@ -451,7 +451,7 @@ test('wide: focusing an unread thread posts exactly one read mark, though two ca
 function guided(over: { status?: 'open' | 'closed' } = {}) {
   const guide = guideView({ groups: [guideGroup({ id: 'g1', title: 'Wire it up', hunks: [{ id: 'h1', file: 'src/a.ts', verdict: 'pending' }] })], ungrouped: [] });
   return stubFetch({
-    'GET api/reviews/r-1': { review: review({ status: over.status ?? 'open' }), files: [fileState()], rounds: [], submissions: [], outdatedThreads: [], reviewThreads: [], guide },
+    'GET api/reviews/r-1': { review: review({ status: over.status ?? 'open' }), files: [fileState()], rounds: [], submissions: [], outdatedThreads: [], reviewThreads: [], openThreads: [], activity: [], guide },
     'GET api/reviews/r-1/diff': { review: review(), files: [diffFile()] },
     'GET api/reviews/r-1/commits': { commits: [] },
     'GET api/sessions': { sessions: [] },
@@ -496,4 +496,116 @@ test('phone: step list without a step, the step with Back to steps, and Back fro
   expect(await screen.findByRole('heading', { name: 'Wire it up', level: 2 })).toBeTruthy();
   // The file you came from is still open.
   expect((await screen.findByRole('button', { name: /^src\/a\.ts/ })).getAttribute('aria-expanded')).toBe('true');
+});
+
+/** A live range review whose changes are at `seq`, last viewed at `lastViewedSeq`. `viewed` answers each viewed write with the summary it would return. */
+function overviewWorld({ seq = 4, lastViewedSeq = 0 }: { seq?: number; lastViewedSeq?: number } = {}) {
+  const rv = review({ seq, lastViewedSeq });
+  return stubFetch({
+    'GET api/reviews/r-1': { review: rv, files: [fileState()], rounds: [], submissions: [], outdatedThreads: [], reviewThreads: [], openThreads: [], activity: [] },
+    'GET api/reviews/r-1/diff': { review: rv, files: [diffFile()] },
+    'GET api/reviews/r-1/commits': { commits: [] },
+    'GET api/sessions': { sessions: [] },
+    'POST api/reviews/r-1/viewed': (_u: URL, init?: RequestInit) => ({ review: review({ seq, lastViewedSeq: Math.max(lastViewedSeq, JSON.parse(String(init?.body)).seq) }) }),
+  });
+}
+const viewedPosts = (net: ReturnType<typeof overviewWorld>) => net.calls.filter((c) => c.method === 'POST' && c.url.pathname.endsWith('/viewed')).map((c) => c.body);
+
+// Invariant: wide, the live review's centre is the overview whenever no file is open, never the "Select a file" empty state.
+test('wide: with no file open the centre is the overview', async () => {
+  installMedia({ [WIDE_QUERY]: true });
+  overviewWorld();
+  history.replaceState(null, '', '?review=r-1');
+  render(<ReviewView id="r-1" />);
+  expect(await screen.findByRole('region', { name: /^Needs you/ })).toBeTruthy();
+  expect(screen.queryByText(/Select a file/)).toBeNull();
+});
+
+test('wide: view=overview shows the overview even where the Guided tab is available', async () => {
+  installMedia({ [WIDE_QUERY]: true });
+  guided();
+  history.replaceState(null, '', '?review=r-1&view=overview');
+  render(<ReviewView id="r-1" />);
+  expect(await screen.findByRole('region', { name: /^Needs you/ })).toBeTruthy();
+  expect(screen.queryByText('Step 1 of 1')).toBeNull();
+});
+
+// Invariant: a past round, a comparison and the commit filter are not the live review, so they keep the empty state.
+test('wide: a past round with no file keeps the empty state, not the overview', async () => {
+  installMedia({ [WIDE_QUERY]: true });
+  twoRounds();
+  history.replaceState(null, '', '?review=r-1&round=1');
+  render(<ReviewView id="r-1" />);
+  expect(await screen.findByText(/Select a file/)).toBeTruthy();
+  expect(screen.queryByRole('region', { name: /^Needs you/ })).toBeNull();
+});
+
+test('wide: the commit filter with no file keeps the empty state, not the overview', async () => {
+  installMedia({ [WIDE_QUERY]: true });
+  world('open');
+  history.replaceState(null, '', '?review=r-1&commit=abc1234');
+  render(<ReviewView id="r-1" />);
+  expect(await screen.findByText(/Select a file/)).toBeTruthy();
+  expect(screen.queryByRole('region', { name: /^Needs you/ })).toBeNull();
+});
+
+// Invariant: on a phone the overview is its own screen behind view=overview; Back (from it, or from a file opened in it) returns to where it was.
+test('phone: view=overview shows the overview, Back to files returns to the pane, and a file opened from it returns to it', async () => {
+  installMedia({ [WIDE_QUERY]: false });
+  overviewWorld();
+  history.replaceState(null, '', '?review=r-1');
+  const { unmount } = render(<ReviewView id="r-1" />);
+  await screen.findByRole('tablist', { name: 'Review pane' });
+  expect(screen.queryByRole('region', { name: /^Needs you/ })).toBeNull();
+  unmount();
+  history.replaceState(null, '', '?review=r-1&view=overview');
+  render(<ReviewView id="r-1" />);
+  const user = userEvent.setup();
+  await user.click(await screen.findByRole('link', { name: /^src\/a\.ts/ }));
+  expect(parseRoute(location.search)).toEqual({ review: 'r-1', view: 'overview', file: 'src/a.ts' });
+  await user.click(await screen.findByRole('button', { name: 'Back to files' }));
+  expect(parseRoute(location.search)).toEqual({ review: 'r-1', view: 'overview' });
+  await user.click(await screen.findByRole('button', { name: 'Back to files' }));
+  expect(parseRoute(location.search)).toEqual({ review: 'r-1' });
+  expect(await screen.findByRole('tablist', { name: 'Review pane' })).toBeTruthy();
+});
+
+// Invariant: the viewed marker is written with the seq the UI loaded, once per loaded seq, only when it is ahead of the marker and the tab is visible.
+test('viewed is posted once with the loaded seq', async () => {
+  installMedia({ [WIDE_QUERY]: true });
+  const net = overviewWorld({ seq: 4, lastViewedSeq: 1 });
+  history.replaceState(null, '', '?review=r-1');
+  render(<ReviewView id="r-1" />);
+  await waitFor(() => expect(viewedPosts(net)).toEqual([{ seq: 4 }]));
+  await screen.findByRole('region', { name: /^Needs you/ });
+  await act(async () => {});
+  expect(viewedPosts(net)).toEqual([{ seq: 4 }]);
+});
+
+test('viewed is not posted when the marker is already at the loaded seq', async () => {
+  installMedia({ [WIDE_QUERY]: true });
+  const net = overviewWorld({ seq: 4, lastViewedSeq: 4 });
+  history.replaceState(null, '', '?review=r-1');
+  render(<ReviewView id="r-1" />);
+  await screen.findByRole('region', { name: /^Needs you/ });
+  await act(async () => {});
+  expect(viewedPosts(net)).toEqual([]);
+});
+
+test('viewed waits for the tab to be visible', async () => {
+  installMedia({ [WIDE_QUERY]: true });
+  const net = overviewWorld({ seq: 4, lastViewedSeq: 0 });
+  let state: DocumentVisibilityState = 'hidden';
+  Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => state });
+  try {
+    history.replaceState(null, '', '?review=r-1');
+    render(<ReviewView id="r-1" />);
+    await screen.findByRole('region', { name: /^Needs you/ });
+    expect(viewedPosts(net)).toEqual([]);
+    state = 'visible';
+    document.dispatchEvent(new Event('visibilitychange'));
+    await waitFor(() => expect(viewedPosts(net)).toEqual([{ seq: 4 }]));
+  } finally {
+    delete (document as { visibilityState?: unknown }).visibilityState;
+  }
 });

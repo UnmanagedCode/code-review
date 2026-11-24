@@ -64,7 +64,7 @@ test('agentSeq is backfilled from agent messages only, 0 without any', async () 
 test('migration is idempotent: a second run, or a review already in the current shape, writes nothing', async () => {
   // Invariant: backfill only fills missing fields, so a migrated or current review is not rewritten (rev unchanged).
   seed('r-000000000a', { messages: [msg(1, '2026-01-02T00:00:00.000Z', AGENT)] });
-  seed('r-000000000b', { lastActivityAt: '2026-02-01T00:00:00.000Z', agentSeq: 7 });
+  seed('r-000000000b', { lastActivityAt: '2026-02-01T00:00:00.000Z', agentSeq: 7, lastViewedSeq: 0 });
   await migrateStore();
   const first = stored();
   assert.deepEqual(first.map((r) => r.rev), [4, 3]);
@@ -95,7 +95,7 @@ test('a review whose anchors all carry a kind, file and review anchors included,
     { id: 't1', messages: [], anchor: { kind: 'file', file: 'a.js', round: 2 }, pastAnchors: [{ kind: 'file', file: 'b.js', round: 1 }] },
     { id: 't2', messages: [], anchor: { kind: 'review', round: 1 }, pastAnchors: [] },
   ];
-  seed('r-000000000a', { lastActivityAt: '2026-02-01T00:00:00.000Z', agentSeq: 0, threads: kinds });
+  seed('r-000000000a', { lastActivityAt: '2026-02-01T00:00:00.000Z', agentSeq: 0, lastViewedSeq: 0, threads: kinds });
   seed('r-000000000b', { threads: [{ id: 't1', messages: [], anchor: { file: 'a.js', side: 'new', startLine: 1, endLine: 1, round: 1 }, pastAnchors: [] }] });
   const current = fs.readFileSync(fileOf('r-000000000a'));
   await migrateStore();
@@ -163,6 +163,18 @@ test('a review stored before `author` existed gains author null; a named author 
   seed('r-000000000b', { author: 's-named', lastActivityAt: '2026-02-01T00:00:00.000Z', agentSeq: 0 });
   await migrateStore();
   assert.deepEqual(stored().map((r) => r.author), [null, 's-named']);
+  const bytes = fs.readFileSync(fileOf('r-000000000a'));
+  await migrateStore();
+  assert.deepEqual(fs.readFileSync(fileOf('r-000000000a')), bytes);
+});
+
+test('lastViewedSeq is backfilled as the review seq when the human has seen it, else 0, and an existing marker is kept', async () => {
+  // Invariant: the step sets seenByHuman ? seq : 0 only where the field is undefined; a second run writes nothing.
+  seed('r-000000000a', { seenByHuman: true });
+  seed('r-000000000b', { seenByHuman: false });
+  seed('r-000000000c', { seenByHuman: true, lastViewedSeq: 2 });
+  await migrateStore();
+  assert.deepEqual(stored().map((r) => [r.id.slice(-1), r.lastViewedSeq]), [['a', 9], ['b', 0], ['c', 2]]);
   const bytes = fs.readFileSync(fileOf('r-000000000a'));
   await migrateStore();
   assert.deepEqual(fs.readFileSync(fileOf('r-000000000a')), bytes);

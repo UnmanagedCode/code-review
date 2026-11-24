@@ -1,5 +1,5 @@
 import { anchorView } from './anchor.js';
-import { threadView } from './rollup.js';
+import { threadViewWith } from './rollup.js';
 
 /** A thread's positions, oldest first: one per round it was anchored in, ending with its current anchor. */
 export const anchorChain = (t) => [...t.pastAnchors, anchorView(t.anchor)];
@@ -33,8 +33,8 @@ export function threadsAt(review, n) {
   return threads;
 }
 
-/** A thread of `threadsAt` as the API shows it. */
-export const roundThreadView = (t) => ({ ...threadView(t), laterMessages: t.laterMessages });
+/** A thread of `threadsAt` as the API shows it (no `state`: a round view is read-only). */
+export const roundThreadView = (t) => ({ ...threadViewWith(t, null), laterMessages: t.laterMessages });
 
 /** The review-anchored threads as of round `n`, as the API shows them. */
 export const reviewThreadsAt = (review, n) => threadsAt(review, n).filter((t) => t.anchor.kind === 'review').map(roundThreadView);

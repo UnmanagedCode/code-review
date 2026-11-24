@@ -108,3 +108,12 @@ test('REVIEW_SCOPED clears step, LEAVE_FILE keeps it, and toSearch writes it rig
   expect(parseRoute(location.search)).toEqual({ project: 'app', review: 'r-2' });
   expect(toSearch({ step: 'g1', view: 'guided', range: 'a..b', review: 'r-1' })).toBe('?review=r-1&view=guided&step=g1&range=a..b');
 });
+
+// Invariant: `view=overview` and the three `need=` groups parse; any other value is dropped, and `need` is review-scoped.
+test('view=overview and need= parse, other values are dropped, and REVIEW_SCOPED clears need', () => {
+  expect(parseRoute('?review=r-1&view=overview')).toEqual({ review: 'r-1', view: 'overview' });
+  for (const need of ['needs-you', 'unsent', 'waiting'] as const) expect(parseRoute(toSearch({ review: 'r-1', view: 'threads', need })).need, need).toBe(need);
+  expect(parseRoute('?review=r-1&need=everything')).toEqual({ review: 'r-1' });
+  expect(REVIEW_SCOPED.need).toBeUndefined();
+  expect('need' in REVIEW_SCOPED).toBe(true);
+});

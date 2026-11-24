@@ -156,7 +156,7 @@ export async function seed() {
     await deliver(main.id);
 
     return {
-      url: srv.url, ids: { range: id, uncommitted: un.id, conducted: conducted.id, main: main.id, syntax: syntax.id, guided: guided.id }, call,
+      url: srv.url, mcp, ids: { range: id, uncommitted: un.id, conducted: conducted.id, main: main.id, syntax: syntax.id, guided: guided.id }, call,
       /**
        * Adds a throwaway worktree `spike` with a review titled "Spike experiment" (on demand, so earlier steps never list it).
        * Resolves {id, destroy}; `destroy()` simulates cc deleting the worktree.
@@ -167,6 +167,13 @@ export async function seed() {
         const { review: r } = await call('POST', 'reviews', { project: 'app', worktree: 'spike', kind: 'range', base: 'main', title: 'Spike experiment' });
         return { id: r.id, destroy: () => wt.destroy() };
       },
+      /** Commits a file under a long directory path to `feature` and refreshes the `range` review: the first undecided file in tree order. Resolves its path. */
+      async longPath() {
+        const p = 'packages/a-very-long-directory-name-for-the-layout-check/another-long-directory-segment/components/ReviewOverviewHeaderButtonLayoutFixture.tsx';
+        wt.commit({ [p]: 'export const fixture = 1;\n' }, 'long path');
+        await call('POST', `reviews/${id}/refresh`);
+        return p;
+      },
       /** Makes the fake cc refuse every exec as SYSTEM_UNREACHABLE (true) or run them again (false). */
       systemDown(down) { w.cc.state.execHook = down ? () => ({ status: 502, body: { error: 'provider down', code: 'SYSTEM_UNREACHABLE' } }) : null; },
       async close() { await srv.close(); w.cleanup(); },
@@ -176,4 +183,22 @@ export async function seed() {
     w.cleanup();
     throw e;
   }
+}
+
+/**
+ * Puts the `range` review ("Feature work") in every thread state, on top of seed(): one human thread is sent in a delivered round
+ * and so waits on the agent, another is sent and then answered with a proposed resolution (verify), a fresh human comment is
+ * unsent, and the seeded agent threads need a reply. Resolves {proposed, ping}; `ping(body)` makes the author agent reply on
+ * the proposed thread, a new agent event for the overview's feed. Called by snap.mjs and golden.mjs's overview step, not by
+ * seed(), so earlier steps' counts stay the seed's.
+ */
+export async function overviewStates(world) {
+  const { call, mcp, ids: { range: id } } = world;
+  const author = { sessionId: 's-author' };
+  const proposed = (await call('POST', `reviews/${id}/threads`, { anchor: { kind: 'file', file: 'c.js' }, kind: 'comment', body: 'Is this file still needed?' })).thread;
+  const { submission } = await call('POST', `reviews/${id}/submissions`);
+  await call('POST', `reviews/${id}/submissions/${submission.id}/result`, { ok: true });
+  await mcp('reply', { review: id, thread: proposed.id, body: 'Dropped the extra line. Resolving.', resolve: true }, author);
+  await call('POST', `reviews/${id}/threads`, { anchor: { kind: 'lines', file: 'a.js', side: 'new', startLine: 15, endLine: 15 }, kind: 'comment', body: 'Please add a comment here.' });
+  return { proposed: proposed.id, ping: (body = 'Checked again.') => mcp('reply', { review: id, thread: proposed.id, body }, author) };
 }

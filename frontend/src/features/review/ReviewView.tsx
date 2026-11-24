@@ -19,6 +19,8 @@ import { Empty, ErrorState, Loading } from '@/features/common/States';
 import { FileDiff } from '@/features/diff/FileDiff';
 import { DesktopLayout, PhoneLayout } from '@/features/layout/layouts';
 import { GuideStepView } from '@/features/guide/GuideStepView';
+import { OverviewPage } from '@/features/overview/OverviewPage';
+import { useLastViewed } from '@/state/lastViewed';
 import { paneTab, ReviewPane, UnreadBadge } from './ReviewPane';
 import { useReviewCtx } from '@/state/reviewContext';
 
@@ -38,20 +40,41 @@ function PhoneThreadsButton() {
   );
 }
 
+/** Keeps the review's "since you last looked" marker current while it is open; renders nothing. */
+function ViewedMarker() {
+  const { review, applyReview } = useReviewCtx();
+  useLastViewed(review, applyReview);
+  return null;
+}
+
+/**
+ * The centre (wide) or the screen (phone). The overview is the live review's centre whenever no file is open; a past round,
+ * a comparison or the commit filter keep the plain empty state.
+ */
 function Body() {
   const route = useRoute();
   const { review, guide, pastView, commit } = useReviewCtx();
   const wide = useMediaQuery(WIDE_QUERY);
   const guided = paneTab(route, { review, guide, pastView, commit }) === 'guided';
-  // Wide: an open file wins over the step; with neither, the Guided tab's centre is the current step.
-  if (wide) return <DesktopLayout left={<ReviewPane />} center={!route.file && guided ? <GuideStepView /> : <FileDiff />} />;
-  // Phone: the file's Back keeps view and step, so it returns to the step it was opened from.
-  return (
-    <PhoneLayout>
-      {route.file ? <FileDiff onBack={() => navigate(LEAVE_FILE)} extra={<PhoneThreadsButton />} />
-        : guided && route.step ? <GuideStepView onBack={() => navigate({ step: undefined })} /> : <ReviewPane />}
-    </PhoneLayout>
-  );
+  const live = !pastView && !commit;
+  const overview = live && route.view === 'overview';
+  let body;
+  if (wide) {
+    // An open file wins; then the overview asked for by the route; then the Guided tab's step; else the overview.
+    let center = <FileDiff />;
+    if (!route.file) center = overview ? <OverviewPage /> : guided ? <GuideStepView /> : live ? <OverviewPage /> : center;
+    body = <DesktopLayout left={<ReviewPane />} center={center} />;
+  } else {
+    // Phone: the file's Back keeps view and step, so it returns to the overview or step it was opened from.
+    body = (
+      <PhoneLayout>
+        {route.file ? <FileDiff onBack={() => navigate(LEAVE_FILE)} extra={<PhoneThreadsButton />} />
+          : overview ? <OverviewPage onBack={() => navigate({ view: undefined })} />
+            : guided && route.step ? <GuideStepView onBack={() => navigate({ step: undefined })} /> : <ReviewPane />}
+      </PhoneLayout>
+    );
+  }
+  return <><ViewedMarker />{body}</>;
 }
 
 /** The open review: loads it, provides the shared context, and picks the layout. */

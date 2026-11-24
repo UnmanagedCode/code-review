@@ -2,20 +2,22 @@ import { useSyncExternalStore } from 'react';
 
 export interface Route {
   project?: string; worktree?: string; review?: string; file?: string; side?: 'old' | 'new';
-  lines?: string; thread?: string; commit?: string; round?: string; compare?: string; view?: 'new' | 'threads' | 'history' | 'guided' | 'inbox';
+  lines?: string; thread?: string; commit?: string; round?: string; compare?: string; view?: 'new' | 'threads' | 'history' | 'guided' | 'inbox' | 'overview';
   /** Guided tab: a group id (current or retired) or `other` (the hunks in no group). */
   step?: string;
+  /** Threads tab: only the open threads in this state group (`stateGroup` in `lib/threadState.ts`). */
+  need?: 'needs-you' | 'unsent' | 'waiting';
   /** New review prefill (`view=new`), kept raw: `lib/prefill.ts` reads them so the dialog can say why one is unusable. */
   range?: string; sha?: string;
 }
-const KEYS = ['project', 'worktree', 'review', 'file', 'side', 'lines', 'thread', 'commit', 'round', 'compare', 'view', 'step', 'range', 'sha'] as const;
+const KEYS = ['project', 'worktree', 'review', 'file', 'side', 'lines', 'thread', 'commit', 'round', 'compare', 'view', 'step', 'need', 'range', 'sha'] as const;
 
 /**
  * Every key that belongs to the open review (its file position, filters, views). Spread it into any patch that opens,
  * leaves or deletes a review, so nothing of one review leaks into the next: `navigate` merges into the current route.
  */
 export const REVIEW_SCOPED = {
-  file: undefined, side: undefined, lines: undefined, thread: undefined, commit: undefined, round: undefined, compare: undefined, view: undefined, step: undefined,
+  file: undefined, side: undefined, lines: undefined, thread: undefined, commit: undefined, round: undefined, compare: undefined, view: undefined, step: undefined, need: undefined,
   range: undefined, sha: undefined,
 } as const satisfies Route;
 
@@ -40,7 +42,8 @@ export function parseRoute(search: string): Route {
     const v = p.get(k);
     if (v === null || v === '') continue;
     if (k === 'side' && v !== 'old' && v !== 'new') continue;
-    if (k === 'view' && v !== 'new' && v !== 'threads' && v !== 'history' && v !== 'guided' && v !== 'inbox') continue;
+    if (k === 'view' && v !== 'new' && v !== 'threads' && v !== 'history' && v !== 'guided' && v !== 'inbox' && v !== 'overview') continue;
+    if (k === 'need' && v !== 'needs-you' && v !== 'unsent' && v !== 'waiting') continue;
     if (k === 'step' && !/^(g[1-9]\d*|other)$/.test(v)) continue;
     if (k === 'lines' && !/^\d+(-\d+)?$/.test(v)) continue;
     if (k === 'round' && !/^[1-9]\d*$/.test(v)) continue;

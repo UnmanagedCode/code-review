@@ -5,12 +5,11 @@ import { verdictOf } from './rollup.js';
 import { touch } from './reviews.js';
 import { anchorLabel } from './anchor.js';
 import { groupCounts, guideState } from './grouping.js';
+import { humanChangedStatus, lastDeliveredRoundSeq, unsentActivity } from './threadState.js';
 
 const BRIDGE_CODES = ['INVALID_ARGUMENT', 'SESSION_UNKNOWN', 'SESSION_NOT_LIVE', 'SESSION_NOT_READY', 'SEND_FAILED', 'LOOKUP_FAILED', 'HOST_ERROR'];
 const now = () => new Date().toISOString();
 
-// A human status change takes its own seq; opening and agent resolves share the seq of a message.
-const humanChangedStatus = (t, since) => t.statusSeq > since && !t.messages.some((m) => m.seq === t.statusSeq);
 
 function activeThreads(review, since) {
   const out = [];
@@ -72,9 +71,8 @@ const labelOf = (review) => (review.kind === 'range' ? `${review.baseLabel}...${
 export const composeSubmission = (id) => attempt(() => inReview(id, async (review, env) => {
   assertOpen(review);
   if (!review.recipient) throw new Refusal('NO_RECIPIENT', 'no recipient session: choose one before submitting');
-  const lastDelivered = [...review.submissions].reverse().find((s) => s.kind === 'round' && s.status === 'delivered');
-  const since = lastDelivered?.seq ?? 0;
-  if (lastDelivered && review.humanSeq <= since) throw new Refusal('NOTHING_TO_SUBMIT', 'nothing changed since the last delivered submission');
+  const since = lastDeliveredRoundSeq(review);
+  if (!unsentActivity(review)) throw new Refusal('NOTHING_TO_SUBMIT', 'nothing changed since the last delivered submission');
   const round = currentRound(review);
   const uncommitted = review.kind === 'uncommitted';
   let files = null;

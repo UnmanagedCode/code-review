@@ -5,7 +5,7 @@ import { mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { BROWSER } from './resolve.mjs';
-import { seed } from './seed.mjs';
+import { overviewStates, seed } from './seed.mjs';
 
 const { withPage } = await import(BROWSER);
 
@@ -22,6 +22,8 @@ const q = (o) => `${world.url}/?${new URLSearchParams({ project: 'app', worktree
 await world.call('POST', `reviews/${range}/threads`, { anchor: { kind: 'file', file: 'c.js' }, kind: 'finding', severity: 'minor', body: 'This file needs a header comment explaining **why** the extra lines exist.' });
 await world.call('POST', `reviews/${range}/threads`, { anchor: { kind: 'file', file: 'logo.bin' }, kind: 'question', body: 'Is this logo final?' });
 await world.call('POST', `reviews/${range}/threads`, { anchor: { kind: 'review' }, kind: 'question', body: 'Is the overall split into a.js and c.js right?' });
+// Every thread state on the range review (needs you, will be sent, waiting on agent, verify), for the overview and strip shots.
+const { ping } = await overviewStates(world);
 try {
   await withPage(async (page) => {
     const errors = [];
@@ -60,8 +62,23 @@ try {
         await page.getByRole('radio', { name: /main/ }).first().waitFor();
         await shot('new-review');
 
+        // A fresh agent event just before the overview loads, so its "since you last looked" feed has one item whatever came before.
+        await ping(`Looked again (${scheme} ${vp}).`);
         await open(q({ review: range }), page.getByRole('link', { name: /a\.js/ }));
-        await shot('review-overview'); // header, refresh banner, file tree
+        if (vp === 'desktop') await page.getByRole('heading', { name: /^What the agent did/ }).waitFor();
+        await page.getByRole('region', { name: 'Review progress' }).waitFor();
+        await shot('review-overview'); // desktop: the overview beside the pane; phone: the pane with the progress strip
+        if (vp === 'phone') {
+          await ping(`Looked again, phone overview (${scheme}).`);
+          await open(q({ review: range, view: 'overview' }), page.getByRole('heading', { name: /^What the agent did/ }));
+          await shot('overview');
+        } else {
+          await open(q({ review: uncommitted }), page.getByRole('heading', { name: /^Needs you/ }));
+          await shot('overview-uncommitted');
+        }
+        await open(q({ review: range, view: 'threads', need: 'needs-you' }), page.getByText(/^Showing: Needs you/));
+        await page.getByRole('tabpanel').getByRole('article').first().waitFor();
+        await shot('threads-need-you');
 
         await open(q({ review: range, file: 'a.js' }), page.getByRole('grid'));
         await page.getByRole('article').first().waitFor();

@@ -4,7 +4,7 @@ import { toast } from 'sonner';
 import { useState } from 'react';
 import { expect, test, vi } from 'vitest';
 import type { DiffFile, Verdict } from '@/lib/types';
-import { ReviewProvider } from '@/state/reviewContext';
+import { ReviewProvider } from '@/test/reviewProvider';
 import { diffFile, hunk, refusal, review } from '@/test/fixtures';
 import { ctxValue, renderInReview } from '@/test/renderCtx';
 import { stubFetch } from '@/test/stubFetch';

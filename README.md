@@ -34,7 +34,7 @@ docs/                  features, protocol, architecture
 frontend/              index.html, vite.config.ts, public/theme-init.js, src/{lib,state,features,components,test}
 tests/                 node --test backend tests
 harness/mutation/      code-mutant config (see its README)
-harness/playwright/    seed.mjs, snap.mjs (screenshots), golden.mjs (interaction)
+harness/playwright/    seed.mjs, snap.mjs (screenshots), golden.mjs (interaction), jumpnav.mjs (keyboard navigation)
 harness/bench/         open-review.mjs (openReview timing), requests.mjs (per-request round trips), highlight.mjs (worst-case highlighting per language); see its README
 .wiki/                 durable project knowledge
 ```
@@ -60,6 +60,7 @@ npm test               # typecheck + node --test (backend) + vitest/happy-dom (U
 export CC_PROJECTS_ROOT=/path/to/projects-root
 node harness/playwright/snap.mjs    # screenshots to harness/playwright/out/ (gitignored)
 node harness/playwright/golden.mjs  # golden-path interactions, one screenshot per step
+node harness/playwright/jumpnav.mjs # keyboard navigation (steppers, shortcuts, overlay), desktop and phone
 ```
 
 ### Install in cc

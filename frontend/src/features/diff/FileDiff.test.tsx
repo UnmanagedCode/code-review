@@ -7,7 +7,7 @@ import { stubFetch } from '@/test/stubFetch';
 import type { FileDiffState } from '@/state/fileDiff';
 import { ctxValue, renderDiff, renderInReview } from '@/test/renderCtx';
 import { buildRows } from '@/lib/diffRows';
-import { ReviewProvider } from '@/state/reviewContext';
+import { ReviewProvider } from '@/test/reviewProvider';
 import { FileDiff } from './FileDiff';
 
 const withRoute = (file: string) => history.replaceState(null, '', `?file=${encodeURIComponent(file)}`);

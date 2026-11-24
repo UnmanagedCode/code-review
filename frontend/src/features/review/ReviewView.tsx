@@ -19,6 +19,7 @@ import { Empty, ErrorState, Loading } from '@/features/common/States';
 import { FileDiff } from '@/features/diff/FileDiff';
 import { DesktopLayout, PhoneLayout } from '@/features/layout/layouts';
 import { GuideStepView } from '@/features/guide/GuideStepView';
+import { JumpNavProvider } from '@/features/nav/JumpNavProvider';
 import { OverviewPage } from '@/features/overview/OverviewPage';
 import { useLastViewed } from '@/state/lastViewed';
 import { paneTab, ReviewPane, UnreadBadge } from './ReviewPane';
@@ -135,8 +136,10 @@ export function ReviewView({ id, chrome }: { id: string; chrome?: ReactNode }) {
       reviewThreads: past ? past.data?.reviewThreads ?? [] : detail.reviewThreads,
       threadCounts: past ? past.data?.counts ?? NO_THREADS : detail.review.counts.threads,
     }}>
-      {chrome}
-      <Body />
+      <JumpNavProvider>
+        {chrome}
+        <Body />
+      </JumpNavProvider>
     </ReviewProvider>
   );
 }

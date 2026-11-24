@@ -41,7 +41,7 @@ export function OverviewPage({ onBack }: { onBack?: () => void }) {
             <Button
               className="h-auto min-w-0 max-w-full flex-col items-start gap-0.5 py-2 text-left whitespace-normal"
               title={next.path}
-              onClick={() => navigate({ file: next.path, side: undefined, lines: undefined, thread: undefined })}
+              onClick={() => navigate({ file: next.path, side: undefined, lines: undefined, thread: undefined, hunk: 'undecided' })}
             >
               Review next undecided hunk
               <span className="max-w-full break-all font-mono text-xs font-normal opacity-80">{next.path} · {next.verdicts!.pending} undecided</span>

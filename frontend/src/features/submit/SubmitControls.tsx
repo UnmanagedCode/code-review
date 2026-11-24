@@ -2,6 +2,7 @@ import { SendIcon } from 'lucide-react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import * as ep from '@/lib/endpoints';
+import { useShortcutHandler } from '@/state/shortcutRegistry';
 import { useReviewCtx } from '@/state/reviewContext';
 import { useInFlight, useSubmission } from '@/state/submit';
 import { Spinner } from '@/features/common/States';
@@ -18,6 +19,10 @@ export function SubmitControls({ onNoRecipient }: { onNoRecipient: () => void })
   const busy = sub.state.phase === 'composing' || sub.state.phase === 'sending';
   const disabledReason = review.status === 'closed' ? 'The review is closed' : null;
 
+  const submit = () => (review.recipient ? sub.review() : onNoRecipient());
+  // `s` is what the button does (the recap opens; nothing is sent); where the button is disabled the key is unregistered.
+  useShortcutHandler('submit-round', busy || disabledReason ? null : submit);
+
   const last = review.lastSubmission;
   const delivering = useInFlight(last?.id);
   const pending = last && (last.status === 'failed' || last.status === 'pending') && sub.state.phase === 'idle' && !delivering
@@ -26,7 +31,7 @@ export function SubmitControls({ onNoRecipient }: { onNoRecipient: () => void })
 
   return (
     <>
-      <Button disabled={busy || !!disabledReason} title={disabledReason ?? undefined} onClick={() => (review.recipient ? sub.review() : onNoRecipient())}>
+      <Button disabled={busy || !!disabledReason} title={disabledReason ?? undefined} onClick={submit}>
         {busy ? <Spinner /> : <SendIcon />}{uncommitted ? 'Request review' : 'Submit round'}
       </Button>
       {pending && (

@@ -5,7 +5,7 @@ import { navigate } from '@/lib/route';
 import type { DiffFile } from '@/lib/types';
 import { WIDE_QUERY } from '@/lib/useMediaQuery';
 import type { FileDiffState } from '@/state/fileDiff';
-import { ReviewProvider } from '@/state/reviewContext';
+import { ReviewProvider } from '@/test/reviewProvider';
 import { installMedia } from '@/test/fakeMedia';
 import { installResizeObserver } from '@/test/fakeResizeObserver';
 import { diffFile, fileState, hunk, message, thread, linesAnchor } from '@/test/fixtures';

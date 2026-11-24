@@ -161,6 +161,7 @@ try {
     await page.getByRole('button', { name: 'Compose prompt' }).click();
     const withNote = await page.getByLabel('Prompt').inputValue();
     assert.match(withNote, /Reviewer note \[t\d+\]/);
+    assert.match(withNote, /Not reviewed yet/);
     await page.getByRole('button', { name: 'Mark as sent' }).click();
     await page.getByText(/Round 1 · submitted/).waitFor();
     await page.getByRole('tablist', { name: 'Review pane' }).getByRole('tab', { name: /^Threads/ }).click();

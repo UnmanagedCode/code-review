@@ -42,7 +42,7 @@ Services return a plain object or a refusal `{ok:false, code, reason}`. Low-leve
 | `threadState.js` | pure, no git: `threadState(review, t)`, `stateCounts`, `unsentActivity`, `lastDeliveredRoundSeq` (the one cutoff `composeSubmission` uses as its "since" and the "unsent" rule uses), `humanChangedStatus`, `NEEDS_YOU` |
 | `overview.js` | `openThreadDigests` (ThreadDigest, every open thread of any anchor), `agentActivity` (ActivityItem feed), `PREVIEW_CHARS`, `ACTIVITY_LIMIT` |
 | `citations.js` | parse and resolve `path#L…` |
-| `submissions.js`, `prompt.js` | compose, preview and record submissions (`previewSubmission` and `composeSubmission` for a round share `draftRound`, one snapshot read; the note thread is made with `startThread` from `threads.js`, which `annotate` also uses; `needsYou` is the recap's needs-the-human predicate;  `composeGuide` for Guide me; both end in `storeSubmission`); render the prompt text (pure) |
+| `submissions.js`, `prompt.js` | compose, preview and record submissions (`previewSubmission` and `composeSubmission` for a round share `draftRound`, one snapshot read; the note thread is made with `startThread` from `threads.js`, which `annotate` also uses; `composeGuide` for Guide me; all end in `storeSubmission` except preview); render the prompt text (pure) |
 | `render.js` | MCP text views (pure), incl. write acks and the text-only excerpt cap `MAX_EXCERPT_LINES` |
 | `mcpViews.js` | per tool `json(res)` / `text(res)` views; adds links, strips `ok`/`sig`/`fileSig` |
 | `mcp.js` | `handle(body)`: envelope, `format` dispatch (json → `{structured}`, text → `{text}`), refusal → `{error, code[, details]}`; `handlers`; the `_toolNames()` and `_handlers` test seams |

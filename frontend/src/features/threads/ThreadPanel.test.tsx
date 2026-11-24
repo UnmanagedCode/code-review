@@ -1,7 +1,7 @@
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { expect, test, vi } from 'vitest';
-import { agent, diffFile, fileState, groupAnchor, guideGroup, guideView, HUMAN, message, review, thread, linesAnchor } from '@/test/fixtures';
+import { agent, diffFile, fileState, groupAnchor, guideGroup, guideView, HUMAN, message, review, thread, threadDigest, linesAnchor } from '@/test/fixtures';
 import { parseRoute } from '@/lib/route';
 import { ctxValue } from '@/test/renderCtx';
 import { stubFetch } from '@/test/stubFetch';
@@ -9,33 +9,35 @@ import type { ComparedThread, Thread, UnplacedThread } from '@/lib/types';
 import { ReviewProvider } from '@/test/reviewProvider';
 import { ThreadPanel } from './ThreadPanel';
 
-test('the All list refreshes when the review reloads, even with no file open', async () => {
-  let threads = [thread({ id: 't-1' })];
+/** A thread's compact rows: buttons named "<state or status>: <place> — <preview>". */
+const rows = () => screen.queryAllByRole('button', { name: /: .+ — / });
+const digestOf = (t: Thread, state: Thread['state'] = 'awaiting-human') => threadDigest({ id: t.id, state, anchor: t.anchor, openedBy: t.openedBy, unread: t.unread });
+
+// Invariant: a resolved list (the one the digests do not hold) is read from the files' diffs and refreshes when a file's sig moves, even with no file open.
+test('the Resolved list refreshes when the review reloads, even with no file open', async () => {
+  let threads = [thread({ id: 't-1', status: 'resolved' })];
   const net = stubFetch({ 'GET api/reviews/r-1/diff': () => ({ review: review(), files: [diffFile({ threads, sig: threads.length === 1 ? 's1' : 's2' })] }) });
   const ui = (files: ReturnType<typeof fileState>[]) => <ReviewProvider value={ctxValue({ files, fileDiff: { file: undefined } as never })}><ThreadPanel /></ReviewProvider>;
-  const { rerender } = render(ui([fileState({ sig: 's1', threads: { open: 1, resolved: 0, outdated: 0 } })]));
-  await userEvent.setup().click(screen.getByRole('tab', { name: /^All/ }));
-  expect(await screen.findAllByRole('article')).toHaveLength(1);
-  threads = [thread({ id: 't-1' }), thread({ id: 't-2' })];
-  rerender(ui([fileState({ sig: 's2', threads: { open: 2, resolved: 0, outdated: 0 } })]));
-  await waitFor(() => expect(screen.getAllByRole('article')).toHaveLength(2));
+  const { rerender } = render(ui([fileState({ sig: 's1', threads: { open: 0, resolved: 1, outdated: 0 } })]));
+  await userEvent.setup().selectOptions(screen.getByLabelText('Status'), 'resolved');
+  await waitFor(() => expect(rows()).toHaveLength(1));
+  threads = [thread({ id: 't-1', status: 'resolved' }), thread({ id: 't-2', status: 'resolved' })];
+  rerender(ui([fileState({ sig: 's2', threads: { open: 0, resolved: 2, outdated: 0 } })]));
+  await waitFor(() => expect(rows()).toHaveLength(2));
   expect(net.count('GET api/reviews/r-1/diff')).toBe(2);
 });
 
-// Invariant: Next unread focuses the thread by route (file, side, thread) and sets no `lines=` row wash.
+// Invariant: Next unread focuses the thread by route (file, side, thread) and sets no `lines=` row wash; its card then posts the read mark.
 test('"Next unread" focuses the first unread thread, which posts read {threadId}', async () => {
   history.replaceState(null, '', '?review=r-1&lines=9');
+  const first = thread({ id: 't-1' });
   const unread = thread({ id: 't-7', unread: 1 });
-  const net = stubFetch({
-    'GET api/reviews/r-1/diff': { review: review(), files: [diffFile({ threads: [thread({ id: 't-1' }), unread] })] },
-    'POST api/reviews/r-1/read': { review: review() },
-  });
+  const net = stubFetch({ 'POST api/reviews/r-1/read': { review: review() } });
   const files = [fileState({ threads: { open: 2, resolved: 0, outdated: 0 } })];
-  const value = ctxValue({ files, fileDiff: { file: undefined } as never });
+  const value = ctxValue({ files, openThreads: [digestOf(first), digestOf(unread)], fileDiff: { file: diffFile({ threads: [first, unread] }) } as never });
   const user = userEvent.setup();
   render(<ReviewProvider value={value}><ThreadPanel /></ReviewProvider>);
-  await user.click(screen.getByRole('tab', { name: /^All/ }));
-  await waitFor(() => expect((screen.getByRole('button', { name: 'Next unread' }) as HTMLButtonElement).disabled).toBe(false));
+  expect((screen.getByRole('button', { name: 'Next unread' }) as HTMLButtonElement).disabled).toBe(false);
   await user.click(screen.getByRole('button', { name: 'Next unread' }));
   expect(parseRoute(location.search)).toEqual({ review: 'r-1', file: 'src/a.ts', side: 'new', thread: 't-7' });
   await waitFor(() => expect(net.calls.filter((c) => c.method === 'POST').map((c) => c.body)).toEqual([{ threadId: 't-7' }]));
@@ -50,29 +52,30 @@ test('the filter tablist is named "Thread filter", in the review and in a compar
   expect(screen.getByRole('tablist', { name: 'Thread filter' })).toBeTruthy();
 });
 
-test('the All count is the shown threads\' counts, not the review\'s', () => {
-  const value = ctxValue({ review: review({ counts: { ...review().counts, threads: { open: 9, resolved: 9, outdated: 0 } } }), threadCounts: { open: 2, resolved: 1, outdated: 0 }, fileDiff: { file: undefined } as never });
+// Invariant: under the default filters (Open, all owners, no need) the All tab counts exactly the open threads it lists: the overview's digests, whatever the files' counts say.
+test('the All count is the number of open threads listed', () => {
+  const value = ctxValue({ openThreads: [digestOf(thread({ id: 't-1' })), digestOf(thread({ id: 't-2' }), 'unsent')], fileDiff: { file: undefined } as never });
   render(<ReviewProvider value={value}><ThreadPanel /></ReviewProvider>);
-  expect(screen.getByRole('tab', { name: /^All/ }).textContent).toContain('3');
+  expect(screen.getByRole('tab', { name: /^All/ }).textContent).toBe('All 2');
+  expect(rows()).toHaveLength(2);
 });
 
+// Invariant: a past round's threads are not in the digests: the All list reads each file's diff of that round.
 test('in a round view the All list reads each file\'s threads from that round', async () => {
   const net = stubFetch({ 'GET api/reviews/r-1/diff': { readOnly: true, round: { n: 1 }, files: [diffFile({ threads: [thread({ id: 't-1' })] })] } });
   const files = [fileState({ threads: { open: 1, resolved: 0, outdated: 0 } })];
   render(<ReviewProvider value={ctxValue({ files, round: 1, readOnly: true, fileDiff: { file: undefined } as never })}><ThreadPanel /></ReviewProvider>);
-  await userEvent.setup().click(screen.getByRole('tab', { name: /^All/ }));
-  expect(await screen.findAllByRole('article')).toHaveLength(1);
+  await waitFor(() => expect(rows()).toHaveLength(1));
   expect(net.calls[0].url.searchParams.get('round')).toBe('1');
 });
 
-// Invariant: the thread panel's cards go through the markdown renderer.
-test('thread panel cards render bodies as markdown', async () => {
+// Invariant: the routed thread opens as its full card, whose bodies go through the markdown renderer.
+test('the routed thread\'s card renders bodies as markdown', async () => {
+  history.replaceState(null, '', '?review=r-1&view=threads&thread=t-1');
   const t = thread({ id: 't-1', messages: [message({ body: 'a **bold** claim' })] });
-  stubFetch({ 'GET api/reviews/r-1/diff': { review: review(), files: [diffFile({ threads: [t] })] } });
-  const files = [fileState({ threads: { open: 1, resolved: 0, outdated: 0 } })];
-  render(<ReviewProvider value={ctxValue({ files, fileDiff: { file: undefined } as never })}><ThreadPanel /></ReviewProvider>);
-  await userEvent.setup().click(screen.getByRole('tab', { name: /^All/ }));
-  const [article] = await screen.findAllByRole('article');
+  stubFetch({});
+  render(<ReviewProvider value={ctxValue({ openThreads: [digestOf(t)], fileDiff: { file: diffFile({ threads: [t] }) } as never })}><ThreadPanel /></ReviewProvider>);
+  const article = await screen.findByRole('article');
   expect(within(article).getByText('bold').tagName).toBe('STRONG');
 });
 
@@ -152,13 +155,15 @@ test('a loaded comparison whose reload failed still lists its threads in every t
   }
 });
 
-// Invariant: the Outdated tab lists each thread with its location link (it opens the thread's comparison).
-test('the Outdated tab shows each thread\'s location link', async () => {
+// Invariant: the Outdated tab lists each thread as a row naming its place; the row opens the thread's comparison.
+test('the Outdated tab shows each thread\'s place as a row that opens its comparison', async () => {
   const t = thread({ status: 'outdated' });
   const files = [fileState({ threads: { open: 0, resolved: 0, outdated: 1 } })];
   render(<ReviewProvider value={ctxValue({ files, outdatedThreads: [t], fileDiff: { file: undefined } as never })}><ThreadPanel /></ReviewProvider>);
-  await userEvent.setup().click(screen.getByRole('tab', { name: /^Outdated/ }));
-  expect(screen.getByRole('button', { name: 'src/a.ts · L3 (new)' })).toBeTruthy();
+  const user = userEvent.setup();
+  await user.click(screen.getByRole('tab', { name: /^Outdated/ }));
+  await user.click(screen.getByRole('button', { name: /^outdated: a\.ts#L3 — / }));
+  expect(parseRoute(location.search)).toMatchObject({ compare: '1..2', file: 'src/a.ts', thread: 't-1' });
 });
 
 // Invariant: Focus on a thread the comparison does not place only focuses it: its anchor's side means the base there,
@@ -183,30 +188,25 @@ test('in a comparison, Focus on a thread of another file keeps the comparison op
   expect(parseRoute(location.search)).toMatchObject({ compare: '1..2', file: 'src/a.ts', thread: 't-2' });
 });
 
-// Invariant: the owner filter keeps the threads the user (human) or agents opened, and composes with the status filter.
+// Invariant: the owner filter keeps the threads the user (human) or agents opened, and composes with the status filter (open from the digests, resolved from the files' diffs).
 test('the All list filters by owner, composed with the status filter', async () => {
-  const threads = [
-    thread({ id: 't-1', openedBy: HUMAN }),
-    thread({ id: 't-2', openedBy: agent('s-rev') }),
-    thread({ id: 't-3', openedBy: agent('s-cond', 'conductor'), status: 'resolved' }),
-  ];
-  stubFetch({ 'GET api/reviews/r-1/diff': { review: review(), files: [diffFile({ threads })] } });
+  const [t1, t2] = [thread({ id: 't-1', openedBy: HUMAN }), thread({ id: 't-2', openedBy: agent('s-rev') })];
+  const t3 = thread({ id: 't-3', openedBy: agent('s-cond', 'conductor'), status: 'resolved' });
+  stubFetch({ 'GET api/reviews/r-1/diff': { review: review(), files: [diffFile({ threads: [t3] })] } });
   const files = [fileState({ threads: { open: 2, resolved: 1, outdated: 0 } })];
   const user = userEvent.setup();
-  render(<ReviewProvider value={ctxValue({ files, fileDiff: { file: undefined } as never })}><ThreadPanel /></ReviewProvider>);
-  await user.click(screen.getByRole('tab', { name: /^All/ }));
-  const owner = await screen.findByRole('combobox', { name: 'Owner' });
+  render(<ReviewProvider value={ctxValue({ files, openThreads: [digestOf(t1), digestOf(t2)], fileDiff: { file: undefined } as never })}><ThreadPanel /></ReviewProvider>);
+  const owner = screen.getByRole('combobox', { name: 'Owner' });
   const status = screen.getByRole('combobox', { name: 'Status' });
-  const shown = () => screen.getAllByRole('article').length;
-  await waitFor(() => expect(shown()).toBe(2));
+  await waitFor(() => expect(rows()).toHaveLength(2));
   await user.selectOptions(owner, 'agents');
-  await waitFor(() => expect(shown()).toBe(1));
+  await waitFor(() => expect(rows()).toHaveLength(1));
   await user.selectOptions(status, 'all');
-  await waitFor(() => expect(shown()).toBe(2));
+  await waitFor(() => expect(rows()).toHaveLength(2));
   await user.selectOptions(owner, 'user');
-  await waitFor(() => expect(shown()).toBe(1));
+  await waitFor(() => expect(rows()).toHaveLength(1));
   await user.selectOptions(owner, 'all');
-  await waitFor(() => expect(shown()).toBe(3));
+  await waitFor(() => expect(rows()).toHaveLength(3));
 });
 
 // Invariant: a comparison's All list has the same owner filter.
@@ -232,9 +232,8 @@ test('the Review tab lists the review threads', async () => {
   render(<ReviewProvider value={ctxValue({ reviewThreads: [onReview()], fileDiff: { file: undefined } as never })}><ThreadPanel /></ReviewProvider>);
   expect(reviewTab().textContent).toContain('1');
   await userEvent.setup().click(reviewTab());
-  const [card] = screen.getAllByRole('article');
-  expect(screen.getAllByRole('article')).toHaveLength(1);
-  expect(within(card).getByText('Review')).toBeTruthy();
+  expect(rows()).toHaveLength(1);
+  expect(screen.getByRole('button', { name: /: review — / })).toBeTruthy();
 });
 
 // Invariant: New review thread posts a review anchor; a read-only view does not offer it.
@@ -253,14 +252,14 @@ test('New review thread posts {kind: review}; read-only there is none', async ()
   expect(screen.queryByRole('button', { name: 'New review thread' })).toBeNull();
 });
 
-// Invariant: All lists the review threads beside the file threads, so it matches the All count.
-test('All includes the review threads', async () => {
-  stubFetch({ 'GET api/reviews/r-1/diff': { review: review(), files: [diffFile({ threads: [thread({ id: 't-1' })] })] } });
+// Invariant: All lists the review threads beside the file threads (the digests hold every anchor), so it matches the All count.
+test('All includes the review threads', () => {
+  const t1 = thread({ id: 't-1' });
   const files = [fileState({ threads: { open: 1, resolved: 0, outdated: 0 } })];
-  render(<ReviewProvider value={ctxValue({ files, reviewThreads: [onReview()], fileDiff: { file: undefined } as never })}><ThreadPanel /></ReviewProvider>);
-  await userEvent.setup().click(screen.getByRole('tab', { name: /^All/ }));
-  await waitFor(() => expect(screen.getAllByRole('article')).toHaveLength(2));
-  expect(screen.getByRole('button', { name: 'Review' })).toBeTruthy();
+  render(<ReviewProvider value={ctxValue({ files, openThreads: [digestOf(t1), digestOf(onReview())], reviewThreads: [onReview()], fileDiff: { file: undefined } as never })}><ThreadPanel /></ReviewProvider>);
+  expect(rows()).toHaveLength(2);
+  expect(screen.getByRole('tab', { name: /^All/ }).textContent).toBe('All 2');
+  expect(screen.getByRole('button', { name: /: review — / })).toBeTruthy();
 });
 
 // Invariant: Next unread reaches an unread review thread and routes it to the Threads pane, keeping the open file.
@@ -268,8 +267,8 @@ test('"Next unread" reaches an unread review thread', async () => {
   history.replaceState(null, '', '?review=r-1&file=src%2Fa.ts');
   stubFetch({ 'POST api/reviews/r-1/read': { review: review() } });
   const user = userEvent.setup();
-  render(<ReviewProvider value={ctxValue({ reviewThreads: [onReview({ unread: 1 })], fileDiff: { file: undefined } as never })}><ThreadPanel /></ReviewProvider>);
-  await user.click(screen.getByRole('tab', { name: /^All/ }));
+  const t = onReview({ unread: 1 });
+  render(<ReviewProvider value={ctxValue({ openThreads: [digestOf(t)], reviewThreads: [t], fileDiff: { file: undefined } as never })}><ThreadPanel /></ReviewProvider>);
   await user.click(screen.getByRole('button', { name: 'Next unread' }));
   expect(parseRoute(location.search)).toEqual({ review: 'r-1', file: 'src/a.ts', thread: 't-r', view: 'threads' });
   await waitFor(() => expect(reviewTab().getAttribute('aria-selected')).toBe('true'));
@@ -313,7 +312,7 @@ test('in a past round the Review tab waits for the round, shows its error with R
   await user.click(within(panel()).getByRole('button', { name: 'Retry' }));
   expect(reload).toHaveBeenCalled();
   rerender(past({ loading: false, error: { code: 'SNAPSHOT_GONE', reason: 'gone' }, loaded: true }, [onReview()]));
-  expect(within(panel()).getAllByRole('article')).toHaveLength(1);
+  expect(within(panel()).getAllByRole('button', { name: /: review — / })).toHaveLength(1);
 });
 
 // Invariant: a filter tab that takes focus is scrolled into view within the sideways-scrolling strip, without scrolling the page.
@@ -353,19 +352,18 @@ const groupPanel = (over: Partial<ReturnType<typeof ctxValue>> = {}) => {
   return render(<ReviewProvider value={ctxValue({ guide, threadCounts: { open: 1, resolved: 1, outdated: 1 }, fileDiff: { file: undefined } as never, ...over })}><ThreadPanel /></ReviewProvider>);
 };
 
-// Invariant: All lists the live group threads, so its list is as long as the badge that counts them; outdated ones wait in Outdated.
-test('All lists live group threads (as many as its badge counts); Outdated lists the outdated ones', async () => {
+// Invariant: All lists the live group threads (open ones from the digests, resolved ones from the guide), so its list is as long as the count on its tab; outdated ones wait in Outdated.
+test('All lists live group threads (as many as its tab counts); Outdated lists the outdated ones', async () => {
   stubFetch({});
-  groupPanel();
+  groupPanel({ openThreads: [digestOf(gThread('t-4'))] });
   const user = userEvent.setup();
-  expect(screen.getByRole('tab', { name: /^All/ }).textContent).toContain('2');
-  await user.click(screen.getByRole('tab', { name: /^All/ }));
+  expect(screen.getByRole('tab', { name: /^All/ }).textContent).toBe('All 1');
   await user.selectOptions(screen.getByLabelText('Status'), 'all');
-  expect(await screen.findAllByRole('article')).toHaveLength(2);
+  await waitFor(() => expect(rows()).toHaveLength(2));
+  expect(screen.getByRole('tab', { name: /^All/ }).textContent).toBe('All 2');
   expect(screen.getByRole('tab', { name: /^Outdated/ }).textContent).toContain('1');
   await user.click(screen.getByRole('tab', { name: /^Outdated/ }));
-  expect(screen.getAllByRole('article')).toHaveLength(1);
-  expect(screen.getByText(/its group was retired after round 1/)).toBeTruthy();
+  expect(rows()).toHaveLength(1);
 });
 
 // Invariant: group threads exist only in the live round, so a past round lists none.
@@ -373,46 +371,45 @@ test('a past round lists no group threads', async () => {
   stubFetch({});
   groupPanel({ round: 1, readOnly: true, pastView: true });
   await userEvent.setup().click(screen.getByRole('tab', { name: /^All/ }));
-  expect(screen.queryAllByRole('article')).toHaveLength(0);
+  expect(rows()).toHaveLength(0);
 });
 
-test('a group card\'s location link routes to its Guided step, and Next unread reaches group threads', async () => {
+// Invariant: a group thread's row opens its Guided step, and Next unread reaches group threads.
+test('a group thread\'s row routes to its Guided step, and Next unread reaches group threads', async () => {
   stubFetch({ 'POST api/reviews/r-1/read': { review: review() } });
   history.replaceState(null, '', '?review=r-1&view=threads&file=src%2Fa.ts');
-  const guide = guideView({ groups: [guideGroup({ id: 'g1', title: 'Wire it up' })], threads: [{ ...gThread('t-4'), unread: 1 }] });
-  render(<ReviewProvider value={ctxValue({ guide, threadCounts: { open: 1, resolved: 0, outdated: 0 }, fileDiff: { file: undefined } as never })}><ThreadPanel /></ReviewProvider>);
+  const t = { ...gThread('t-4'), unread: 1 };
+  const guide = guideView({ groups: [guideGroup({ id: 'g1', title: 'Wire it up' })], threads: [t] });
+  render(<ReviewProvider value={ctxValue({ guide, openThreads: [digestOf(t)], threadCounts: { open: 1, resolved: 0, outdated: 0 }, fileDiff: { file: undefined } as never })}><ThreadPanel /></ReviewProvider>);
   const user = userEvent.setup();
-  await user.click(screen.getByRole('tab', { name: /^All/ }));
-  await waitFor(() => expect((screen.getByRole('button', { name: 'Next unread' }) as HTMLButtonElement).disabled).toBe(false));
-  await user.click(screen.getByRole('button', { name: 'Step 1 · Wire it up' }));
+  expect((screen.getByRole('button', { name: 'Next unread' }) as HTMLButtonElement).disabled).toBe(false);
+  await user.click(screen.getByRole('button', { name: /: Wire it up — / }));
   expect(parseRoute(location.search)).toEqual({ review: 'r-1', view: 'guided', step: 'g1', thread: 't-4' });
 });
 
 const stateful = (id: string, state: Thread['state']) => thread({ id, state });
 
-// Invariant: need=needs-you opens All with open threads of any owner, lists exactly the NEEDS_YOU threads, and its chip count equals the list.
-test('need=needs-you lists exactly the awaiting-human and verify-resolution threads, with a chip counting them', async () => {
+// Invariant: need=needs-you opens All with open threads of any owner, lists exactly the NEEDS_YOU threads under one section, and its chip count equals the list.
+test('need=needs-you lists exactly the awaiting-human and verify-resolution threads, with a chip counting them', () => {
   history.replaceState(null, '', '?review=r-1&view=threads&need=needs-you');
-  const threads = [stateful('t-1', 'awaiting-human'), stateful('t-2', 'verify-resolution'), stateful('t-3', 'unsent'), stateful('t-4', 'awaiting-agent'), stateful('t-5', null)];
-  stubFetch({ 'GET api/reviews/r-1/diff': { review: review(), files: [diffFile({ threads })] } });
-  const files = [fileState({ threads: { open: 5, resolved: 0, outdated: 0 } })];
-  render(<ReviewProvider value={ctxValue({ files, fileDiff: { file: undefined } as never })}><ThreadPanel /></ReviewProvider>);
-  await waitFor(() => expect(screen.getAllByRole('article')).toHaveLength(2));
+  const open = [stateful('t-1', 'awaiting-human'), stateful('t-2', 'verify-resolution'), stateful('t-3', 'unsent'), stateful('t-4', 'awaiting-agent')];
+  render(<ReviewProvider value={ctxValue({ openThreads: open.map((t) => digestOf(t, t.state)), fileDiff: { file: undefined } as never })}><ThreadPanel /></ReviewProvider>);
+  expect(rows()).toHaveLength(2);
   expect(screen.getByRole('tab', { name: /^All/ }).getAttribute('aria-selected')).toBe('true');
   expect(screen.getByText('Showing: Needs you · 2')).toBeTruthy();
+  expect(screen.getAllByRole('region').map((r) => r.getAttribute('aria-label'))).toEqual(['Needs you']);
 });
 
 // Invariant: the filter chip's ✕ drops `need` with replace, so the list shows every open thread again and Back is untouched.
 test('the chip\'s ✕ clears need with a replace', async () => {
   history.replaceState(null, '', '?review=r-1&view=threads&need=unsent');
-  stubFetch({ 'GET api/reviews/r-1/diff': { review: review(), files: [diffFile({ threads: [stateful('t-1', 'unsent'), stateful('t-2', 'awaiting-agent')] })] } });
+  const open = [stateful('t-1', 'unsent'), stateful('t-2', 'awaiting-agent')];
   const push = vi.spyOn(history, 'pushState');
-  const files = [fileState({ threads: { open: 2, resolved: 0, outdated: 0 } })];
-  render(<ReviewProvider value={ctxValue({ files, fileDiff: { file: undefined } as never })}><ThreadPanel /></ReviewProvider>);
-  await waitFor(() => expect(screen.getAllByRole('article')).toHaveLength(1));
+  render(<ReviewProvider value={ctxValue({ openThreads: open.map((t) => digestOf(t, t.state)), fileDiff: { file: undefined } as never })}><ThreadPanel /></ReviewProvider>);
+  expect(rows()).toHaveLength(1);
   await userEvent.setup().click(screen.getByRole('button', { name: 'Show all threads' }));
   expect(parseRoute(location.search)).toEqual({ review: 'r-1', view: 'threads' });
-  await waitFor(() => expect(screen.getAllByRole('article')).toHaveLength(2));
+  await waitFor(() => expect(rows()).toHaveLength(2));
   expect(screen.queryByText(/^Showing:/)).toBeNull();
   expect(push).not.toHaveBeenCalled();
 });
@@ -434,4 +431,55 @@ test('changing the tab, status or owner clears need', async () => {
     expect(parseRoute(location.search).need).toBeUndefined();
     unmount();
   }
+});
+
+// Invariant: the Threads panel opens on All (not This file), listing open threads in collapsible state sections.
+test('the panel opens on All, with open threads under collapsible state sections', async () => {
+  const open = [stateful('t-1', 'awaiting-human'), stateful('t-2', 'unsent'), stateful('t-3', 'awaiting-agent')];
+  render(<ReviewProvider value={ctxValue({ openThreads: open.map((t) => digestOf(t, t.state)), fileDiff: { file: undefined } as never })}><ThreadPanel /></ReviewProvider>);
+  expect(screen.getByRole('tab', { name: /^All/ }).getAttribute('aria-selected')).toBe('true');
+  expect(screen.getAllByRole('region').map((r) => r.getAttribute('aria-label'))).toEqual(['Needs you', 'Will be sent', 'Waiting on agent']);
+  const header = screen.getByRole('button', { name: 'Will be sent 1' });
+  expect(header.getAttribute('aria-expanded')).toBe('true');
+  await userEvent.setup().click(header);
+  expect(header.getAttribute('aria-expanded')).toBe('false');
+  expect(rows()).toHaveLength(2);
+});
+
+// Invariant: only the routed thread opens as a full card with Reply; the others stay compact rows. Until its whole thread is loaded the row shows a loading line.
+test('the routed thread expands to a card with Reply; others stay rows; a not-yet-loaded one shows loading', () => {
+  history.replaceState(null, '', '?review=r-1&view=threads&thread=t-1');
+  const [t1, t2] = [thread({ id: 't-1' }), thread({ id: 't-2' })];
+  const open = [digestOf(t1), digestOf(t2)];
+  const { unmount } = render(<ReviewProvider value={ctxValue({ openThreads: open, fileDiff: { file: diffFile({ threads: [t1, t2] }) } as never })}><ThreadPanel /></ReviewProvider>);
+  expect(screen.getAllByRole('article')).toHaveLength(1);
+  expect(screen.getByLabelText('Reply')).toBeTruthy();
+  expect(rows()).toHaveLength(1);
+  unmount();
+  render(<ReviewProvider value={ctxValue({ openThreads: open, fileDiff: { file: undefined } as never })}><ThreadPanel /></ReviewProvider>);
+  expect(screen.queryByRole('article')).toBeNull();
+  expect(screen.getByRole('status', { name: 'Loading thread' })).toBeTruthy();
+});
+
+// Invariant: the review's strip pill count, the chip and the list agree: with need=waiting only that section shows.
+test('need=waiting shows only the waiting section', () => {
+  history.replaceState(null, '', '?review=r-1&view=threads&need=waiting');
+  const open = [stateful('t-1', 'awaiting-human'), stateful('t-2', 'awaiting-agent'), stateful('t-3', 'awaiting-agent')];
+  render(<ReviewProvider value={ctxValue({ openThreads: open.map((t) => digestOf(t, t.state)), fileDiff: { file: undefined } as never })}><ThreadPanel /></ReviewProvider>);
+  expect(screen.getAllByRole('region').map((r) => r.getAttribute('aria-label'))).toEqual(['Waiting on agent']);
+  expect(screen.getByText('Showing: Waiting on agent · 2')).toBeTruthy();
+});
+
+// Invariant: no per-file diff is fetched for the open list, nor while the panel is inactive (its tab is hidden), even for a resolved list.
+test('an inactive panel and an Open list fetch no per-file diff', async () => {
+  const net = stubFetch({ 'GET api/reviews/r-1/diff': { review: review(), files: [diffFile({ threads: [] })] } });
+  const files = [fileState({ threads: { open: 1, resolved: 1, outdated: 0 } })];
+  const value = ctxValue({ files, openThreads: [digestOf(thread())], fileDiff: { file: undefined } as never });
+  const user = userEvent.setup();
+  const { rerender } = render(<ReviewProvider value={value}><ThreadPanel active={false} /></ReviewProvider>);
+  await user.selectOptions(screen.getByLabelText('Status'), 'resolved');
+  await act(async () => {});
+  expect(net.count('GET api/reviews/r-1/diff')).toBe(0);
+  rerender(<ReviewProvider value={value}><ThreadPanel active /></ReviewProvider>);
+  await waitFor(() => expect(net.count('GET api/reviews/r-1/diff')).toBe(1));
 });

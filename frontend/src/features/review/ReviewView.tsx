@@ -23,7 +23,7 @@ import { Tip } from '@/features/nav/Tip';
 import { JumpNavProvider } from '@/features/nav/JumpNavProvider';
 import { OverviewPage } from '@/features/overview/OverviewPage';
 import { useLastViewed } from '@/state/lastViewed';
-import { paneTab, ReviewPane, UnreadBadge } from './ReviewPane';
+import { paneTab, ReviewPane, ThreadsBadge } from './ReviewPane';
 import { useReviewCtx } from '@/state/reviewContext';
 
 const CLEAR = { review: undefined, ...REVIEW_SCOPED };
@@ -38,7 +38,7 @@ function PhoneThreadsButton() {
   return (
     <Tip label="Open the Threads tab">
       <Button variant="outline" size="sm" onClick={() => navigate({ ...LEAVE_FILE, view: 'threads' })}>
-        <MessagesSquareIcon />Threads <UnreadBadge />
+        <MessagesSquareIcon />Threads <ThreadsBadge />
       </Button>
     </Tip>
   );

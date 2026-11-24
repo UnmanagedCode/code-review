@@ -136,27 +136,37 @@ try {
     assert.equal(await page.getByRole('button', { name: 'Accept file' }).isDisabled(), true);
     await shot('2b-accepted-file');
 
-    // 3. Submit round without a bridge: the recap (undecided hunks warned, never blocking), a note, Compose prompt, the copy dialog, Mark as sent, header says submitted.
+    // 3. Submit round without a bridge: the recap (undecided hunks warned, never blocking), Compose prompt, the copy dialog, Mark as sent, header says submitted.
     await page.getByRole('button', { name: 'Submit round' }).click();
     await page.getByRole('list', { name: 'What this round sends' }).waitFor();
     await page.getByText(/hunks? undecided/).waitFor();
-    await page.getByLabel('Overall note').fill('Overall: the rename looks right.');
     await shot('3-recap');
     await page.getByRole('button', { name: 'Compose prompt' }).click();
     const composed = page.getByLabel('Prompt');
     await composed.waitFor();
     const promptText = await composed.inputValue();
-    assert.match(promptText, /Reviewer note \[t\d+\]/);
     assert.match(promptText, /Not reviewed yet/);
+    assert.doesNotMatch(promptText, /Reviewer note/);
     await shot('3-copy-dialog');
     await page.getByRole('button', { name: 'Mark as sent' }).click();
     await page.getByText(/Round 2 · submitted/).waitFor();
     await shot('3-submitted');
-    // The note is a review thread: the Threads tab lists it.
-    await page.goto(q({ review: range, file: 'a.js' }));
+
+    // 3a. The overall note, on the syntax review (so the range review's thread counts stay seed.mjs's): it is carried in the
+    // prompt and kept as a review thread, listed in the Threads pane's Review tab.
+    await page.goto(q({ worktree: 'syntax', review: syntax }));
+    await page.getByRole('button', { name: 'Submit round' }).click();
+    await page.getByRole('list', { name: 'What this round sends' }).waitFor();
+    await page.getByLabel('Overall note').fill('Overall: the rename looks right.');
+    await page.getByRole('button', { name: 'Compose prompt' }).click();
+    const withNote = await page.getByLabel('Prompt').inputValue();
+    assert.match(withNote, /Reviewer note \[t\d+\]/);
+    await page.getByRole('button', { name: 'Mark as sent' }).click();
+    await page.getByText(/Round 1 · submitted/).waitFor();
     await page.getByRole('tablist', { name: 'Review pane' }).getByRole('tab', { name: /^Threads/ }).click();
     await page.getByRole('tabpanel', { name: /^Threads/ }).getByRole('tab', { name: /^Review/ }).click();
     await page.getByText('Overall: the rename looks right.').first().waitFor();
+    await page.goto(q({ review: range, file: 'a.js' }));
 
     // 3b. The recipient picker names the untitled s-rev by cc's label; choosing it puts that label in the header.
     await page.getByRole('button', { name: /^Recipient:/ }).click();
@@ -1309,8 +1319,8 @@ try {
   const noSideScroll = async (page, what) => {
     const { scroll, inner } = await page.evaluate(() => ({ scroll: document.scrollingElement.scrollWidth, inner: window.innerWidth }));
     assert.ok(scroll <= inner, `${what}: the page scrolls sideways (${scroll} > ${inner})`);
-    const mains = await page.locator('main').evaluateAll((els) => els.map((m) => ({ over: m.scrollWidth - m.clientWidth, cut: [...m.querySelectorAll('button, a')].filter((b) => b.getBoundingClientRect().right > m.getBoundingClientRect().right + 0.5).length })));
-    for (const m of mains) assert.deepEqual(m, { over: 0, cut: 0 }, `${what}: main scrolls sideways or cuts a control off`);
+    const mains = await page.locator('main').evaluateAll((els) => els.map((m) => ({ over: m.scrollWidth - m.clientWidth, cut: [...m.querySelectorAll('button, a')].filter((b) => b.getBoundingClientRect().right > m.getBoundingClientRect().right + 0.5).map((b) => `${b.tagName} ${(b.getAttribute('aria-label') ?? b.textContent).slice(0, 60)}`) })));
+    for (const m of mains) assert.deepEqual(m, { over: 0, cut: [] }, `${what}: main scrolls sideways or cuts a control off`);
     const clipped = await page.locator('a[aria-label$="need you"], a[aria-label$="will be sent"], a[aria-label$="waiting on agent"]')
       .evaluateAll((els, w) => els.filter((e) => e.getBoundingClientRect().right > w).length, inner);
     assert.equal(clipped, 0, `${what}: a pill is clipped`);

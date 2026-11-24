@@ -13,6 +13,7 @@ import { useReviewAdmin } from '@/state/admin';
 import { useReviewCtx } from '@/state/reviewContext';
 import { useReviewActions } from '@/state/threads';
 import { SubmitControls } from '@/features/submit/SubmitControls';
+import { ProgressStrip } from './ProgressStrip';
 import { RecipientPicker } from './RecipientPicker';
 
 const CLEAR = { review: undefined, ...REVIEW_SCOPED };
@@ -56,6 +57,7 @@ export function ReviewHeader() {
         Round {review.round} · {round?.submittedAt ? 'submitted' : 'not yet submitted'}
         {review.title ? ` · ${review.label}` : ''}
       </p>
+      <ProgressStrip />
       <div className="flex flex-wrap items-center gap-2">
         {writable ? (
           <button type="button" className="rounded-md border px-2 py-1 text-xs hover:bg-accent" onClick={() => setPicker(true)}>

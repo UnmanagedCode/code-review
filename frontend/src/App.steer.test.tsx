@@ -25,8 +25,8 @@ function world() {
     [/^GET api\/checkout\?/, { checkout: { project: 'app', worktree: null, path: '/x', branch: 'main', headSha: 'h', dirty: false, exists: true }, forkPoints: [], worktrees: [] }],
     [/^GET api\/sessions/, { sessions: [] }],
     [/^GET api\/reviews\?/, { reviews: [r1, r2] }],
-    [/^GET api\/reviews\/r-1$/, { review: r1, files: [fileState({ path: 'a.js' })], rounds: rounds(1), submissions: [], outdatedThreads: [], reviewThreads: [] }],
-    [/^GET api\/reviews\/r-2$/, { review: r2, files: files2, rounds: rounds(2), submissions: [], outdatedThreads: [], reviewThreads: [] }],
+    [/^GET api\/reviews\/r-1$/, { review: r1, files: [fileState({ path: 'a.js' })], rounds: rounds(1), submissions: [], outdatedThreads: [], reviewThreads: [], openThreads: [], activity: [] }],
+    [/^GET api\/reviews\/r-2$/, { review: r2, files: files2, rounds: rounds(2), submissions: [], outdatedThreads: [], reviewThreads: [], openThreads: [], activity: [] }],
     [/^GET api\/reviews\/r-1\/diff/, { review: r1, files: [diffFile({ path: 'a.js' })] }],
     [/^GET api\/reviews\/r-2\/diff/, { review: r2, files: [aFile] }],
     [/^GET api\/reviews\/r-2\/compare/, (u: URL) => compared(Number(u.searchParams.get('from')), Number(u.searchParams.get('to')))],
@@ -47,9 +47,9 @@ test('a steer to another review keeps its compare= and shows that review', async
   world();
   history.replaceState(null, '', '?project=app&review=r-1&file=a.js&side=new');
   render(<App />);
-  await screen.findByText('First review');
+  await screen.findByRole('heading', { level: 1, name: 'First review' });
   steer('?project=app&review=r-2&compare=1..2&file=a.js&side=old&lines=3&thread=t-7');
-  await screen.findByText('Second review');
+  await screen.findByRole('heading', { level: 1, name: 'Second review' });
   await act(async () => {});
   expect(location.search).toContain('compare=1..2');
 });
@@ -61,13 +61,13 @@ test('a steer to another review starts with fresh review state', async () => {
   const user = userEvent.setup();
   history.replaceState(null, '', '?project=app&review=r-2&view=threads&file=a.js&side=new');
   render(<App />);
-  await screen.findByText('Second review');
+  await screen.findByRole('heading', { level: 1, name: 'Second review' });
   await user.click(await screen.findByRole('tab', { name: /^All/ }));
   await user.selectOptions(await screen.findByRole('combobox', { name: 'Status' }), 'resolved');
   steer('?project=app&review=r-1&view=threads');
-  await screen.findByText('First review');
+  await screen.findByRole('heading', { level: 1, name: 'First review' });
   steer('?project=app&review=r-2&view=threads');
-  await screen.findByText('Second review');
+  await screen.findByRole('heading', { level: 1, name: 'Second review' });
   await user.click(await screen.findByRole('tab', { name: /^All/ }));
   expect((await screen.findByRole('combobox', { name: 'Status' }) as HTMLSelectElement).value).toBe('open');
 });
@@ -79,8 +79,8 @@ test('a link on a fresh load survives the bridge\'s first session', async () => 
   installBridge({ sessionId: 's-1', project: 'other', worktree: null });
   history.replaceState(null, '', '?project=app&review=r-2&file=a.js&side=new&thread=t-7');
   render(<App />);
-  await screen.findByText('Second review');
+  await screen.findByRole('heading', { level: 1, name: 'Second review' });
   await act(async () => {});
   expect(location.search).toBe('?project=app&review=r-2&file=a.js&side=new&thread=t-7');
-  await waitFor(() => expect(screen.getByText('Second review')).toBeTruthy());
+  await waitFor(() => expect(screen.getByRole('heading', { level: 1, name: 'Second review' })).toBeTruthy());
 });

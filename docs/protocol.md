@@ -27,9 +27,12 @@ REST under `/api` (JSON), an SSE stream, and the cc MCP endpoint. Behaviour behi
 
 ## Shapes
 
-- **ReviewSummary:** `id, project, worktree, branch, kind, target, label, title, status, recipient, author|null, recipientRole, round, headSha, baseSha, headMoved, dirty, checkoutGone, counts:{files, hunks, threads:{open,resolved,outdated}}, mergeBlockers, unread, seenByHuman, rev, createdAt, createdBy, lastSubmission:{id,status,code,round,kind}|null, groups`.
+- **ReviewSummary:** `id, project, worktree, branch, kind, target, label, title, status, recipient, author|null, recipientRole, round, headSha, baseSha, headMoved, dirty, checkoutGone, counts:{files, hunks, threads:{open,resolved,outdated}, threadStates}, unsent, seq, lastViewedSeq, mergeBlockers, unread, seenByHuman, rev, createdAt, createdBy, lastSubmission:{id,status,code,round,kind}|null, groups`.
   - `groups` is `{total, accepted, rejected, pending, ungrouped, guideMe}` (the current round's groups; `ungrouped` counts hunks in no group, `null` while the snapshot is unreadable; `guideMe` is a boolean), or `null` on uncommitted reviews.
   - `counts.hunks` is `{pending,accepted,rejected}`, or `{total}` for uncommitted reviews.
+  - `counts.threadStates` is `{awaitingHuman, verifyResolution, unsent, awaitingAgent}`: the open threads of every anchor by `Thread.state`. The four sum to `counts.threads.open`.
+  - `unsent` (boolean): a Submit round would still send something (`unsentActivity` in `src/threadState.js`; true until the first round is delivered, then true while the newest human act is newer than the newest delivered round's `seq`).
+  - `seq` and `lastViewedSeq`: the review's change counter and the point the human last viewed up to. UI-only: MCP json omits both.
   - `snapshotError` (`CHECKOUT_GONE|SNAPSHOT_GONE|DIFF_TOO_LARGE|TEMP_UNUSABLE|SYSTEM_UNREACHABLE|GIT_TIMEOUT|GIT_UNAVAILABLE`) is present when the diff is unreadable; `counts.files` and `counts.hunks` are then `null`. With `TEMP_UNUSABLE` or one of the last three the system could not serve the read: `checkoutGone` and `dirty` are then `false`, never a claim that the checkout is missing.
 - **InboxItem** (`GET /inbox`): `id, project, worktree, branch, kind, label, title, round, unread, seenByHuman, lastActivityAt, turn, checkoutGone`.
   - `lastActivityAt`: ISO time of the review's latest activity (what counts: [features](features.md#review-ui) → Inbox).
@@ -41,7 +44,22 @@ REST under `/api` (JSON), an SSE stream, and the cc MCP endpoint. Behaviour behi
   - `lineCount.old` / `.new`: each side's `total` as `GET /reviews/:id/file` reports it in that response's round (compare: old = round A's head, new = round B's head); `null` for a side the file lacks (`added` → old, `deleted` → new) and both `null` for binary or `tooLarge` files. An empty side is `0` (which `GET …/file` cannot window). Exception: an uncommitted file whose working-tree bytes differ from what git diffs (a clean filter such as git-lfs, a symlink) gets the count of the content the diff shows.
 - **fileSig** (on `POST …/threads`, `POST …/messages`, `PATCH …/threads/:tid`, `PUT …/verdict`, `POST …/accept-file`): `{path, sig}`, the `sig` the live `diff?file=<path>` shows after the write; `sig` is `null` when the path is not in the current diff or the snapshot is unreadable (the write itself still succeeds). A thread write on a review- or group-anchored thread returns `fileSig: null` (it touches no file).
 - **Hunk:** text `{id, kind:'text', header, oldStart, oldLines, newStart, newLines, lines:[{t:'ctx'|'add'|'del', old, new, text, noEol?}], verdict}`; file-level `{id, kind:'file', lines:[], verdict}`. `verdict` is `null` for uncommitted reviews, in the commit filter view, in past-round views and in round comparisons.
-- **Thread:** `id, kind, severity, status (open|resolved|outdated), disposition, resolveProposed, anchor, openedBy, unread, messages:[{id, author, body, at, round, proposeResolve, citations:[{raw,path,startLine,endLine}]}]`.
+- **Thread:** `id, kind, severity, status (open|resolved|outdated), state, disposition, resolveProposed, anchor, openedBy, unread, messages:[{id, author, body, at, round, proposeResolve, citations:[{raw,path,startLine,endLine}]}]`.
+  - `state`: whose move an open thread waits on, from who acted last (`threadState` in `src/threadState.js`); `null` unless `status` is `open`.
+
+    | `state` | When | UI label |
+    |---|---|---|
+    | `awaiting-human` | an agent acted last, no proposal | Needs your reply |
+    | `verify-resolution` | an agent acted last and proposed resolving | Agent says fixed — verify |
+    | `unsent` | the human acted last and no delivered round was composed at or after that act | Will be sent |
+    | `awaiting-agent` | the human acted last and a delivered round was composed at or after that act | Waiting on agent |
+
+    - A human act is a message, or a status change (a reopen or a human resolve) that no message carries.
+    - Only a delivered `round` submission counts as sent: a pending, failed, superseded or `guide` submission does not. This is the same cutoff as the "since" point of the Submit round prompt.
+    - A human reply after an agent's proposal gives `unsent`, though `resolveProposed` stays true.
+    - Past-round views and comparisons carry `state: null`.
+- **ThreadDigest** (`GET /reviews/:id` → `openThreads`): `id, kind, severity, status:'open', state, anchor, openedBy, unread, resolveProposed, messages (count), first:{author, at, preview}, last:{author, at, preview, proposeResolve}`. `preview` is the message's first non-blank line, plain text, clipped to `PREVIEW_CHARS` (`src/overview.js`).
+- **ActivityItem** (`GET /reviews/:id` → `activity`): `seq, at, actor, event ('opened'|'replied'|'proposed-resolution'|'resolved'), thread:{id, kind, severity, anchor}`. Agent thread messages only, newest first, strictly decreasing `seq`, at most `ACTIVITY_LIMIT`. Group proposals and agent refreshes are not listed (they store no `seq`).
 - **`anchor`**, by `anchor.kind`:
 
   | `kind` | Fields | On |
@@ -91,7 +109,7 @@ REST under `/api` (JSON), an SSE stream, and the cc MCP endpoint. Behaviour behi
 | `GET /reviews` | `?project&worktree&status` (`open`, `closed` or `all`; `all` or no `status` = every status); no `worktree` = every checkout, empty `worktree=` = main | `{reviews:[ReviewSummary]}` newest first | |
 | `GET /inbox` | | `{reviews:[InboxItem]}`: every open review of every project and checkout, `lastActivityAt` descending, then `id` descending. Reads the store and asks cc each project's location (once per project with an open review) and worktree list (once per project with an open worktree review); runs no git. A failed cc lookup gives `checkoutGone:null`, never a refusal | |
 | `POST /reviews` | `{project, worktree|null, kind?, base?, sha?, recipient?, title?}` (`author` is refused `INVALID_ARGUMENT`: the human path takes none) | `{review, reused}` | `INVALID_ARGUMENT` `BAD_REF` `REF_UNKNOWN` `BASE_REQUIRED` `NO_COMMON_ANCESTOR` `UNBORN_HEAD` `PROJECT_*` `CHECKOUT_*` `RECIPIENT_UNKNOWN` |
-| `GET /reviews/:id` | | `{review, files:[FileState], rounds, submissions, outdatedThreads:[Thread], reviewThreads:[Thread]}` (`reviewThreads`: every review-anchored thread; they never go outdated) | `REVIEW_UNKNOWN` |
+| `GET /reviews/:id` | | `{review, files:[FileState], rounds, submissions, outdatedThreads:[Thread], reviewThreads:[Thread], guide, openThreads:[ThreadDigest], activity:[ActivityItem]}` (`reviewThreads`: every review-anchored thread; they never go outdated; `openThreads`: every open thread of any anchor in thread-number order, so a cross-file list needs no per-file diff fetch) | `REVIEW_UNKNOWN` |
 | `PATCH /reviews/:id` | `{recipient? (null clears), title?, status?: open|closed}` | `{review}` | `RECIPIENT_UNKNOWN` |
 | `DELETE /reviews/:id` | | `{ok}` | `REVIEW_UNKNOWN` |
 | `GET /reviews/:id/diff` | `?file` optional | `{review, files:[DiffFile]}`; threads are the non-outdated ones on that file | `FILE_NOT_IN_DIFF` `SNAPSHOT_GONE` `CHECKOUT_GONE` `DIFF_TOO_LARGE` |
@@ -111,6 +129,7 @@ REST under `/api` (JSON), an SSE stream, and the cc MCP endpoint. Behaviour behi
 | `POST /reviews/:id/submissions` | | `{submission:{id, round, recipient, text, status, kind:'round'}}` | `NO_RECIPIENT` `NOTHING_TO_SUBMIT` `REVIEW_CLOSED` |
 | `POST /reviews/:id/guide` | | `{submission:{id, round, recipient, text, status, kind:'guide'}}`: the Guide me prompt; delivered through the same `…/submissions/:sid/result` | `NO_GROUPS` `NO_RECIPIENT` `REVIEW_CLOSED` |
 | `POST /reviews/:id/submissions/:sid/result` | `{ok, code?}` | `{submission}` | `SUBMISSION_UNKNOWN` `SUBMISSION_NOT_PENDING` `INVALID_ARGUMENT` |
+| `POST /reviews/:id/viewed` | `{seq}` (a non-negative integer) | `{review}`: sets `lastViewedSeq = max(old, min(seq, review.seq))`. Not activity: no `seq` bump, no `lastActivityAt` change, and an unchanged marker writes nothing (no `rev` bump, no SSE event). Allowed on a closed review. REST only | `INVALID_ARGUMENT`, `REVIEW_UNKNOWN` |
 | `POST /reviews/:id/read` | `{threadId?}` (none = whole review) | `{review}` | `THREAD_UNKNOWN` |
 | `GET /events` | | SSE | |
 | `POST /mcp` | cc envelope | see [MCP](#mcp) | |
@@ -143,7 +162,7 @@ One implementation (`buildAnchor` in `src/threads.js`) serves `POST …/threads`
 
 ## MCP
 
-- Endpoint `/api/mcp`; tools are namespaced `code-review__<tool>` by cc. `inputSchema`s are flat (`type`, `enum`, `minLength`, `minimum`, `default`, `description`; an array's `items` carries only `type` and `description`, so `propose_groups` checks each group's shape itself). Each tool also declares an `outputSchema` in cc's validated subset (`type` incl. unions, `properties`, `required`, `additionalProperties` on every object, `items`, `enum`, `const`, `anyOf`, `description`); enums appear only on values the plugin's own state machine owns (`review.kind`/`status`, thread `status`, `anchor.kind`, verdicts, `FileState.status`, hunk and line kinds); free-form history strings (author `role`, thread `kind`/`severity`/`disposition`, submission `status`/`kind`/`code`, a retired group's `reason`) are plain strings. The definitions are in `conductor.plugin.json`.
+- Endpoint `/api/mcp`; tools are namespaced `code-review__<tool>` by cc. `inputSchema`s are flat (`type`, `enum`, `minLength`, `minimum`, `default`, `description`; an array's `items` carries only `type` and `description`, so `propose_groups` checks each group's shape itself). Each tool also declares an `outputSchema` in cc's validated subset (`type` incl. unions, `properties`, `required`, `additionalProperties` on every object, `items`, `enum`, `const`, `anyOf`, `description`); enums appear only on values the plugin's own state machine owns (`review.kind`/`status`, thread `status` and `state`, `anchor.kind`, verdicts, `FileState.status`, hunk and line kinds); free-form history strings (author `role`, thread `kind`/`severity`/`disposition`, submission `status`/`kind`/`code`, a retired group's `reason`) are plain strings. The definitions are in `conductor.plugin.json`.
 - Envelope `{tool, arguments, caller:{sessionId, project}, format}`.
   - `format` `json` → `200 {structured}`: validates against the tool's `outputSchema`, complete, never truncated, no `ok`.
   - `format` `text`, absent or `null` → `200 {text}`: one prose string, no `meta`.
@@ -223,10 +242,11 @@ The page keeps its state in the query string (`?…`, never the hash) and writes
 | `commit` | Range reviews: commit-filter view (read-only) |
 | `round` | Range reviews: past-round view (read-only), a positive integer; ignored with `commit`, dropped when it names the current round or a later one. Focusing a thread there marks nothing read |
 | `compare` | Range reviews: round comparison (read-only), `A..B` of positive integers. Ignored with `commit`; beats `round` (which is dropped); dropped when the review is not a range review, `A` ≥ `B`, or `B` is past the current round. There `side=old` means round A's lines and `new` round B's |
+| `need` | With `view=threads`: `needs-you`, `unsent` or `waiting`. The Threads tab selects All, open, any owner, and lists only the threads whose `state` is in that group (`stateGroup` in `frontend/src/lib/threadState.ts`: `awaiting-human` and `verify-resolution` → `needs-you`, `unsent` → `unsent`, `awaiting-agent` → `waiting`). Any other value is dropped by the parser; any other filter choice in the panel clears it (replace); a review-scoped reset clears it |
 | `step` | With `view=guided`: a group id of the current round or a retired one (`g<n>`), or `other` (the hunks in no group); absent = the first step. Anything else is dropped by the parser. Step moves (Next, Previous, a step-list click, a retired group) use `pushState`, so Back returns to the previous step; tab switches stay `replace`. An id naming no step is replaced out. Pane state like `view`: leaving the open file keeps it, a review-scoped reset clears it |
 | `range` | With `view=new`: prefill a range review, `<BASE>...<HEAD>` or `<BASE>..<HEAD>` (see New review links). Kept raw by the parser; cleared with the dialog and by every review-scoped reset |
 | `sha` | With `view=new`: prefill a one-commit review of that ref or sha. As `range` otherwise |
-| `view` | Outside a review: `new` (New review dialog) or `inbox` (the side pane's Inbox tab; absent = Checkout, written with `replace`; session following keeps it). Inside one, the side pane's tab: `guided`, `threads` or `history` (History only on range reviews; Guided only where the review has a live guide with groups or an offer, so not on uncommitted reviews or in a round view, comparison or commit filter; elsewhere each shows Files); absent = Files. Tab clicks write it with `replace`; every other in-review navigation keeps it; opening or leaving a review clears it |
+| `view` | Outside a review: `new` (New review dialog) or `inbox` (the side pane's Inbox tab; absent = Checkout, written with `replace`; session following keeps it). Inside one, the side pane's tab: `guided`, `threads` or `history` (History only on range reviews; Guided only where the review has a live guide with groups or an offer, so not on uncommitted reviews or in a round view, comparison or commit filter; elsewhere each shows Files); absent = Files. `overview` shows the overview on a phone (wide layouts show it whenever no file is open; the pane stays on Files); a past round, comparison or commit filter has no overview. Tab clicks write it with `replace`; every other in-review navigation keeps it; opening or leaving a review clears it |
 
 **Links.** MCP results carry absolute links (a `link` field in json, a `link:` line in text) on cc's fake host `http://cc.internal` (`CC_ORIGIN` in `src/links.js`). cc opens each one in its plugin view, or in the plugin dock when that is showing. Each link opens the review or a thread.
 - Format: `http://cc.internal/#plugin/<manifest id>/?<route>`; values are encoded as `URLSearchParams` does, keys follow the route serialiser's order.
@@ -244,7 +264,7 @@ The page keeps its state in the query string (`?…`, never the hash) and writes
 | `group` | any | `view=guided`, `step=<groupId>`, `thread` (a retired group's id lands on its retired view; an open file and any `round`/`compare`/`commit` are left) |
 
 **New review links.** A link opens the New review dialog prefilled; the human still picks the recipient and clicks Open review (nothing is created from a link, and no URL key sets the recipient).
-- Format: `#plugin/code-review/?project=<P>[&worktree=<W>]&view=new&range=<BASE>...<HEAD>` (`..` means the same) or `…&view=new&sha=<COMMIT>`. `project` is required; values are encoded as `URLSearchParams` does, keys in the route serialiser's order (`project, worktree, …, view, step, range, sha`).
+- Format: `#plugin/code-review/?project=<P>[&worktree=<W>]&view=new&range=<BASE>...<HEAD>` (`..` means the same) or `…&view=new&sha=<COMMIT>`. `project` is required; values are encoded as `URLSearchParams` does, keys in the route serialiser's order (`project, worktree, …, view, step, need, range, sha`).
 - `range` splits at the first `...`, else the first `..` (`parsePrefill` in `frontend/src/lib/prefill.ts`). Either form is a range review of `BASE..HEAD` diffed from `merge-base(BASE, HEAD)`. Each side is a ref or a full or abbreviated sha, resolved through `GET /checkout/commit`.
 - `<HEAD>` must resolve to the checkout's current HEAD: a range review always ends there.
 - A base equal to one of the checkout's fork-point refs selects that radio, so the review's base stays the ref; any other base selects Another commit with the resolved full sha.

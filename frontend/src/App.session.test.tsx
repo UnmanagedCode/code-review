@@ -18,7 +18,7 @@ const world = () => stubFetch([
   [/^GET api\/sessions/, { sessions: [] }],
   [/^GET api\/reviews\?/, { reviews: [] }],
   [/^GET api\/inbox$/, { reviews: [] }],
-  [/^GET api\/reviews\/r-1$/, { review: review({ title: 'Open review' }), files: [fileState({ path: 'a.js' })], rounds: [{ n: 1, headSha: 'a'.repeat(40), baseSha: 'b'.repeat(40), createdAt: '', submittedAt: null }], submissions: [], outdatedThreads: [], reviewThreads: [] }],
+  [/^GET api\/reviews\/r-1$/, { review: review({ title: 'Open review' }), files: [fileState({ path: 'a.js' })], rounds: [{ n: 1, headSha: 'a'.repeat(40), baseSha: 'b'.repeat(40), createdAt: '', submittedAt: null }], submissions: [], outdatedThreads: [], reviewThreads: [], openThreads: [], activity: [] }],
   [/^GET api\/reviews\/r-1\/diff/, { review: review({ title: 'Open review' }), files: [diffFile({ path: 'a.js' })] }],
   [/^GET api\/reviews\/r-1\/commits/, { commits: [] }],
 ]);
@@ -109,11 +109,11 @@ test('a session change while a review is open is ignored, not deferred', async (
   const bridge = installBridge({ sessionId: 's-0', project: 'app', worktree: 'feature' });
   history.replaceState(null, '', '?project=app&worktree=feature&review=r-1');
   render(<App />);
-  await screen.findByRole('heading', { name: 'Open review' });
+  await screen.findByRole('heading', { level: 1, name: 'Open review' });
   act(() => bridge.emit({ sessionId: 's-1', project: 'other', worktree: null }));
   await act(async () => {});
   expect(location.search).toBe('?project=app&worktree=feature&review=r-1');
-  expect(screen.getByRole('heading', { name: 'Open review' })).toBeTruthy();
+  expect(screen.getByRole('heading', { level: 1, name: 'Open review' })).toBeTruthy();
 
   await userEvent.setup().click(screen.getByRole('link', { name: 'Reviews' }));
   await screen.findByText('No open reviews');

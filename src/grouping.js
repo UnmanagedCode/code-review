@@ -159,7 +159,7 @@ export function guideView(review, files) {
       };
     }),
     ungrouped: files ? files.flatMap((f) => f.hunks).filter((h) => !grouped.has(h.id)).map((h) => hunk(h.id)) : null,
-    threads: groupThreads.map(threadView),
+    threads: groupThreads.map((t) => threadView(review, t)),
     retired: review.retiredGroups.map((g) => ({ id: g.id, title: g.title, retiredIn: g.retiredIn, reason: g.reason })),
     guideMe: guideState(review),
   };

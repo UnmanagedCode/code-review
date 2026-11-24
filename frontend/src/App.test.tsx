@@ -178,7 +178,7 @@ describe('menu', () => {
   const WORKTREES: Record<string, (string | null)[]> = { app: [null, 'feature', 'other-wt'], other: [null] };
   const detail = (id: string, title: string) => ({
     review: review({ id, title }), files: [fileState({ path: 'a.js' })], rounds: [{ n: 1, headSha: 'a'.repeat(40), baseSha: 'b'.repeat(40), createdAt: '', submittedAt: null }],
-    submissions: [], outdatedThreads: [], reviewThreads: [],
+    submissions: [], outdatedThreads: [], reviewThreads: [], openThreads: [], activity: [],
   });
   /** `app` (main, feature, other-wt) and `other`; `lookup`/`inbox` override those routes, `listed` is what `api/reviews` lists. */
   function menuWorld({ inbox = [] as InboxItem[], listed = [] as ReturnType<typeof review>[], lookup, inboxRoute, checkout }: {
@@ -223,7 +223,7 @@ describe('menu', () => {
     history.replaceState(null, '', '?ccProject=app&ccWorktree=feature');
     const length = history.length;
     render(<App />);
-    await screen.findByRole('heading', { name: 'Review one' });
+    await screen.findByRole('heading', { level: 1, name: 'Review one' });
     expect(location.search).toBe('?project=app&worktree=feature&review=r-1');
     expect(history.length).toBe(length);
     onlyGets(calls);
@@ -270,7 +270,7 @@ describe('menu', () => {
   async function openOnReview() {
     history.replaceState(null, '', '?project=app&worktree=feature&review=r-1');
     render(<App />);
-    return screen.findByRole('heading', { name: 'Review one' });
+    return screen.findByRole('heading', { level: 1, name: 'Review one' });
   }
 
   // Invariant: an unusable target toasts a message naming it and changes nothing: the route, the mounted review, no cc params left; a missing project asks the backend nothing.
@@ -290,7 +290,7 @@ describe('menu', () => {
     expect(error.mock.calls[0][0]).toContain(name);
     expect(location.search).toBe('?project=app&worktree=feature&review=r-1');
     expect(history.length).toBe(length);
-    expect(screen.getByRole('heading', { name: 'Review one' })).toBe(heading);
+    expect(screen.getByRole('heading', { level: 1, name: 'Review one' })).toBe(heading);
     const asked = calls.slice(before).filter((c) => ['/api/checkout/lookup', '/api/inbox'].includes(c.url.pathname));
     expect(asked.length > 0).toBe(asks);
     onlyGets(calls);
@@ -309,7 +309,7 @@ describe('menu', () => {
     await waitFor(() => expect(error).toHaveBeenCalledTimes(1));
     expect(error.mock.calls[0][0]).toMatch(/^Can't show reviews: /);
     expect(location.search).toBe('?project=app&worktree=feature&review=r-1');
-    expect(screen.getByRole('heading', { name: 'Review one' })).toBeTruthy();
+    expect(screen.getByRole('heading', { level: 1, name: 'Review one' })).toBeTruthy();
     onlyGets(calls);
   });
 
@@ -321,7 +321,7 @@ describe('menu', () => {
     await openOnReview();
     const length = history.length;
     navigateCc('?ccProject=app&ccWorktree=other-wt');
-    await screen.findByRole('heading', { name: 'Review two' });
+    await screen.findByRole('heading', { level: 1, name: 'Review two' });
     expect(location.search).toBe('?project=app&worktree=other-wt&review=r-2');
     navigateCc('?ccProject=app');
     expect(await screen.findByText('No open reviews')).toBeTruthy();
@@ -350,7 +350,7 @@ describe('menu', () => {
     await act(async () => { release(); await held; });
     await act(async () => {});
     expect(location.search).toBe('?project=app');
-    expect(screen.queryByRole('heading', { name: 'Review one' })).toBeNull();
+    expect(screen.queryByRole('heading', { level: 1, name: 'Review one' })).toBeNull();
     onlyGets(calls);
   });
 
@@ -372,7 +372,7 @@ describe('menu', () => {
     await act(async () => { release(); await held; });
     await act(async () => {});
     expect(location.search).toBe('?project=other');
-    expect(screen.queryByRole('heading', { name: 'Review one' })).toBeNull();
+    expect(screen.queryByRole('heading', { level: 1, name: 'Review one' })).toBeNull();
     expect(error).not.toHaveBeenCalled();
     onlyGets(calls);
   });
@@ -400,10 +400,10 @@ describe('menu', () => {
     const { calls } = menuWorld({ inbox: [inboxItem({ id: 'r-1', worktree: 'feature' })] });
     history.replaceState(null, '', '?ccProject=app&ccWorktree=feature');
     const { unmount } = render(<App />);
-    await screen.findByRole('heading', { name: 'Review one' });
+    await screen.findByRole('heading', { level: 1, name: 'Review one' });
     unmount();
     render(<App />);
-    await screen.findByRole('heading', { name: 'Review one' });
+    await screen.findByRole('heading', { level: 1, name: 'Review one' });
     await act(async () => {});
     expect(location.search).toBe('?project=app&worktree=feature&review=r-1');
     expect(gets(calls, 'api/checkout/lookup')).toHaveLength(1);

@@ -325,3 +325,20 @@ test('a group thread\'s location link names its step and title, or "(retired)"',
   renderInReview(<ThreadCard thread={thread({ status: 'outdated', anchor: groupAnchor({ groupId: 'g5' }) })} showLocation />, { guide });
   expect(screen.getByRole('button', { name: 'Gone (retired)' })).toBeTruthy();
 });
+
+// Invariant: a live card names whose move it is for awaiting-human, unsent and awaiting-agent; verify-resolution keeps its own
+// "proposes resolution" banner instead of a second chip, and a thread with no state (every past or comparison view) shows none.
+test('the state chip shows per state, never for verify-resolution or a null state', () => {
+  const labels = { 'awaiting-human': 'Needs your reply', unsent: 'Will be sent', 'awaiting-agent': 'Waiting on agent' } as const;
+  for (const [state, label] of Object.entries(labels)) {
+    const { unmount } = renderInReview(<ThreadCard thread={thread({ state: state as keyof typeof labels })} />);
+    expect(screen.getByText(label), state).toBeTruthy();
+    unmount();
+  }
+  const { unmount } = renderInReview(<ThreadCard thread={thread({ state: 'verify-resolution', resolveProposed: true })} />);
+  expect(screen.queryByText('Agent says fixed — verify')).toBeNull();
+  expect(screen.getByText('An agent proposes resolving this thread.')).toBeTruthy();
+  unmount();
+  renderInReview(<ThreadCard thread={thread({ state: null })} />, { round: 1, readOnly: true });
+  for (const label of Object.values(labels)) expect(screen.queryByText(label)).toBeNull();
+});

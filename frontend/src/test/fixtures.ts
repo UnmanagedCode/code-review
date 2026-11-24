@@ -1,4 +1,4 @@
-import type { Author, DiffFile, GroupAnchor, GuideGroup, GuideView, DiffLine, FileState, InboxItem, LinesAnchor, Message, ReviewSummary, TextHunk, Thread } from '@/lib/types';
+import type { ActivityItem, Author, DiffFile, GroupAnchor, GuideGroup, GuideView, DiffLine, FileState, InboxItem, LinesAnchor, Message, ReviewSummary, TextHunk, Thread, ThreadDigest } from '@/lib/types';
 
 export const HUMAN: Author = { kind: 'human' };
 export const agent = (sessionId = 's-rev', role: 'author' | 'reviewer' | 'conductor' = 'reviewer'): Author => ({ kind: 'session', sessionId, role });
@@ -7,8 +7,8 @@ export const review = (over: Partial<ReviewSummary> = {}): ReviewSummary => ({
   id: 'r-1', project: 'app', worktree: 'feature', branch: 'feature', kind: 'range', target: {}, label: 'main…feature', title: null,
   status: 'open', recipient: 's-author', author: null, recipientRole: 'author', round: 1, headSha: 'a'.repeat(40), baseSha: 'b'.repeat(40),
   headMoved: false, dirty: false, checkoutGone: false,
-  counts: { files: 1, hunks: { pending: 1, accepted: 0, rejected: 0 }, threads: { open: 0, resolved: 0, outdated: 0 } },
-  mergeBlockers: 0, unread: 0, seenByHuman: true, rev: 1, createdAt: '2026-01-01T00:00:00Z', createdBy: HUMAN, lastSubmission: null, groups: null,
+  counts: { files: 1, hunks: { pending: 1, accepted: 0, rejected: 0 }, threads: { open: 0, resolved: 0, outdated: 0 }, threadStates: { awaitingHuman: 0, verifyResolution: 0, unsent: 0, awaitingAgent: 0 } },
+  unsent: false, seq: 1, lastViewedSeq: 1, mergeBlockers: 0, unread: 0, seenByHuman: true, rev: 1, createdAt: '2026-01-01T00:00:00Z', createdBy: HUMAN, lastSubmission: null, groups: null,
   ...over,
 });
 
@@ -47,7 +47,7 @@ export const linesAnchor = (over: Partial<LinesAnchor> = {}): LinesAnchor => ({
 });
 
 export const thread = (over: Partial<Thread> = {}): Thread => ({
-  id: 't-1', kind: 'comment', severity: null, status: 'open', disposition: null, resolveProposed: false,
+  id: 't-1', kind: 'comment', severity: null, status: 'open', state: null, disposition: null, resolveProposed: false,
   anchor: linesAnchor(),
   openedBy: HUMAN, unread: 0, messages: [message()], ...over,
 });
@@ -71,4 +71,17 @@ export const guideGroup = (over: Partial<GuideGroup> = {}): GuideGroup => ({
 export const guideView = (over: Partial<GuideView> = {}): GuideView => ({
   round: 1, groups: [guideGroup()], ungrouped: [], threads: [], retired: [],
   guideMe: { offered: false, noGroups: false, droppedGroups: 0, newUngrouped: 0 }, ...over,
+});
+
+export const threadDigest = (over: Partial<ThreadDigest> = {}): ThreadDigest => ({
+  id: 't-1', kind: 'comment', severity: null, status: 'open', state: 'awaiting-human', anchor: linesAnchor(), openedBy: HUMAN, unread: 0,
+  resolveProposed: false, messages: 1,
+  first: { author: HUMAN, at: '2026-01-01T00:00:00Z', preview: 'hello' },
+  last: { author: HUMAN, at: '2026-01-01T00:00:00Z', preview: 'hello', proposeResolve: false },
+  ...over,
+});
+
+export const activityItem = (over: Partial<ActivityItem> = {}): ActivityItem => ({
+  seq: 5, at: '2026-01-01T00:00:00Z', actor: agent('s-author', 'author'), event: 'replied',
+  thread: { id: 't-1', kind: 'comment', severity: null, anchor: linesAnchor() }, ...over,
 });

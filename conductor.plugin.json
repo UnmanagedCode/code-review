@@ -224,12 +224,38 @@
                         "outdated"
                       ],
                       "additionalProperties": false
+                    },
+                    "threadStates": {
+                      "type": "object",
+                      "properties": {
+                        "awaitingHuman": {
+                          "type": "integer"
+                        },
+                        "verifyResolution": {
+                          "type": "integer"
+                        },
+                        "unsent": {
+                          "type": "integer"
+                        },
+                        "awaitingAgent": {
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "awaitingHuman",
+                        "verifyResolution",
+                        "unsent",
+                        "awaitingAgent"
+                      ],
+                      "additionalProperties": false,
+                      "description": "Open threads of every anchor by whose move they wait on; the four sum to counts.threads.open."
                     }
                   },
                   "required": [
                     "files",
                     "hunks",
-                    "threads"
+                    "threads",
+                    "threadStates"
                   ],
                   "additionalProperties": false
                 },
@@ -347,6 +373,10 @@
                 },
                 "link": {
                   "type": "string"
+                },
+                "unsent": {
+                  "type": "boolean",
+                  "description": "True when you did something the next Submit round would still send."
                 }
               },
               "required": [
@@ -377,7 +407,8 @@
                 "createdBy",
                 "groups",
                 "lastSubmission",
-                "link"
+                "link",
+                "unsent"
               ],
               "additionalProperties": false
             },
@@ -561,12 +592,38 @@
                         "outdated"
                       ],
                       "additionalProperties": false
+                    },
+                    "threadStates": {
+                      "type": "object",
+                      "properties": {
+                        "awaitingHuman": {
+                          "type": "integer"
+                        },
+                        "verifyResolution": {
+                          "type": "integer"
+                        },
+                        "unsent": {
+                          "type": "integer"
+                        },
+                        "awaitingAgent": {
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "awaitingHuman",
+                        "verifyResolution",
+                        "unsent",
+                        "awaitingAgent"
+                      ],
+                      "additionalProperties": false,
+                      "description": "Open threads of every anchor by whose move they wait on; the four sum to counts.threads.open."
                     }
                   },
                   "required": [
                     "files",
                     "hunks",
-                    "threads"
+                    "threads",
+                    "threadStates"
                   ],
                   "additionalProperties": false
                 },
@@ -684,6 +741,10 @@
                 },
                 "link": {
                   "type": "string"
+                },
+                "unsent": {
+                  "type": "boolean",
+                  "description": "True when you did something the next Submit round would still send."
                 }
               },
               "required": [
@@ -714,7 +775,8 @@
                 "createdBy",
                 "groups",
                 "lastSubmission",
-                "link"
+                "link",
+                "unsent"
               ],
               "additionalProperties": false
             },
@@ -1162,6 +1224,20 @@
                       "outdated"
                     ]
                   },
+                  "state": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "enum": [
+                      "awaiting-human",
+                      "verify-resolution",
+                      "unsent",
+                      "awaiting-agent",
+                      null
+                    ],
+                    "description": "Whose move an open thread waits on: awaiting-human (an agent acted last), verify-resolution (an agent proposed resolving), unsent (your last act is not in a delivered round yet), awaiting-agent (it was delivered); null unless the thread is open."
+                  },
                   "disposition": {
                     "type": [
                       "string",
@@ -1396,6 +1472,7 @@
                   "kind",
                   "severity",
                   "status",
+                  "state",
                   "disposition",
                   "resolveProposed",
                   "anchor",
@@ -1686,6 +1763,20 @@
                     "outdated"
                   ]
                 },
+                "state": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "enum": [
+                    "awaiting-human",
+                    "verify-resolution",
+                    "unsent",
+                    "awaiting-agent",
+                    null
+                  ],
+                  "description": "Whose move an open thread waits on: awaiting-human (an agent acted last), verify-resolution (an agent proposed resolving), unsent (your last act is not in a delivered round yet), awaiting-agent (it was delivered); null unless the thread is open."
+                },
                 "disposition": {
                   "type": [
                     "string",
@@ -1857,6 +1948,7 @@
                 "kind",
                 "severity",
                 "status",
+                "state",
                 "disposition",
                 "resolveProposed",
                 "anchor",
@@ -1939,6 +2031,20 @@
                     "outdated"
                   ]
                 },
+                "state": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "enum": [
+                    "awaiting-human",
+                    "verify-resolution",
+                    "unsent",
+                    "awaiting-agent",
+                    null
+                  ],
+                  "description": "Whose move an open thread waits on: awaiting-human (an agent acted last), verify-resolution (an agent proposed resolving), unsent (your last act is not in a delivered round yet), awaiting-agent (it was delivered); null unless the thread is open."
+                },
                 "disposition": {
                   "type": [
                     "string",
@@ -2110,6 +2216,7 @@
                 "kind",
                 "severity",
                 "status",
+                "state",
                 "disposition",
                 "resolveProposed",
                 "anchor",

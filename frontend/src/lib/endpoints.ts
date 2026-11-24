@@ -1,7 +1,7 @@
 import { api } from './api';
 import type {
-  CheckoutInfo, Commit, ComparedThread, DiffFile, FileState, ForkPoint, InboxItem, Kind, RefreshReport, ReviewSummary, Round, Session, SessionPlace,
-  FileSig, GuideView, Severity, Submission, Thread, ThreadAnchorInput, ThreadCounts, ThreadKind, UnplacedThread, Verdict,
+  ActivityItem, CheckoutInfo, Commit, ComparedThread, DiffFile, FileState, ForkPoint, InboxItem, Kind, RefreshReport, ReviewSummary, Round, Session, SessionPlace,
+  FileSig, GuideView, Severity, Submission, Thread, ThreadAnchorInput, ThreadCounts, ThreadDigest, ThreadKind, UnplacedThread, Verdict,
 } from './types';
 
 /** One typed function per REST call in docs/protocol.md; the only place `api/…` paths are built. */
@@ -14,7 +14,13 @@ const q = (params: Record<string, string | number | null | undefined>): string =
 const json = (method: string, body?: unknown): RequestInit => ({ method, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
 const r = (id: string) => `api/reviews/${encodeURIComponent(id)}`;
 
-export interface ReviewDetail { review: ReviewSummary; files: FileState[]; rounds: Round[]; submissions: Submission[]; outdatedThreads: Thread[]; reviewThreads: Thread[]; guide: GuideView | null }
+export interface ReviewDetail {
+  review: ReviewSummary; files: FileState[]; rounds: Round[]; submissions: Submission[]; outdatedThreads: Thread[]; reviewThreads: Thread[]; guide: GuideView | null;
+  /** Every open thread of any anchor, in thread-number order. */
+  openThreads: ThreadDigest[];
+  /** The newest agent thread events, newest first. */
+  activity: ActivityItem[];
+}
 /** A past round of a range review, read-only: its files, the counts of its threads, its outdated and its review threads. */
 export interface RoundView { readOnly: true; round: Round; files: FileState[]; counts: ThreadCounts; outdatedThreads: Thread[]; reviewThreads: Thread[] }
 /** `reviewThreads` are round B's; `counts` covers only the compared (file-bound) threads. */
@@ -86,4 +92,6 @@ export const submissionResult = (id: string, sid: string | number, result: { ok:
   api<{ submission: Submission }>(`${r(id)}/submissions/${encodeURIComponent(String(sid))}/result`, json('POST', result));
 export const markRead = (id: string, threadId?: string) =>
   api<{ review: ReviewSummary }>(`${r(id)}/read`, json('POST', threadId ? { threadId } : {}));
+/** Records that the human has seen the review up to `seq`; never moves the marker back and is not review activity. */
+export const markViewed = (id: string, seq: number) => api<{ review: ReviewSummary }>(`${r(id)}/viewed`, json('POST', { seq }));
 export const reviewCommits = (id: string) => api<{ commits: Commit[] }>(`${r(id)}/commits`);

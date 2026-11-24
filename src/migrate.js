@@ -44,12 +44,16 @@ function submissionKinds(review) {
 /** Gives a review that predates `author` a null one (no named author). */
 const authorField = (review) => { review.author ??= null; };
 
+/** Sets the last-viewed marker of a review that predates it: a review the human has seen counts as seen up to now. */
+const lastViewed = (review) => { review.lastViewedSeq ??= review.seenByHuman ? review.seq : 0; };
+
 const upgrade = (review) => {
   backfill(review);
   authorField(review);
   anchorKinds(review);
   groupFields(review);
   submissionKinds(review);
+  lastViewed(review);
 };
 
 /**

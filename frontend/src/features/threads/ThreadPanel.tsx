@@ -7,6 +7,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { dedupeCopies, type ShownThread } from '@/lib/compare';
 import { onFile } from '@/lib/ranges';
 import { navigate, useRoute } from '@/lib/route';
+import { GROUP_LABEL, stateGroup } from '@/lib/threadState';
 import type { Thread, UnplacedThread } from '@/lib/types';
 import { useDropped } from '@/state/dropped';
 import { useReviewCtx } from '@/state/reviewContext';
@@ -15,6 +16,8 @@ import { Empty, ErrorState, Loading } from '@/features/common/States';
 import { CompareNote, UnplacedNote } from '@/features/diff/CompareNote';
 import { Composer } from './Composer';
 import { ThreadCard, threadPlace } from './ThreadCard';
+
+const clearNeed = () => navigate({ need: undefined }, { replace: true });
 
 // More filter tabs than a narrow pane fits scroll sideways instead of overflowing it; a tab that takes focus (arrow keys)
 // is scrolled into view, which Safari does not do by itself.
@@ -121,10 +124,16 @@ export function ThreadPanel() {
 
 function ReviewThreadPanel() {
   const ctx = useReviewCtx();
-  const [tab, setTab] = useThreadTab(ctx.reviewThreads);
+  const [tab, setTabState] = useThreadTab(ctx.reviewThreads);
   const [composing, setComposing] = useState(false);
-  const [status, setStatus] = useState<'open' | 'resolved' | 'all'>('open');
-  const [owner, setOwner] = useState<Owner>('all');
+  const [status, setStatusState] = useState<'open' | 'resolved' | 'all'>('open');
+  const [owner, setOwnerState] = useState<Owner>('all');
+  // `need=` (the strip's pills) lists one state group: All, open, any owner. Any other filter choice drops it, so the list never disagrees with the URL.
+  const need = useRoute().need;
+  useEffect(() => { if (need) { setTabState('all'); setStatusState('open'); setOwnerState('all'); } }, [need, setTabState]);
+  const setTab = (v: string) => { clearNeed(); setTabState(v); };
+  const setStatus = (v: typeof status) => { clearNeed(); setStatusState(v); };
+  const setOwner = (v: Owner) => { clearNeed(); setOwnerState(v); };
   const dropped = useDropped(ctx.id);
   // A past round's threads are unknown until it loads: no tab lists any, nor claims there are none, before then.
   const load = ctx.viewLoad;
@@ -137,7 +146,7 @@ function ReviewThreadPanel() {
   const outdated = [...ctx.outdatedThreads, ...groupThreads.filter((t) => t.status === 'outdated')];
   // The file-bound threads, then the review's and the groups': together what the All badge counts.
   const every = [...index.threads, ...ctx.reviewThreads, ...liveGroupThreads];
-  const allThreads = every.filter((t) => (status === 'all' || t.status === status) && ownedBy(t, owner));
+  const allThreads = every.filter((t) => (status === 'all' || t.status === status) && ownedBy(t, owner) && (!need || stateGroup(t.state) === need));
   const nextUnread = every.find((t) => t.unread > 0);
   const counts = ctx.threadCounts;
   return (
@@ -155,6 +164,12 @@ function ReviewThreadPanel() {
             {gate ?? (fileThreads.length ? list(fileThreads) : <Empty title="No threads in this file">Select lines in the gutter to start a thread.</Empty>)}
           </TabsContent>
           <TabsContent value="all">
+            {need && (
+              <div className="flex items-center gap-2 px-3 pb-1 text-sm">
+                <Badge variant="secondary">Showing: {GROUP_LABEL[need]} · {allThreads.length}</Badge>
+                <Button size="sm" variant="ghost" className="h-6 px-2" aria-label="Show all threads" onClick={clearNeed}>✕</Button>
+              </div>
+            )}
             <div className="flex flex-wrap items-center gap-2 px-3">
               <label className="sr-only" htmlFor="tp-status">Status</label>
               <NativeSelect size="sm" id="tp-status" value={status} onChange={(e) => setStatus(e.target.value as typeof status)}>

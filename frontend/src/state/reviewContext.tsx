@@ -3,6 +3,7 @@ import type { CompareView, ReviewDetail } from '@/lib/endpoints';
 import type { GuideView, ReviewSummary, Session, Thread, ThreadCounts } from '@/lib/types';
 import type { DiffPatchers } from './diffResource';
 import type { FileDiffState } from './fileDiff';
+import { forgetVisit } from './lastViewed';
 import { forgetMarks } from './readMarks';
 
 export interface ReviewCtx extends Omit<ReviewDetail, 'review'> {
@@ -38,10 +39,10 @@ export interface ReviewCtx extends Omit<ReviewDetail, 'review'> {
 }
 
 const Ctx = createContext<ReviewCtx | null>(null);
-/** One visit of a review: its read marks (`readMarks.ts`) last as long as this provider shows that review. */
+/** One visit of a review: its read marks (`readMarks.ts`) and its "since you last looked" baseline (`lastViewed.ts`) last as long as this provider shows that review. */
 export function ReviewProvider({ value, children }: { value: ReviewCtx; children: ReactNode }) {
   const { id } = value;
-  useEffect(() => () => forgetMarks(id), [id]);
+  useEffect(() => () => { forgetMarks(id); forgetVisit(id); }, [id]);
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
 export function useReviewCtx(): ReviewCtx {

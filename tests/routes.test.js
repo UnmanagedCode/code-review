@@ -99,7 +99,7 @@ test('review lifecycle over HTTP: open, reuse, get, diff, file, commits, patch, 
   const id = opened.review.id;
   assert.equal((await openReview()).reused, true);
   const detail = (await req('GET', `/reviews/${id}`)).body;
-  assert.deepEqual(Object.keys(detail).sort(), ['files', 'guide', 'ok', 'outdatedThreads', 'review', 'reviewThreads', 'rounds', 'submissions']);
+  assert.deepEqual(Object.keys(detail).sort(), ['activity', 'files', 'guide', 'ok', 'openThreads', 'outdatedThreads', 'review', 'reviewThreads', 'rounds', 'submissions']);
   const diff = (await req('GET', `/reviews/${id}/diff`)).body;
   assert.equal(diff.files[0].hunks.length, 2);
   assert.equal(diff.files[0].hunks[0].verdict, 'pending');
@@ -359,4 +359,15 @@ test('the group routes map their refusals to NO_GROUPS 409, GROUP_UNKNOWN 404 an
   assert.deepEqual([none.status, none.body.code, HTTP_STATUS.NO_GROUPS], [409, 'NO_GROUPS', 409]);
   assert.equal((await req('PUT', `/reviews/${u}/groups/g1/verdict`, { verdict: 'accepted' })).status, 409);
   assert.ok(h2);
+});
+
+test('POST /reviews/:id/viewed records the marker and needs a JSON content type', async () => {
+  // Invariant: the viewed write is a mutating route, so a form-style content type is refused 415 and nothing is written.
+  const id = (await openReview()).review.id;
+  const form = await fetch(`${base}/reviews/${id}/viewed`, { method: 'POST', headers: { 'content-type': 'text/plain' }, body: '{"seq":0}' });
+  assert.equal(form.status, 415);
+  const res = await req('POST', `/reviews/${id}/viewed`, { seq: 0 });
+  assert.equal(res.status, 200);
+  assert.equal(res.body.review.lastViewedSeq, 0);
+  assert.equal((await req('POST', `/reviews/${id}/viewed`, { seq: -1 })).status, HTTP_STATUS.INVALID_ARGUMENT);
 });

@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { parseCitations } from './citations.js';
 import { currentRound, recipientRole } from './context.js';
 import { anchorView } from './anchor.js';
+import { threadState, stateCounts, unsentActivity } from './threadState.js';
 
 export const verdictOf = (review, hunkId) => review.verdicts[hunkId]?.verdict ?? 'pending';
 
@@ -65,7 +66,8 @@ export function summarize(review, files, live) {
     round: round.n, headSha: round.headSha, baseSha: round.baseSha,
     headMoved: live.headMoved, dirty: live.dirty, checkoutGone: live.checkoutGone,
     ...(live.snapshotError ? { snapshotError: live.snapshotError } : {}),
-    counts: { files: files?.length ?? null, hunks: hunkCounts, threads: tally(review.threads) },
+    counts: { files: files?.length ?? null, hunks: hunkCounts, threads: tally(review.threads), threadStates: stateCounts(review) },
+    unsent: unsentActivity(review), seq: review.seq, lastViewedSeq: review.lastViewedSeq,
     mergeBlockers: mergeBlockers(review, files),
     unread: review.threads.reduce((n, t) => n + unreadOf(t), 0),
     seenByHuman: review.seenByHuman, rev: review.rev, createdAt: review.createdAt, createdBy: review.createdBy,
@@ -74,10 +76,10 @@ export function summarize(review, files, live) {
   };
 }
 
-/** Thread as the API shows it. */
-export function threadView(t) {
+/** Thread as the API shows it, with the given `state` (whose move it waits on; null when none applies). */
+export function threadViewWith(t, state) {
   return {
-    id: t.id, kind: t.kind, severity: t.severity, status: t.status, disposition: t.disposition,
+    id: t.id, kind: t.kind, severity: t.severity, status: t.status, state, disposition: t.disposition,
     resolveProposed: t.resolveProposed, anchor: anchorView(t.anchor),
     openedBy: t.openedBy, unread: unreadOf(t),
     messages: t.messages.map((m) => ({
@@ -87,11 +89,14 @@ export function threadView(t) {
   };
 }
 
+/** Live thread as the API shows it. */
+export const threadView = (review, t) => threadViewWith(t, threadState(review, t));
+
 /** Hunk as the API shows it (`verdict` null when verdicts do not apply). */
 export const hunkView = (review, h, withVerdict = true) => ({ ...h, verdict: withVerdict && review.kind !== 'uncommitted' ? verdictOf(review, h.id) : null });
 
 /** The non-outdated threads on one file, as the live diff shows them. */
-export const withThreads = (review, file) => review.threads.filter((t) => t.status !== 'outdated' && t.anchor.file === file).map(threadView);
+export const withThreads = (review, file) => review.threads.filter((t) => t.status !== 'outdated' && t.anchor.file === file).map((t) => threadView(review, t));
 
 /** How the live (current-round, writable) views render a file's hunks and threads. */
 export const liveView = (review) => ({ hunk: (h) => hunkView(review, h), threads: (path) => withThreads(review, path) });

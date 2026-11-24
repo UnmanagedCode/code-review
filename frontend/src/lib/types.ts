@@ -20,8 +20,12 @@ export interface FileAnchor { kind: 'file'; file: string; round: number }
 export interface ReviewAnchor { kind: 'review'; round: number }
 export interface GroupAnchor { kind: 'group'; groupId: string; round: number }
 export type Anchor = LinesAnchor | FileAnchor | ReviewAnchor | GroupAnchor;
+/** Whose move an open thread waits on (docs/protocol.md → Thread). */
+export type ThreadState = 'awaiting-human' | 'verify-resolution' | 'unsent' | 'awaiting-agent';
 export interface Thread {
   id: string; kind: ThreadKind; severity: Severity | null; status: 'open' | 'resolved' | 'outdated';
+  /** Null unless the thread is open in the live view: past rounds and comparisons carry none. */
+  state: ThreadState | null;
   disposition: 'fixed' | 'dismissed' | null; resolveProposed: boolean; anchor: Anchor;
   openedBy: Author; unread: number; messages: Message[];
   /** Round views only: messages written after that round (not shown). */
@@ -33,6 +37,8 @@ export type ComparedThread = Thread & { placement: 'from' | 'to'; outdatedIn: nu
 export type UnplacedReason = 'base-side' | 'unchanged-file' | 'no-lines';
 export type UnplacedThread = ComparedThread & { reason: UnplacedReason };
 
+/** Open threads of every anchor by state; the four sum to `ThreadCounts.open`. */
+export interface ThreadStateCounts { awaitingHuman: number; verifyResolution: number; unsent: number; awaitingAgent: number }
 export interface ThreadCounts { open: number; resolved: number; outdated: number }
 export interface FileState {
   path: string; oldPath: string | null; status: 'added' | 'deleted' | 'modified' | 'renamed';
@@ -60,14 +66,31 @@ export type DiffFile = Omit<FileState, 'hunks' | 'threads'> & {
 export interface FileSig { path: string; sig: string | null }
 
 export interface Round { n: number; headSha: string; baseSha: string; createdAt: string; submittedAt: string | null }
+/** An open thread as the overview lists it, across every file. */
+export interface ThreadDigest {
+  id: string; kind: ThreadKind; severity: Severity | null; status: 'open'; state: ThreadState | null; anchor: Anchor; openedBy: Author;
+  unread: number; resolveProposed: boolean; messages: number;
+  first: { author: Author; at: string; preview: string };
+  last: { author: Author; at: string; preview: string; proposeResolve: boolean };
+}
+/** One agent event on a thread, for the "since you last looked" feed. */
+export interface ActivityItem {
+  seq: number; at: string; actor: Author; event: 'opened' | 'replied' | 'proposed-resolution' | 'resolved';
+  thread: { id: string; kind: ThreadKind; severity: Severity | null; anchor: Anchor };
+}
+
 export interface SubmissionRef { id: number | string; kind: 'round' | 'guide'; status: 'pending' | 'delivered' | 'failed' | 'superseded'; code: string | null; round: number }
-export interface Submission extends SubmissionRef { recipient: string; text: string }
+export interface Submission extends SubmissionRef { recipient: string; text: string; deliveredAt: string | null }
 
 export interface ReviewSummary {
   id: string; project: string; worktree: string | null; branch: string | null; kind: Kind; target: unknown;
   label: string; title: string | null; status: 'open' | 'closed'; recipient: string | null; author: string | null; recipientRole: Role | null;
   round: number; headSha: string; baseSha: string; headMoved: boolean; dirty: boolean; checkoutGone: boolean;
-  counts: { files: number | null; hunks: ({ pending: number; accepted: number; rejected: number } | { total: number }) | null; threads: ThreadCounts };
+  counts: { files: number | null; hunks: ({ pending: number; accepted: number; rejected: number } | { total: number }) | null; threads: ThreadCounts; threadStates: ThreadStateCounts };
+  /** True when a Submit round would still send something. */
+  unsent: boolean;
+  /** The review's change counter and the point the human last viewed up to ("since you last looked"). */
+  seq: number; lastViewedSeq: number;
   mergeBlockers: number; unread: number; seenByHuman: boolean; rev: number; createdAt: string; createdBy: Author;
   lastSubmission: SubmissionRef | null;
   /** The current round's groups; null on uncommitted reviews. `ungrouped` is null while the snapshot is unreadable. */

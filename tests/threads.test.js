@@ -580,3 +580,17 @@ test('a file thread\'s reply returns the sig the file\'s diff then serves', asyn
   const res = ok(await threads.reply(review.id, HUMAN, t.id, { body: 'more' }));
   assert.equal(res.fileSig.sig, ok(await reviews.diff(review.id, { file: 'a.js' })).files[0].sig);
 });
+
+test('annotate: a malformed kind, severity or body is refused before any diff is read, so an unreadable checkout still answers INVALID_ARGUMENT', async () => {
+  // Invariant: the cheap field checks precede checkSpec and the snapshot read.
+  const { wt, review } = await uncommittedReview();
+  wt.destroy();
+  assert.equal(codeOf(await say(review.id, at('a.js', 10), { kind: 'nonsense' })), 'INVALID_ARGUMENT');
+  assert.equal(codeOf(await say(review.id, at('a.js', 10), { kind: 'finding' })), 'SEVERITY_REQUIRED');
+  assert.equal(codeOf(await say(review.id, at('a.js', 10), { body: '  ' })), 'INVALID_ARGUMENT');
+  assert.equal(codeOf(await say(review.id, at('a.js', 10))), 'CHECKOUT_GONE');
+  // Both the anchor and the fields malformed: the fields are judged first.
+  const both = await say(review.id, { kind: 'lines' }, { kind: 'nonsense' });
+  assert.equal(codeOf(both), 'INVALID_ARGUMENT');
+  assert.match(both.reason, /kind must be one of/);
+});

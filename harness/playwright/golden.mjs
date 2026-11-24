@@ -136,13 +136,27 @@ try {
     assert.equal(await page.getByRole('button', { name: 'Accept file' }).isDisabled(), true);
     await shot('2b-accepted-file');
 
-    // 3. Submit round without a bridge: copy dialog, Mark as sent, header says submitted.
+    // 3. Submit round without a bridge: the recap (undecided hunks warned, never blocking), a note, Compose prompt, the copy dialog, Mark as sent, header says submitted.
     await page.getByRole('button', { name: 'Submit round' }).click();
-    await page.getByLabel('Prompt').waitFor();
+    await page.getByRole('list', { name: 'What this round sends' }).waitFor();
+    await page.getByText(/hunks? undecided/).waitFor();
+    await page.getByLabel('Overall note').fill('Overall: the rename looks right.');
+    await shot('3-recap');
+    await page.getByRole('button', { name: 'Compose prompt' }).click();
+    const composed = page.getByLabel('Prompt');
+    await composed.waitFor();
+    const promptText = await composed.inputValue();
+    assert.match(promptText, /Reviewer note \[t\d+\]/);
+    assert.match(promptText, /Not reviewed yet/);
     await shot('3-copy-dialog');
     await page.getByRole('button', { name: 'Mark as sent' }).click();
     await page.getByText(/Round 2 · submitted/).waitFor();
     await shot('3-submitted');
+    // The note is a review thread: the Threads tab lists it.
+    await page.goto(q({ review: range, file: 'a.js' }));
+    await page.getByRole('tablist', { name: 'Review pane' }).getByRole('tab', { name: /^Threads/ }).click();
+    await page.getByRole('tabpanel', { name: /^Threads/ }).getByRole('tab', { name: /^Review/ }).click();
+    await page.getByText('Overall: the rename looks right.').first().waitFor();
 
     // 3b. The recipient picker names the untitled s-rev by cc's label; choosing it puts that label in the header.
     await page.getByRole('button', { name: /^Recipient:/ }).click();
@@ -262,12 +276,15 @@ try {
     // The stub is re-installed on navigation (no session emitted); make the first send fail.
     await page.evaluate(() => { window.ccBridge.results.push({ ok: false, code: 'SESSION_NOT_READY' }); });
     await page.getByRole('button', { name: 'Request review' }).click();
+    await page.getByRole('list', { name: 'What this round sends' }).waitFor();
+    await page.getByRole('button', { name: /^Send to/ }).click();
     await page.getByText(/busy or switching models/).waitFor();
     await shot('4-not-ready');
     await page.getByRole('button', { name: 'Retry', exact: true }).click();
     await page.getByText(/Round 1 · submitted/).waitFor();
     const sent = await page.evaluate(() => window.ccBridge.sent.map(([id]) => id));
     assert.deepEqual(sent, ['s-author', 's-author']);
+    assert.equal(await page.getByText(/isn.t recorded as delivered/).count(), 0, 'no false undelivered banner after delivery');
     await shot('4-delivered');
     assert.deepEqual(errors, []);
   }, { headless: true, viewport: { width: 1280, height: 800 } });

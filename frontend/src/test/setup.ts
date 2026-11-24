@@ -12,6 +12,7 @@ import { resetVisits } from '@/state/lastViewed';
 import { resetMarks } from '@/state/readMarks';
 import { resetTop } from './fakeTop';
 import { resetResources } from '@/state/resource';
+import { resetInFlight } from '@/state/submit';
 
 afterEach(() => {
   cleanup();
@@ -23,6 +24,7 @@ afterEach(() => {
   resetResources();
   resetSse();
   resetDrafts();
+  resetInFlight();
   vi.useRealTimers();
   vi.unstubAllGlobals();
   delete window.ccBridge;

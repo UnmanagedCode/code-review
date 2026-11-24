@@ -175,6 +175,8 @@ export async function seed() {
         return p;
       },
       /** Makes the fake cc refuse every exec as SYSTEM_UNREACHABLE (true) or run them again (false). */
+      /** Adds a session to the fake cc (it shows up on the next page load). */
+      session: (id, opts) => w.session(id, opts),
       systemDown(down) { w.cc.state.execHook = down ? () => ({ status: 502, body: { error: 'provider down', code: 'SYSTEM_UNREACHABLE' } }) : null; },
       async close() { await srv.close(); w.cleanup(); },
     };

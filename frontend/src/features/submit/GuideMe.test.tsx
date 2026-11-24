@@ -1,10 +1,12 @@
-import { screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { expect, test, vi } from 'vitest';
 import { installBridge } from '@/test/fakeBridge';
-import { review } from '@/test/fixtures';
+import { refusal, review } from '@/test/fixtures';
 import { sampleGuide } from '@/test/guideWorld';
-import { renderInReview } from '@/test/renderCtx';
+import { ctxValue, renderInReview } from '@/test/renderCtx';
+import { resetInFlight } from '@/state/submit';
+import { ReviewProvider } from '@/state/reviewContext';
 import { stubFetch } from '@/test/stubFetch';
 import { GuideMeButton } from '@/features/guide/GuideMeButton';
 import { SubmitControls } from './SubmitControls';
@@ -77,4 +79,60 @@ test('the header\'s Re-send banner names a guide submission', () => {
     submissions: [{ ...sub, status: 'failed' }] as never,
   });
   expect(screen.getByText('Last Guide me request failed (SESSION_NOT_READY)')).toBeTruthy();
+});
+
+test('while a Guide me delivery is in flight the header shows no Re-send banner; after a closed standalone copy dialog it does', async () => {
+  // Invariant: the "not recorded as delivered" banner is a true signal only: a send this page is still making is not a loose end.
+  const bridge = installBridge();
+  bridge.sendPrompt.mockReturnValue(new Promise(() => {}));
+  net();
+  const user = userEvent.setup();
+  const ui = (over: object) => {
+    const value = ctxValue({ guide: sampleGuide({ guideMe: OFFER }), ...over });
+    return <ReviewProvider value={value}><SubmitControls onNoRecipient={() => {}} /><GuideMeButton /></ReviewProvider>;
+  };
+  const { rerender, unmount } = render(ui({}));
+  await user.click(screen.getByRole('button', { name: 'Guide me' }));
+  await waitFor(() => expect(bridge.sendPrompt).toHaveBeenCalled());
+  // The compose's SSE echo: the review now reports the guide submission as pending.
+  rerender(ui({
+    review: review({ lastSubmission: { id: 7, kind: 'guide', status: 'pending', code: null, round: 1 } }),
+    submissions: [sub] as never,
+  }));
+  expect(screen.queryByText(/isn’t recorded as delivered/)).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Re-send' })).toBeNull();
+  unmount();
+  resetInFlight(); // the never-answering send above stands in for one that has ended
+
+  // Standalone: the copy dialog is closed with delivery unknown, so the banner is truthful.
+  delete window.ccBridge;
+  const second = render(ui({
+    review: review({ lastSubmission: { id: 7, kind: 'round', status: 'pending', code: null, round: 1 } }),
+    submissions: [{ ...sub, kind: 'round' }] as never,
+  }));
+  expect(screen.getByText('Last submission isn’t recorded as delivered')).toBeTruthy();
+  second.unmount();
+});
+
+test('no Re-send banner while a delivered Guide me prompt\u2019s result is still being recorded; if recording fails the banner returns', async () => {
+  // Invariant: a submission stays in flight until its outcome is recorded, not merely until the bridge answers.
+  installBridge();
+  let finish!: (r: Response) => void;
+  const held = new Promise<Response>((res) => { finish = res; });
+  stubFetch({
+    'POST api/reviews/r-1/guide': { submission: sub },
+    'POST api/reviews/r-1/submissions/7/result': () => held,
+  });
+  const user = userEvent.setup();
+  const ui = (over: object) => (
+    <ReviewProvider value={ctxValue({ guide: sampleGuide({ guideMe: OFFER }), ...over })}><SubmitControls onNoRecipient={() => {}} /><GuideMeButton /></ReviewProvider>
+  );
+  const { rerender } = render(ui({}));
+  await user.click(screen.getByRole('button', { name: 'Guide me' }));
+  await waitFor(() => expect(window.ccBridge!.sendPrompt).toHaveBeenCalled());
+  // The bridge has answered ok; the result POST is still pending, and the review reports the guide submission pending.
+  rerender(ui({ review: review({ lastSubmission: { id: 7, kind: 'guide', status: 'pending', code: null, round: 1 } }), submissions: [sub] as never }));
+  expect(screen.queryByRole('button', { name: 'Re-send' })).toBeNull();
+  await act(async () => { finish(refusal('HOST_ERROR', 500)); await held; });
+  expect(await screen.findByRole('button', { name: 'Re-send' })).toBeTruthy();
 });

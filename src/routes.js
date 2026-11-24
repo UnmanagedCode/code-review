@@ -92,7 +92,8 @@ export function apiRouter() {
   r.post('/reviews/:id/threads/:tid/messages', route((req) => threads.reply(req.params.id, HUMAN, req.params.tid, req.body ?? {})));
   r.patch('/reviews/:id/threads/:tid', route((req) => threads.setThreadStatus(req.params.id, req.params.tid, req.body ?? {})));
   r.post('/reviews/:id/refresh', route((req) => reviews.refreshReview(req.params.id, HUMAN)));
-  r.post('/reviews/:id/submissions', route((req) => submissions.composeSubmission(req.params.id)));
+  r.post('/reviews/:id/submissions/preview', route((req) => submissions.previewSubmission(req.params.id, req.body ?? {})));
+  r.post('/reviews/:id/submissions', route((req) => submissions.composeSubmission(req.params.id, req.body ?? {})));
   r.post('/reviews/:id/guide', route((req) => submissions.composeGuide(req.params.id)));
   r.post('/reviews/:id/submissions/:sid/result', route((req) => submissions.recordResult(req.params.id, req.params.sid, req.body ?? {})));
   r.post('/reviews/:id/viewed', route((req) => reviews.markViewed(req.params.id, req.body ?? {})));

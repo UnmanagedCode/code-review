@@ -172,3 +172,27 @@ test('a bridge failure whose result POST is refused SUBMISSION_NOT_PENDING ends 
   expect(hook.result.current.state.phase).toBe('idle');
   expect(deps.onRecorded).toHaveBeenCalledTimes(1);
 });
+
+test('review() enters recap with no request; send(note) passes the note to compose; a compose refusal returns to recap', async () => {
+  // Invariant: the recap is a pure state step; only send composes, and a refusal keeps the recap (and so the note) open.
+  const net = routes();
+  const compose = vi.fn((note?: string) => ep.compose('r-1', note));
+  const { hook, deps } = setup({ compose });
+  act(() => hook.result.current.review());
+  expect(hook.result.current.state).toEqual({ phase: 'recap' });
+  expect(net.calls).toEqual([]);
+  await act(() => hook.result.current.send('my note'));
+  expect(compose).toHaveBeenCalledWith('my note');
+  expect(net.calls[0].body).toEqual({ note: 'my note' });
+  expect(hook.result.current.state.phase).toBe('manual');
+
+  stubFetch({ 'POST api/reviews/r-1/submissions': refusal('NOTHING_TO_SUBMIT') });
+  const info = vi.spyOn(toast, 'info').mockImplementation(() => '');
+  act(() => hook.result.current.review());
+  let composed = true;
+  await act(async () => { composed = await hook.result.current.send('again'); });
+  expect(composed).toBe(false);
+  expect(hook.result.current.state).toEqual({ phase: 'recap' });
+  expect(info).toHaveBeenCalled();
+  expect(deps.onNoRecipient).not.toHaveBeenCalled();
+});

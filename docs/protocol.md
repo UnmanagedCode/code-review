@@ -89,6 +89,7 @@ REST under `/api` (JSON), an SSE stream, and the cc MCP endpoint. Behaviour behi
     guideMe: {offered, noGroups, droppedGroups, newUngrouped} }
   ```
   `groups` is the current round's. A hunk's `verdict` is its own, so a carried accepted group can list a pending hunk.
+- **RoundRecap** (`…/submissions/preview`): `{round, kind, nothingToSubmit, hunks:{accepted,rejected,pending}|null (null: uncommitted or snapshot unreadable), undecided:[{id, path, side:'new'|'old'|null, line:number|null}] (every pending hunk, diff order), files:number|null (uncommitted only), outgoing:[{id, kind, where, note, anchor, status}] (exactly the prompt's thread list), needsYou:[{id, kind, where, anchor, status}], waiting:number, text}`. Each open thread is in exactly one of `outgoing`, `needsYou` (open and the agent acted last) or `waiting` (only once a round was delivered). `text` is the prompt rendered with the given `note`; its note thread id is a prediction.
 - **Submission** adds `kind: 'round'|'guide'` (in `GET /reviews/:id` `submissions`, and the composed and recorded results).
 - **Author:** `{kind:'human'}` or `{kind:'session', sessionId, role: author|reviewer|conductor}`.
 - **Session:** `sessionId, project, worktree, label, status, live, conductor, conducted, attached`. `label` is cc's `displayLabel`, else its `title`, else `null`; the UI then shows the session id.
@@ -126,7 +127,8 @@ REST under `/api` (JSON), an SSE stream, and the cc MCP endpoint. Behaviour behi
 | `POST /reviews/:id/threads/:tid/messages` | `{body}` | `{thread, fileSig}` | `THREAD_UNKNOWN` `THREAD_DROPPED` `REVIEW_CLOSED` |
 | `PATCH /reviews/:id/threads/:tid` | `{status: resolved|open, disposition?: fixed|dismissed}` | `{thread, fileSig}` | `INVALID_ARGUMENT` (finding without disposition, outdated thread) `THREAD_*` |
 | `POST /reviews/:id/refresh` | | `{unchanged, round, hunks:{kept,reset,new}, threads:{moved,drifted,outdated,dropped}, groups:{kept,dropped}}` (`threads.outdated` counts group threads of dropped groups); `unchanged:true` carries only `round` | `IMMUTABLE_TARGET` `CHECKOUT_GONE` `REVIEW_CLOSED` `REF_UNKNOWN` `NO_COMMON_ANCESTOR` |
-| `POST /reviews/:id/submissions` | | `{submission:{id, round, recipient, text, status, kind:'round'}}` | `NO_RECIPIENT` `NOTHING_TO_SUBMIT` `REVIEW_CLOSED` |
+| `POST /reviews/:id/submissions/preview` | `{note?}` | `{recap: RoundRecap}`: what the next round would send; it writes no submission and no note thread (an uncommitted review's read-path sweep still applies, as for any read); never refuses `NOTHING_TO_SUBMIT` (it sets `nothingToSubmit`) | `NO_RECIPIENT` `REVIEW_CLOSED` `INVALID_ARGUMENT` |
+| `POST /reviews/:id/submissions` | `{note?}` | `{submission:{id, round, recipient, text, status, kind:'round'}}`; a non-blank `note` is stored as an open human `comment` thread on the review (`anchor.kind` `review`) in the same write | `NO_RECIPIENT` `NOTHING_TO_SUBMIT` (a note alone is new activity) `REVIEW_CLOSED` `INVALID_ARGUMENT` `BODY_TOO_LARGE` |
 | `POST /reviews/:id/guide` | | `{submission:{id, round, recipient, text, status, kind:'guide'}}`: the Guide me prompt; delivered through the same `…/submissions/:sid/result` | `NO_GROUPS` `NO_RECIPIENT` `REVIEW_CLOSED` |
 | `POST /reviews/:id/submissions/:sid/result` | `{ok, code?}` | `{submission}` | `SUBMISSION_UNKNOWN` `SUBMISSION_NOT_PENDING` `INVALID_ARGUMENT` |
 | `POST /reviews/:id/viewed` | `{seq}` (a non-negative integer) | `{review}`: sets `lastViewedSeq = max(old, min(seq, review.seq))`. Not activity: no `seq` bump, no `lastActivityAt` change, and an unchanged marker writes nothing (no `rev` bump, no SSE event). Allowed on a closed review. REST only | `INVALID_ARGUMENT`, `REVIEW_UNKNOWN` |
@@ -155,7 +157,7 @@ One implementation (`buildAnchor` in `src/threads.js`) serves `POST …/threads`
 
 ### Submission delivery
 
-1. `POST …/submissions` stores the prompt `pending` and returns its text.
+1. The UI first shows the recap (`POST …/submissions/preview`). `POST …/submissions` (with the overall `note`, if any) creates the note thread and stores the prompt `pending` in one write, and returns its text.
 2. The UI sends `text` to `recipient` through the cc bridge, then posts `{ok:true}` or `{ok:false, code}`.
 3. `code` is the bridge's, stored verbatim: `INVALID_ARGUMENT`, `SESSION_UNKNOWN`, `SESSION_NOT_LIVE`, `SESSION_NOT_READY`, `SEND_FAILED`, `LOOKUP_FAILED`, `HOST_ERROR`. Any other value is refused `INVALID_ARGUMENT`.
 4. Only `pending` or `failed` submissions accept a result (`SUBMISSION_NOT_PENDING` otherwise), so a failed one can be re-sent and re-reported. Without a bridge the UI shows the text and posts `{ok:true}` for "mark as sent".

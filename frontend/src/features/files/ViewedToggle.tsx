@@ -20,8 +20,8 @@ export function ViewedToggle({ path }: { path: string }) {
   if (!toggle) return null;
   return (
     <Tip label={viewed ? 'Clear the viewed mark' : 'Mark the file viewed'} id="toggle-viewed">
-      <Button size="sm" variant="outline" aria-pressed={viewed} className={cn(viewed && 'bg-success/20 text-foreground hover:bg-success/25')} onClick={toggle}>
-        <CheckIcon />Viewed
+      <Button size="icon-sm" variant="outline" aria-label="Viewed" aria-pressed={viewed} className={cn(viewed && 'bg-success/20 text-foreground hover:bg-success/25')} onClick={toggle}>
+        <CheckIcon />
       </Button>
     </Tip>
   );

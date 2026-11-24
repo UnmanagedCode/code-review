@@ -456,9 +456,16 @@ test('the routed thread expands to a card with Reply; others stay rows; a not-ye
   expect(screen.getByLabelText('Reply')).toBeTruthy();
   expect(rows()).toHaveLength(1);
   unmount();
-  render(<ReviewProvider value={ctxValue({ openThreads: open, fileDiff: { file: undefined } as never })}><ThreadPanel /></ReviewProvider>);
+  // The routed file's diff is still on its way: a loading line. With no file routed there is nothing to wait for: a plain row.
+  history.replaceState(null, '', '?review=r-1&view=threads&thread=t-1&file=src%2Fa.ts');
+  const { unmount: unmountLoading } = render(<ReviewProvider value={ctxValue({ openThreads: open, fileDiff: { file: undefined } as never })}><ThreadPanel /></ReviewProvider>);
   expect(screen.queryByRole('article')).toBeNull();
   expect(screen.getByRole('status', { name: 'Loading thread' })).toBeTruthy();
+  unmountLoading();
+  history.replaceState(null, '', '?review=r-1&view=threads&thread=t-1');
+  render(<ReviewProvider value={ctxValue({ openThreads: open, fileDiff: { file: undefined } as never })}><ThreadPanel /></ReviewProvider>);
+  expect(screen.queryByRole('status', { name: 'Loading thread' })).toBeNull();
+  expect(rows()).toHaveLength(2);
 });
 
 // Invariant: the review's strip pill count, the chip and the list agree: with need=waiting only that section shows.

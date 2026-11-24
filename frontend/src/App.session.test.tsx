@@ -250,3 +250,16 @@ test('a landing that resolves after a user navigation is dropped', async () => {
   await act(async () => {});
   expect(location.search).toBe('?project=other');
 });
+
+// Invariant: a session change while the New review dialog is open leaves it open (it follows the session by itself), even when the session has a single review.
+test('a session change while the New review dialog is open is ignored', async () => {
+  installFakeEventSource();
+  withInbox([mine({ recipient: 's-2' })]);
+  const bridge = installBridge({ sessionId: 's-0', project: 'app', worktree: null });
+  history.replaceState(null, '', '?project=app&view=new');
+  render(<App />);
+  await screen.findByRole('dialog');
+  act(() => bridge.emit({ sessionId: 's-2', project: 'app', worktree: null }));
+  await act(async () => {});
+  expect(location.search).toBe('?project=app&view=new');
+});

@@ -26,7 +26,7 @@ function remembered(): { project: string; worktree?: string } | null {
  * - embedded with a session: the session's one open review (as recipient or author), else the inbox on its checkout;
  * - standalone, or no session: the inbox, on the last checkout used.
  * A later session change, with no review open, applies the same rule but keeps the current tab when the session has no single
- * review. One with a review open is dropped, never deferred: it is not replayed when the review closes. `landing` is
+ * review. One with a review or the New review dialog open is dropped, never deferred: it is not replayed when that closes. `landing` is
  * `pending` until the first rule has been applied, so the list pane can show the inbox instead of an empty picker meanwhile.
  * `menuOnLoad`: this load came from cc's row menu, which picks the checkout, so neither the session nor the remembered checkout may race it.
  */
@@ -49,7 +49,8 @@ export function useFollowSession(route: Route, menuOnLoad = false) {
     const first = handled.current === null;
     if (!first && handled.current === sessionKey) return; // not a session change: the project list alone never re-lands
     const done = () => { handled.current = sessionKey; setLanding('done'); };
-    if (route.review) return done(); // an open review is never closed by following
+    // An open review is never closed by following, nor is the New review dialog (its fields follow the session themselves).
+    if (route.review || route.view === 'new') return done();
     if (first && (routeProject || menuOnLoad)) return done(); // a route-named or menu-named checkout wins on load
     const view = route.view === 'inbox' ? 'inbox' as const : undefined;
     const last = remembered();

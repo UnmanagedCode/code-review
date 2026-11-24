@@ -21,6 +21,12 @@ export function agentActionText(a: InboxItem['lastAgentAction']): string | null 
   }
 }
 
+/** "sent 3 h ago", or "sent just now". */
+const sentLabel = (at: string, now: number): string => {
+  const age = ageLabel(at, now);
+  return age === 'just now' ? 'sent just now' : `sent ${age} ago`;
+};
+
 /** One open review: a link into it, and a Close button beside it once cc no longer lists its checkout. */
 export function InboxRow({ item: r, accent, onClose }: { item: InboxItem; accent?: boolean; onClose: (id: string) => void }) {
   const name = r.title || r.label;
@@ -42,10 +48,10 @@ export function InboxRow({ item: r, accent, onClose }: { item: InboxItem; accent
         <span className="flex flex-wrap items-center gap-1">
           {need > 0 && <Badge variant="default">{need} need you</Badge>}
           {r.threadStates.unsent > 0 && <Badge variant="info">{r.threadStates.unsent} will be sent</Badge>}
-          {r.hunks && r.hunks.pending > 0 && <Badge variant="outline">{r.hunks.pending} hunks undecided</Badge>}
-          {r.groupsPending > 0 && <Badge variant="outline">{r.groupsPending} groups to decide</Badge>}
+          {r.hunks && r.hunks.pending > 0 && <Badge variant="outline">{r.hunks.pending} {r.hunks.pending === 1 ? 'hunk' : 'hunks'} undecided</Badge>}
+          {r.groupsPending > 0 && <Badge variant="outline">{r.groupsPending} {r.groupsPending === 1 ? 'group' : 'groups'} to decide</Badge>}
           {r.newActivity && <Badge variant="info">new activity</Badge>}
-          {r.turn === 'agent' && r.lastSubmission && <Badge variant="secondary">sent {ageLabel(r.lastSubmission.at, now)} ago</Badge>}
+          {r.turn === 'agent' && r.lastSubmission && <Badge variant="secondary">{sentLabel(r.lastSubmission.at, now)}</Badge>}
           {gone && <Badge variant="warning">checkout gone</Badge>}
           {!r.seenByHuman && !gone && <Badge variant="info">not opened</Badge>}
         </span>

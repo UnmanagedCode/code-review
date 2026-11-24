@@ -55,6 +55,14 @@ test('chips name the pending work; the hunk chip is absent when the tally is unk
   expect(sent.getByText('No reply yet')).toBeTruthy();
 });
 
+// Invariant: counts of one read as singular ("1 hunk undecided", "1 group to decide"), and a send under a minute old reads "sent just now".
+test('singular chips and a fresh send', async () => {
+  stubFetch({ 'GET api/inbox': { reviews: [inboxItem({ ...quiet, id: 'r-1', title: 'One', turn: 'agent', hunks: { pending: 1, accepted: 0, rejected: 0 }, groupsPending: 1, lastSubmission: { status: 'delivered', at: new Date().toISOString() } })] } });
+  render(<Inbox />);
+  const row = within(await screen.findByRole('link', { name: /One/ }));
+  for (const t of ['1 hunk undecided', '1 group to decide', 'sent just now']) expect(row.getByText(t)).toBeTruthy();
+});
+
 // Invariant: the activity line names the agent's last act and where it happened.
 test('the activity line says what the agent last did', async () => {
   const at = '2026-01-01T00:00:00Z';

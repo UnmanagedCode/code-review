@@ -92,27 +92,29 @@ try {
     const allPanel = page.getByRole('tabpanel', { name: /^Threads/ });
     await allPanel.getByRole('tab', { name: /^All/ }).click();
     await allPanel.getByLabel('Status').selectOption('all');
-    const cards = allPanel.getByRole('article');
-    await cards.first().waitFor();
-    const everyone = (await cards.allTextContents()).length;
+    // Each thread is one compact row (a button named "<state>: <place> — <preview>").
+    const threadRows = allPanel.getByRole('button', { name: /: .+ — / });
+    const rowCount = (n) => page.waitForFunction((want) => document.querySelectorAll('[role=tabpanel]:not([hidden]) button[aria-label*=" — "]').length === want, n);
+    await threadRows.first().waitFor();
+    const everyone = (await threadRows.allTextContents()).length;
     const agents = ['Missing guard', 'Does r7 still need changed8 after it?'];
     await allPanel.getByLabel('Owner').selectOption('agents');
-    await page.waitForFunction((n) => document.querySelectorAll('[role=tabpanel]:not([hidden]) article').length === n, agents.length);
-    const shownAgents = await allPanel.getByRole('article').allTextContents();
+    await rowCount(agents.length);
+    const shownAgents = await threadRows.allTextContents();
     assert.equal(shownAgents.length, agents.length);
     for (const a of agents) assert.ok(shownAgents.some((t) => t.includes(a)), `agents list has ${a}`);
     await shot('1c-owner-agents');
     await allPanel.getByLabel('Owner').selectOption('user');
-    await page.waitForFunction((n) => document.querySelectorAll('[role=tabpanel]:not([hidden]) article').length === n, everyone - agents.length);
-    assert.ok((await allPanel.getByRole('article').allTextContents()).every((t) => !agents.some((a) => t.includes(a))), 'user list has no agent thread');
+    await rowCount(everyone - agents.length);
+    assert.ok((await threadRows.allTextContents()).every((t) => !agents.some((a) => t.includes(a))), 'user list has no agent thread');
     await shot('1c-owner-user');
 
     // 2. Accept a hunk; the tree tally follows.
     await page.goto(q({ review: range, file: 'c.js' }));
     const tree = page.getByRole('link', { name: /c\.js/ }).first();
-    await tree.getByText('0 accepted, 0 rejected, 1 pending').waitFor();
+    await tree.getByRole('img', { name: '0 accepted, 0 rejected, 1 undecided' }).waitFor();
     await page.getByRole('group', { name: 'Hunk verdict' }).first().getByRole('button', { name: 'Accept', exact: true }).click();
-    await tree.getByText('1 accepted, 0 rejected, 0 pending').waitFor();
+    await tree.getByRole('img', { name: '1 accepted, 0 rejected, 0 undecided' }).waitFor();
     await shot('2-accepted');
 
     // 2b. Accept file on a.js (seeded: one accepted, one rejected hunk). Clear the accepted one first so a hunk is pending;
@@ -120,19 +122,19 @@ try {
     await page.goto(q({ review: range, file: 'a.js' }));
     const aTree = page.getByRole('link', { name: /a\.js/ }).first();
     const bars = page.getByRole('group', { name: 'Hunk verdict' });
-    await aTree.getByText('1 accepted, 1 rejected, 0 pending').waitFor();
+    await aTree.getByRole('img', { name: '1 accepted, 1 rejected, 0 undecided' }).waitFor();
     await page.getByRole('button', { name: ACCEPTED_SUMMARY }).click();
-    await bars.nth(0).getByRole('button', { name: 'Pending' }).click();
+    await bars.nth(0).getByRole('button', { name: 'Clear' }).click();
     await page.getByText('0/2 accepted · 1 rejected').waitFor();
-    await aTree.getByText('0 accepted, 1 rejected, 1 pending').waitFor();
+    await aTree.getByRole('img', { name: '0 accepted, 1 rejected, 1 undecided' }).waitFor();
     await shot('2b-before-accept-file');
     await page.getByRole('button', { name: 'Accept file' }).click();
     await page.getByText('1/2 accepted · 1 rejected').waitFor();
-    await aTree.getByText('1 accepted, 1 rejected, 0 pending').waitFor();
+    await aTree.getByRole('img', { name: '1 accepted, 1 rejected, 0 undecided' }).waitFor();
     // The accepted hunk collapses to its summary (no verdict bar); the rejected one stays expanded.
     await page.getByRole('button', { name: ACCEPTED_SUMMARY }).waitFor();
     assert.equal(await bars.count(), 1);
-    assert.equal(await bars.nth(0).getByRole('button', { name: 'Reject', exact: true }).getAttribute('aria-pressed'), 'true');
+    assert.equal(await bars.nth(0).getByText('✗ Rejected').count(), 1, 'the remaining bar shows the rejected chip');
     assert.equal(await page.getByRole('button', { name: 'Accept file' }).isDisabled(), true);
     await shot('2b-accepted-file');
 
@@ -253,8 +255,8 @@ try {
     await page.addInitScript(STUB_BRIDGE);
     await page.goto(`${world.url}/?project=app`);
     await page.getByText('Main checkout tidy-up').waitFor();
-    await page.evaluate(() => window.__emit({ sessionId: 's-rev', project: 'app', worktree: null })); // baseline: matches the route
-    await page.evaluate(() => window.__emit({ sessionId: 's-author', project: 'app', worktree: 'feature' }));
+    await page.evaluate(() => window.__emit({ sessionId: 's-idle', project: 'app', worktree: null })); // baseline: matches the route, and has no review of its own
+    await page.evaluate(() => window.__emit({ sessionId: 's-author', project: 'app', worktree: 'feature' })); // several reviews: the inbox's checkout, no single one to open
     await page.waitForFunction(() => location.search.includes('worktree=feature'));
     await page.getByText(/following/).waitFor();
     await shot('4-followed-session');
@@ -452,7 +454,7 @@ try {
     await threadsTab.click();
     await page.getByRole('tab', { name: /^Outdated/ }).click();
     await shot('12a-outdated-link');
-    await page.getByRole('button', { name: 'a.js · L3–L4 (new)' }).click(); // the outdated question's last located range
+    await page.getByRole('button', { name: /^outdated: a\.js#L3–L4 — / }).click(); // the outdated question's last located range
     await page.getByText('Exit comparison').waitFor();
     assert.match(page.url(), /compare=1\.\.2/, 'the outdated thread opens its round and the next');
     assert.equal(await threadsTab.getAttribute('aria-selected'), 'true', 'the comparison keeps the Threads tab');
@@ -462,8 +464,7 @@ try {
     await page.goto(q({ review: range, file: 'c.js' }));
     await threadsTab.click();
     await page.getByRole('tab', { name: /^All/ }).click();
-    const card = page.getByRole('article').filter({ has: page.getByRole('button', { name: /^a\.js · L/ }) }).first();
-    await card.getByRole('button', { name: 'Focus' }).click();
+    await page.getByRole('button', { name: /: a\.js#L.* — / }).first().click(); // a thread's row opens it in its file
     await page.getByRole('grid', { name: 'Changes in a.js' }).waitFor();
     assert.match(page.url(), /file=a\.js/);
     assert.equal(new URL(page.url()).searchParams.get('view'), 'threads', 'the jump keeps view=threads');
@@ -511,8 +512,7 @@ try {
     await shot('14-phone-pane');
     await tabs.getByRole('tab', { name: /^Threads/ }).click();
     await page.getByRole('tab', { name: /^All/ }).click();
-    const card = page.getByRole('article').filter({ has: page.getByRole('button', { name: /^a\.js · L/ }) }).first();
-    await card.getByRole('button', { name: 'Focus' }).click();
+    await page.getByRole('button', { name: /: a\.js#L.* — / }).first().click();
     await page.getByRole('grid', { name: 'Changes in a.js' }).waitFor();
     assert.equal(await tabs.count(), 0, 'the diff replaces the pane');
     await shot('14-phone-diff');
@@ -966,13 +966,13 @@ try {
     await rform.getByLabel('Kind').selectOption('question');
     await rform.getByLabel('Message').fill('Is the split into c.js right?');
     await rform.getByRole('button', { name: 'Post' }).click();
-    const rcard = panel.getByRole('article', { name: 'question thread' }).filter({ hasText: 'Is the split into c.js right?' });
-    await rcard.waitFor();
+    const rrow = panel.getByRole('button', { name: /: review — Is the split into c\.js right\?/ });
+    await rrow.waitFor();
     await shot('19-review-thread');
     await panel.getByRole('tab', { name: /^All/ }).click();
-    await panel.getByRole('article').filter({ hasText: 'Is the split into c.js right?' }).waitFor();
+    await rrow.waitFor();
     await panel.getByRole('tab', { name: /^Review/ }).click();
-    await rcard.getByRole('button', { name: 'Focus' }).click();
+    await rrow.click(); // opening a review thread keeps the open file
     await page.waitForURL(/thread=/);
     assert.equal(params(page).file, 'c.js', 'Focus on a review thread keeps the open file');
     assert.equal(params(page).view, 'threads');
@@ -1107,7 +1107,7 @@ try {
     // 8. Changing one hunk of the accepted G1 sets the group back to pending, with a note saying why.
     await step('Rename').click();
     await page.getByRole('button', { name: ACCEPTED_SUMMARY }).first().click();
-    await page.getByRole('group', { name: 'Hunk verdict' }).first().getByRole('button', { name: 'Pending', exact: true }).click();
+    await page.getByRole('group', { name: 'Hunk verdict' }).first().getByRole('button', { name: 'Clear', exact: true }).click();
     await page.waitForFunction(() => [...document.querySelectorAll('[aria-label="Group verdict"] [aria-pressed="true"]')].map((b) => b.textContent).join() === 'Pending');
     await page.getByText('Set back to pending: you changed the verdict of one of its hunks.').waitFor();
     await shot('21-8-set-back-to-pending');
@@ -1145,7 +1145,7 @@ try {
     await page.goto(`${world.url}/?${link.split('/?')[1]}`);
     await page.getByRole('region', { name: 'Group threads' }).getByRole('article').filter({ hasText: 'Why do these two files change together?' }).waitFor();
     assert.deepEqual({ view: params(page).view, step: params(page).step, thread: params(page).thread }, { view: 'guided', step: 'g1', thread: asked.id });
-    assert.equal(await page.locator('article.ring-2').count(), 1, 'the linked thread is focused');
+    assert.equal(await page.locator('article.ring-2:visible').count(), 1, 'the linked thread is focused'); // (the Threads pane holds a hidden copy)
     await shot('21-11-thread-link');
 
     // 12. Threads tab → All lists the group thread; its location link returns to the step.
@@ -1262,8 +1262,10 @@ try {
     await page.getByRole('link', { name: 'Inbox', exact: true }).click();
     const inbox = page.getByRole('region', { name: 'Inbox' });
     const row = (title) => inbox.getByRole('listitem').filter({ hasText: title });
-    await row('Main checkout tidy-up').getByText('Waiting on agent').waitFor();
-    await row('Conductor review').getByText('Your turn').waitFor();
+    // The inbox is in triage sections: the delivered review waits on the agent, the one the conductor answered needs you.
+    await inbox.getByRole('region', { name: /^Waiting on agent/ }).getByRole('listitem').filter({ hasText: 'Main checkout tidy-up' }).waitFor();
+    await inbox.getByRole('region', { name: /^Needs you/ }).getByRole('listitem').filter({ hasText: 'Conductor review' }).waitFor();
+    assert.equal(await inbox.getByText('Your turn').count(), 0, 'no row says Your turn');
     assert.deepEqual(params(page), { project: 'app', worktree: 'feature', view: 'inbox' });
     await shot('17-inbox');
 
@@ -1379,8 +1381,10 @@ try {
     await page.getByText(/^Showing: Will be sent/).waitFor();
     assert.equal(params(page).need, 'unsent');
     await page.getByText(new RegExp(`^Showing: Will be sent · ${will}$`)).waitFor();
-    await page.getByRole('tabpanel').getByRole('article').first().waitFor();
-    assert.equal(await page.getByRole('tabpanel').getByRole('article').count(), will, 'the filtered list length equals the pill');
+    // Rows (and the routed thread's card, if it is one of them) in the shown Threads panel.
+    const listed = page.locator('[role=tabpanel]:not([hidden]) :is(button[aria-label*=" — "], article[aria-label$="thread"])');
+    await listed.first().waitFor();
+    assert.equal(await listed.count(), will, 'the filtered list length equals the pill');
     await shot('22-filtered-threads');
     await page.getByRole('button', { name: 'Show all threads' }).click();
     assert.equal(params(page).need, undefined);
@@ -1420,11 +1424,12 @@ try {
         'Agent says fixed chip': await textContrast(needs.getByText('Agent says fixed — verify')),
       };
       await page.goto(q({ review: range, view: 'threads', need: 'unsent' }));
-      await page.getByRole('tabpanel').getByRole('article').first().waitFor();
-      ratios['Will be sent chip'] = await textContrast(page.getByRole('tabpanel').getByText('Will be sent', { exact: true }));
+      const rows = page.getByRole('tabpanel').getByRole('button', { name: / — / });
+      await rows.first().waitFor();
+      ratios['Will be sent chip'] = await textContrast(rows.first().getByText('Will be sent', { exact: true }));
       await page.goto(q({ review: range, view: 'threads', need: 'waiting' }));
-      await page.getByRole('tabpanel').getByRole('article').first().waitFor();
-      ratios['Waiting on agent chip'] = await textContrast(page.getByRole('tabpanel').getByText('Waiting on agent', { exact: true }));
+      await rows.first().waitFor();
+      ratios['Waiting on agent chip'] = await textContrast(rows.first().getByText('Waiting on agent', { exact: true }));
       console.log(`state text contrast (${scheme}):`, JSON.stringify(ratios));
       for (const [what, ratio] of Object.entries(ratios)) assert.ok(ratio >= 4.5, `${scheme}: ${what} is ${ratio}:1, below 4.5:1`);
     }
@@ -1471,6 +1476,129 @@ try {
       await noSideScroll(page, `the overview at ${width}px (${scheme}) with a long path`);
       await shot(`22-overview-long-path-${width}-${scheme}`);
     }
+    assert.deepEqual(errors, []);
+  }, { headless: true, viewport: { width: 390, height: 844 } });
+
+  // 23. Landing, viewed marks, hunk bar chips, the tree filter and the phone's wrapped diff. Last, so earlier steps' worlds stay seed.mjs's.
+  // 23a. Embedded in cc (a stub bridge): the session's single review opens; a session with none lands on the inbox of its checkout.
+  for (const [vp, size] of [['desktop', { width: 1280, height: 800 }], ['phone', { width: 390, height: 844 }]]) {
+    await withPage(async (page) => {
+      const errors = watchErrors(page);
+      const shot = shotter(page);
+      await page.addInitScript(STUB_BRIDGE);
+      const length = () => page.evaluate(() => history.length);
+      // s-cond is the recipient of exactly one open review: the conductor's.
+      await page.goto(world.url);
+      const before = await length();
+      await page.evaluate(() => window.__emit({ sessionId: 's-cond', project: 'app', worktree: null }));
+      await page.getByRole('heading', { level: 1, name: 'Conductor review' }).waitFor();
+      assert.equal(params(page).review, world.ids.conducted, 'the session\'s single review opens');
+      assert.equal(await length(), before, 'the landing replaces the history entry');
+      await shot(`23a-landing-review-${vp}`);
+      // A session with no review of its own: the inbox, on its checkout.
+      await page.goto(world.url);
+      await page.evaluate(() => window.__emit({ sessionId: 's-none', project: 'app', worktree: 'feature' }));
+      await page.getByRole('region', { name: 'Inbox' }).getByRole('listitem').first().waitFor();
+      assert.deepEqual(params(page), { project: 'app', worktree: 'feature', view: 'inbox' });
+      await shot(`23a-landing-inbox-${vp}`);
+      assert.deepEqual(errors, []);
+    }, { headless: true, viewport: size });
+  }
+
+  await withPage(async (page) => {
+    const errors = watchErrors(page);
+    const shot = shotter(page);
+    const sq = (o) => q({ worktree: 'syntax', review: syntax, ...o });
+    const viewedBtn = page.getByRole('button', { name: 'Viewed', exact: true });
+    const pressed = async (loc) => (await loc.getAttribute('aria-pressed')) === 'true';
+    const marked = (on) => page.waitForFunction((want) => document.querySelector('button[aria-label="Viewed"]')?.getAttribute('aria-pressed') === want, String(on));
+
+    // 23b. Hunk bar: an undecided hunk offers Accept | Reject; Accept shows a chip with Clear; Clear is undecided again.
+    await page.goto(sq({ file: 'hl.py' }));
+    const bar = page.getByRole('group', { name: 'Hunk verdict' }).first();
+    await bar.getByText('undecided').waitFor();
+    assert.equal(await bar.getByRole('button', { name: 'Pending' }).count(), 0, 'no Pending segment');
+    await shot('23b-hunk-undecided');
+    // Reject keeps the hunk open: its chip, then Clear.
+    await bar.getByRole('button', { name: 'Reject', exact: true }).click();
+    await bar.getByText('✗ Rejected').waitFor();
+    await shot('23b-hunk-rejected');
+    await bar.getByRole('button', { name: 'Clear' }).click();
+    await bar.getByText('undecided').waitFor();
+    // Accept collapses the hunk to its summary; expanded again it shows the chip and Clear.
+    await bar.getByRole('button', { name: 'Accept', exact: true }).click();
+    await page.getByRole('button', { name: ACCEPTED_SUMMARY }).first().click();
+    await bar.getByText('✓ Accepted').waitFor();
+    await bar.getByRole('button', { name: 'Clear' }).click();
+    await bar.getByText('undecided').waitFor();
+
+    // 23c. Viewed: marking survives a reload; `v` toggles; a refresh that changes the file clears its mark, another file keeps it.
+    await page.goto(sq({ file: 'hl.ts' }));
+    await viewedBtn.click();
+    await marked(true);
+    await page.goto(sq({ file: 'hl.py' }));
+    await viewedBtn.click();
+    await marked(true);
+    await page.reload();
+    await viewedBtn.waitFor();
+    assert.ok(await pressed(viewedBtn), 'the mark survives a reload');
+    assert.ok(await page.getByRole('checkbox', { name: 'Viewed hl.py' }).isChecked(), 'the tree shows it');
+    await page.keyboard.press('v');
+    await marked(false);
+    await page.keyboard.press('v');
+    await marked(true);
+    await shot('23c-viewed');
+    world.commit('syntax', { 'hl.py': '# comment\ndef f(x):\n    """docstring"""\n    return repr(x)  # tail\n' }, 'change hl.py');
+    await world.mcp('refresh_review', { review: syntax }, { sessionId: 's-author' });
+    await page.reload();
+    await viewedBtn.waitFor();
+    assert.equal(await pressed(viewedBtn), false, 'a changed hunk clears the mark');
+    assert.equal(await page.getByRole('checkbox', { name: 'Viewed hl.py' }).isChecked(), false);
+    assert.ok(await page.getByRole('checkbox', { name: 'Viewed hl.ts' }).isChecked(), 'an unchanged file keeps its mark');
+    await shot('23c-viewed-cleared');
+
+    // 23d. Tree filter: `/` focuses the box (from the Threads tab too); text and the toggles narrow the list.
+    await page.goto(q({ review: range }));
+    await page.getByRole('searchbox', { name: 'Filter files' }).waitFor();
+    const links = page.getByRole('navigation', { name: 'Files' }).getByRole('link');
+    const total = await links.count();
+    await page.getByRole('tablist', { name: 'Review pane' }).getByRole('tab', { name: /^Threads/ }).click();
+    await page.keyboard.press('/');
+    await page.waitForFunction(() => document.activeElement?.id === 'file-filter');
+    assert.equal(params(page).view, undefined, '/ brings the Files tab forward');
+    await page.keyboard.type('.js');
+    await page.getByText(new RegExp(`^Showing \\d+ of ${total} files`)).waitFor();
+    await page.getByRole('button', { name: /^Needs me/ }).click();
+    await page.getByText(/^Showing \d+ of/).waitFor();
+    const shown = await links.count();
+    assert.ok(shown > 0 && shown < total, `text plus Needs me narrows the list (${shown} of ${total})`);
+    await shot('23d-tree-filter');
+    await page.getByRole('button', { name: 'Clear filter' }).click();
+    assert.equal(await links.count(), total);
+    assert.deepEqual(errors, []);
+  }, { headless: true, viewport: { width: 1280, height: 800 } });
+
+  // 23e. Phone: a long line wraps inside the grid (nothing clipped, no ellipsis) and the gutters are narrower than on a desktop.
+  await withPage(async (page) => {
+    const errors = watchErrors(page);
+    const shot = shotter(page);
+    await page.goto(q({ review: range, file: 'wide.js' }));
+    const grid = page.getByRole('grid');
+    await grid.waitFor();
+    const fit = await grid.evaluate((g) => {
+      const cells = [...g.querySelectorAll('[role=gridcell]')];
+      return {
+        grid: g.scrollWidth <= g.clientWidth,
+        rowgroups: [...g.querySelectorAll('[role=rowgroup]')].every((r) => r.scrollWidth <= r.clientWidth),
+        ellipsis: cells.filter((c) => getComputedStyle(c).textOverflow === 'ellipsis').length,
+        gutter: Math.max(...[...g.querySelectorAll('[data-cell]')].map((c) => c.getBoundingClientRect().width)),
+        longest: Math.max(...cells.map((c) => c.textContent.length)),
+      };
+    });
+    assert.deepEqual({ grid: fit.grid, rowgroups: fit.rowgroups, ellipsis: fit.ellipsis }, { grid: true, rowgroups: true, ellipsis: 0 }, 'nothing clipped or ellipsized');
+    assert.ok(fit.longest >= 200, 'the seeded line is long');
+    assert.ok(fit.gutter < 48, `phone gutters are narrower than the desktop's (${fit.gutter}px)`);
+    await shot('23e-phone-wrap');
     assert.deepEqual(errors, []);
   }, { headless: true, viewport: { width: 390, height: 844 } });
 

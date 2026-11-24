@@ -166,7 +166,7 @@ function ReviewThreadPanel({ active }: { active: boolean }) {
     <div className="flex min-h-0 flex-1 flex-col">
       <Tabs value={tab} onValueChange={setTab} className="min-h-0 flex-1 gap-0">
         <TabsList aria-label="Thread filter" className={FILTER_TABS} onFocus={showFocusedTab}>
-          <TabsTrigger value="file">This file <Badge variant="secondary">{fileThreads.length}</Badge></TabsTrigger>
+          <TabsTrigger value="file">This file</TabsTrigger>
           <TabsTrigger value="all">All <Badge variant="secondary">{allRows.length}</Badge></TabsTrigger>
           <TabsTrigger value="outdated">Outdated <Badge variant="secondary">{outdated.length}</Badge></TabsTrigger>
           <TabsTrigger value="review">Review <Badge variant="secondary">{ctx.reviewThreads.length}</Badge></TabsTrigger>

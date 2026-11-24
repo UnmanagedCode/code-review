@@ -33,7 +33,7 @@ test('the Threads panel holds the "Thread filter" tablist, apart from the pane\'
   show();
   await userEvent.setup().click(screen.getByRole('tab', { name: 'Threads' }));
   const filter = within(screen.getByRole('tabpanel', { name: 'Threads' })).getByRole('tablist', { name: 'Thread filter' });
-  expect(within(filter).getAllByRole('tab').map(text)).toEqual(['This file 0', 'All 0', 'Outdated 0', 'Review 0']);
+  expect(within(filter).getAllByRole('tab').map(text)).toEqual(['This file', 'All 0', 'Outdated 0', 'Review 0']);
   expect(paneTabs().some((t) => /This file|All|Outdated|Review/.test(t.textContent!))).toBe(false);
 });
 

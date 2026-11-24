@@ -209,7 +209,7 @@ try {
     assert.equal((await page.getByRole('tooltip').textContent()).trim(), 'Previous file [');
     await page.mouse.move(600, 600);
 
-    // 9–10. ? lists the registered shortcuts (no v or /), Esc closes it and focus returns to the opener.
+    // 9–10. ? lists the registered shortcuts (v and / too: the open file's header and the pane's tree are both mounted on a desktop), Esc closes it and focus returns to the opener.
     await page.setViewportSize({ width: 1280, height: 800 });
     const opener = page.getByRole('button', { name: 'Keyboard shortcuts' });
     await opener.focus();
@@ -218,7 +218,7 @@ try {
     await dialog.waitFor();
     const listed = await dialog.locator('dt').allTextContents();
     for (const l of ['Next open thread', 'Next thread that needs you', 'Next hunk', 'Submit round', 'Overview']) assert.ok(listed.includes(l), `lists ${l}`);
-    for (const l of ['Mark the file viewed', 'Filter files']) assert.ok(!listed.includes(l), `does not list ${l}`);
+    for (const l of ['Mark the file viewed', 'Filter files']) assert.ok(listed.includes(l), `lists ${l}`);
     await shot('overlay-desktop');
     await page.keyboard.press('Escape');
     await dialog.waitFor({ state: 'hidden' });

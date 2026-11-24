@@ -14,13 +14,16 @@ import { ThreadRow, type ThreadRowModel } from './ThreadRow';
  */
 export function ThreadList({ rows, full }: { rows: ThreadRowModel[]; full: (id: string) => Thread | undefined }) {
   const { guide } = useReviewCtx();
-  const routed = useRoute().thread;
+  const { thread: routed, file } = useRoute();
   return (
     <div className="flex flex-col gap-1.5 px-3 pb-3">
       {rows.map((row) => {
         if (row.id !== routed) return <ThreadRow key={row.id} row={row} guide={guide} />;
         const thread = full(row.id);
-        return thread ? <ThreadCard key={row.id} thread={thread} showLocation /> : <Loading key={row.id} label="Loading thread" rows={2} />;
+        if (thread) return <ThreadCard key={row.id} thread={thread} showLocation />;
+        // Only the file the route opened is on its way; a thread of another file has no card to load, so it stays a row.
+        const loading = (row.anchor.kind === 'lines' || row.anchor.kind === 'file') && row.anchor.file === file;
+        return loading ? <Loading key={row.id} label="Loading thread" rows={2} /> : <ThreadRow key={row.id} row={row} guide={guide} />;
       })}
     </div>
   );

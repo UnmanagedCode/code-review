@@ -1,6 +1,6 @@
 import { api } from './api';
 import type {
-  ActivityItem, CheckoutInfo, Commit, ComparedThread, DiffFile, FileState, ForkPoint, InboxItem, Kind, RefreshReport, ReviewSummary, Round, Session, SessionPlace,
+  ActivityItem, CheckoutInfo, Commit, ComparedThread, DiffFile, FileState, ForkPoint, InboxItem, Kind, RefreshReport, ReviewSummary, RoundRecap, Round, Session, SessionPlace,
   FileSig, GuideView, Severity, Submission, Thread, ThreadAnchorInput, ThreadCounts, ThreadDigest, ThreadKind, UnplacedThread, Verdict,
 } from './types';
 
@@ -86,7 +86,8 @@ export const replyThread = (id: string, tid: string, body: string) =>
 export const setThreadStatus = (id: string, tid: string, status: 'open' | 'resolved', disposition?: 'fixed' | 'dismissed') =>
   api<{ thread: Thread; fileSig: FileSig | null }>(`${r(id)}/threads/${encodeURIComponent(tid)}`, json('PATCH', { status, ...(disposition ? { disposition } : {}) }));
 export const refresh = (id: string) => api<RefreshReport>(`${r(id)}/refresh`, json('POST'));
-export const compose = (id: string) => api<{ submission: Submission }>(`${r(id)}/submissions`, json('POST'));
+export const compose = (id: string, note?: string) => api<{ submission: Submission }>(`${r(id)}/submissions`, json('POST', { note }));
+export const previewRound = (id: string, note?: string) => api<{ recap: RoundRecap }>(`${r(id)}/submissions/preview`, json('POST', { note }));
 export const guideMe = (id: string) => api<{ submission: Submission }>(`${r(id)}/guide`, json('POST'));
 export const submissionResult = (id: string, sid: string | number, result: { ok: boolean; code?: string }) =>
   api<{ submission: Submission }>(`${r(id)}/submissions/${encodeURIComponent(String(sid))}/result`, json('POST', result));

@@ -6,6 +6,7 @@ import * as threads from '../src/threads.js';
 import * as submissions from '../src/submissions.js';
 import * as groups from '../src/groups.js';
 import * as store from '../src/store.js';
+import { NEEDS_YOU, threadState } from '../src/threadState.js';
 
 let w;
 beforeEach(async () => { w = await world(); w.session('s-author', { worktree: 'feature' }); });
@@ -15,6 +16,8 @@ const ok = (res) => { assert.equal(res.ok, true, JSON.stringify(res)); return re
 const codeOf = (res) => { assert.equal(res.ok, false, 'expected a refusal'); return res.code; };
 const at = (file, startLine, endLine = startLine) => ({ kind: 'lines', file, side: 'new', startLine, endLine });
 const author = agent('s-author');
+// The first thread of the review needs the human.
+const needsYou = (id) => { const r = store.read(id); return NEEDS_YOU.includes(threadState(r, r.threads[0])); };
 
 async function twoHunks(args = { recipient: 's-author' }) {
   const wt = w.addWorktree();
@@ -169,7 +172,7 @@ test('the prompt body follows the review kind, not the recipient role', async ()
   ok(await reviews.patchReview(review.id, { recipient: 's-rev' }));
   const { submission } = ok(await submissions.composeSubmission(review.id));
   assert.match(submission.text, /you are the reviewer/);
-  assert.match(submission.text, /Verdicts: 0 accepted, 0 rejected, 1 pending/);
+  assert.match(submission.text, /Verdicts: 0 accepted, 0 rejected, 1 not reviewed yet/);
   assert.doesNotMatch(submission.text, /Please review the uncommitted/);
 });
 
@@ -370,4 +373,291 @@ test('a group verdict that writes no hunk is still new human activity and is lis
   assert.deepEqual(set.hunks, []);
   const { submission } = ok(await submissions.composeSubmission(review.id));
   assert.match(submission.text, /Accepted groups:\n- \[g1\] both \(2 hunks\)/);
+});
+
+const section = (text, heading) => {
+  const i = text.indexOf(heading);
+  if (i < 0) return null;
+  const rest = text.slice(i).split('\n\n')[0];
+  return rest.split('\n').slice(1);
+};
+
+test('undecided hunks are sent marked not reviewed yet, by path, header and hunk id', async () => {
+  // Invariant: every pending hunk reaches the agent labelled as unreviewed; the word pending is gone from the prompt.
+  const { review, h1, h2 } = await twoHunks();
+  const { submission } = ok(await submissions.composeSubmission(review.id));
+  assert.match(submission.text, /Verdicts: 0 accepted, 0 rejected, 2 not reviewed yet\./);
+  const lines = section(submission.text, 'Not reviewed yet (no verdict from the human; do not treat these as accepted):');
+  assert.deepEqual(lines, [h1, h2].map((h) => `- a.js ${h.header} (h:${h.id})`));
+  assert.ok(!/pending/.test(submission.text));
+});
+
+test('a decided hunk never appears under Not reviewed yet; with every hunk decided the section is absent', async () => {
+  // Invariant: the section lists exactly the undecided set.
+  const { review, h1, h2 } = await twoHunks();
+  ok(await reviews.setVerdict(review.id, h1.id, 'accepted'));
+  let text = ok(await submissions.composeSubmission(review.id)).submission.text;
+  assert.deepEqual(section(text, 'Not reviewed yet'), [`- a.js ${h2.header} (h:${h2.id})`]);
+  ok(await reviews.setVerdict(review.id, h2.id, 'rejected'));
+  text = ok(await submissions.composeSubmission(review.id)).submission.text;
+  assert.ok(!text.includes('Not reviewed yet ('));
+});
+
+test('the not-reviewed list stops at MAX_LISTED_HUNKS with an "… and N more" line', async () => {
+  // Invariant: prompt size stays bounded on big reviews.
+  const { renderPrompt, MAX_LISTED_HUNKS } = await import('../src/prompt.js');
+  const undecided = Array.from({ length: MAX_LISTED_HUNKS + 12 }, (_, i) => ({ path: 'f.js', header: '@@', id: `x${i}` }));
+  const text = renderPrompt({
+    id: 'r', round: 1, project: 'app', worktree: null, label: 'l', role: 'author', uncommitted: false, author: null,
+    tally: { accepted: 0, rejected: 0, pending: undecided.length }, groups: { accepted: [], rejected: [] }, rejected: [], undecided, note: null, threads: [], files: null,
+  });
+  const lines = section(text, 'Not reviewed yet (');
+  assert.equal(lines.length, MAX_LISTED_HUNKS + 1);
+  assert.equal(lines.at(-1), '- … and 12 more');
+});
+
+test("an uncommitted review's prompt has no Not reviewed yet section", async () => {
+  // Invariant: there are no verdicts to report.
+  const wt = w.addWorktree();
+  wt.write('a.js', editLines({ 2: 'X' }));
+  const { review } = ok(await reviews.openReview({ project: 'app', worktree: 'feature', kind: 'uncommitted', recipient: 's-author' }, HUMAN));
+  const text = ok(await submissions.composeSubmission(review.id)).submission.text;
+  assert.ok(!text.includes('Not reviewed yet'));
+});
+
+test('an overall note is stored as an open human comment thread on the review and carried in full under Reviewer note [tN], not under Threads with new activity', async () => {
+  // Invariant: the note is persisted, prominent, unclipped and not duplicated.
+  const { review } = await twoHunks();
+  const long = `${'x'.repeat(300)}\nsecond line`;
+  const { submission } = ok(await submissions.composeSubmission(review.id, { note: `  ${long}  ` }));
+  const t = store.read(review.id).threads[0];
+  assert.deepEqual([t.kind, t.status, t.anchor, t.openedBy], ['comment', 'open', { kind: 'review', round: 1 }, { kind: 'human' }]);
+  assert.equal(t.messages[0].body, long);
+  assert.ok(submission.text.includes(`Reviewer note [${t.id}] (reply on that thread):\n${'x'.repeat(300)}\nsecond line`));
+  assert.ok(!submission.text.includes('Threads with new activity'));
+});
+
+test("the note appears in the round's history and in the review's reviewThreads", async () => {
+  // Invariant: the note shows in history like any review thread.
+  const { review } = await twoHunks();
+  ok(await submissions.composeSubmission(review.id, { note: 'overall: looks close' }));
+  assert.equal(ok(await reviews.getReview(review.id)).reviewThreads[0].messages[0].body, 'overall: looks close');
+  const rounds = await import('../src/rounds.js');
+  assert.equal(ok(await rounds.roundView(review.id, '1')).reviewThreads[0].messages[0].body, 'overall: looks close');
+});
+
+test('a delivered note is not listed again in the next round', async () => {
+  // Invariant: the since-baseline covers the note.
+  const { review, h1 } = await twoHunks();
+  const { submission } = ok(await submissions.composeSubmission(review.id, { note: 'first thoughts' }));
+  ok(await submissions.recordResult(review.id, submission.id, { ok: true }));
+  ok(await reviews.setVerdict(review.id, h1.id, 'rejected'));
+  const text = ok(await submissions.composeSubmission(review.id)).submission.text;
+  assert.ok(!text.includes('first thoughts'));
+  assert.ok(!text.includes('Reviewer note'));
+  assert.ok(!text.includes('Threads with new activity'));
+});
+
+test('a blank note stores no thread; a non-string is INVALID_ARGUMENT; an over-long one BODY_TOO_LARGE, and a refused compose stores neither thread nor submission', async () => {
+  // Invariant: validation precedes mutation.
+  const { review } = await twoHunks();
+  const state = () => { const r = store.read(review.id); return [r.threads.length, r.submissions.length, r.seq]; };
+  ok(await submissions.composeSubmission(review.id, { note: '  \n ' }));
+  assert.deepEqual(state().slice(0, 2), [0, 1]);
+  const before = state();
+  assert.equal(codeOf(await submissions.composeSubmission(review.id, { note: 5 })), 'INVALID_ARGUMENT');
+  assert.equal(codeOf(await submissions.composeSubmission(review.id, { note: 'x'.repeat(threads.MAX_BODY_CHARS + 1) })), 'BODY_TOO_LARGE');
+  assert.deepEqual(state(), before);
+});
+
+test('after a delivered round with nothing new, a note alone can be sent; without one NOTHING_TO_SUBMIT', async () => {
+  // Invariant: a note is new activity.
+  const { review } = await twoHunks();
+  await deliver(review.id);
+  assert.equal(codeOf(await submissions.composeSubmission(review.id, { note: ' ' })), 'NOTHING_TO_SUBMIT');
+  const { submission } = ok(await submissions.composeSubmission(review.id, { note: 'one more thing' }));
+  assert.match(submission.text, /Reviewer note \[t1\]/);
+});
+
+test('a multi-line note keeps its lines; control characters inside a line are stripped', async () => {
+  // Invariant: a note cannot forge prompt lines beyond its own newlines.
+  const { review } = await twoHunks();
+  const text = ok(await submissions.composeSubmission(review.id, { note: 'a\u001b[31mb\r\nsecond\tline' })).submission.text;
+  assert.ok(text.includes('\na[31mb\nsecond' + 'line\n'), text);
+  assert.ok(!/[\u0000-\u0009\u000b-\u001f\u007f]/.test(text));
+});
+
+test('preview returns the text compose would store and writes nothing', async () => {
+  // Invariant: preview equals compose minus side effects.
+  const { review } = await twoHunks();
+  ok(await threads.annotate(review.id, HUMAN, { anchor: at('a.js', 2), kind: 'question', body: 'why?' }));
+  const state = () => { const r = store.read(review.id); return [r.rev ?? null, r.seq, r.threads.length, r.submissions.length, r.nextThread]; };
+  const before = state();
+  const { recap } = ok(await submissions.previewSubmission(review.id, { note: 'the note' }));
+  assert.deepEqual(state(), before);
+  assert.equal(ok(await submissions.composeSubmission(review.id, { note: 'the note' })).submission.text, recap.text);
+});
+
+test('preview partitions every open thread into exactly one of outgoing, needsYou or waiting; outgoing equals the prompt thread list', async () => {
+  // Invariant: the recap is consistent with the prompt, and needsYou is "open and the agent acted last".
+  const { review } = await twoHunks();
+  const mk = async (line, body) => ok(await threads.annotate(review.id, HUMAN, { anchor: at('a.js', line), kind: 'question', body })).thread.id;
+  const delivered = await mk(2, 'delivered, no reply');
+  const agentLast = await mk(3, 'agent will answer');
+  const proposed = await mk(4, 'agent proposes resolve');
+  const humanAfter = await mk(5, 'human answers the proposal');
+  ok(await threads.reply(review.id, author, agentLast, { body: 'here' }));
+  ok(await threads.reply(review.id, author, proposed, { body: 'done?', resolve: true }));
+  ok(await threads.reply(review.id, author, humanAfter, { body: 'done?', resolve: true }));
+  await deliver(review.id);
+  ok(await threads.reply(review.id, HUMAN, humanAfter, { body: 'no, not yet' })); // new human activity after the proposal
+  const fresh = await mk(18, 'brand new');
+  const { recap } = ok(await submissions.previewSubmission(review.id));
+  const ids = (l) => l.map((t) => t.id).sort();
+  assert.deepEqual(ids(recap.outgoing), ids([{ id: humanAfter }, { id: fresh }]));
+  assert.deepEqual(ids(recap.needsYou), ids([{ id: agentLast }, { id: proposed }]));
+  assert.equal(recap.waiting, 1, delivered);
+  const promptIds = [...recap.text.matchAll(/^\[(t\d+)\]/gm)].map((m) => m[1]).sort();
+  assert.deepEqual(promptIds, ids(recap.outgoing));
+  assert.equal(recap.outgoing[0].anchor.kind, 'lines');
+});
+
+test('needsYou: a human reply after an agent resolution proposal ends it although resolveProposed stays true', async () => {
+  // Invariant: resolveProposed does not decide; the latest act does.
+  const { review } = await twoHunks();
+  const tid = ok(await threads.annotate(review.id, HUMAN, { anchor: at('a.js', 2), kind: 'question', body: 'q' })).thread.id;
+  const get = () => store.read(review.id).threads[0];
+  ok(await threads.reply(review.id, author, tid, { body: 'fixed, ok to resolve?', resolve: true }));
+  assert.equal(get().resolveProposed, true, 'the agent proposed resolution');
+  assert.equal(needsYou(review.id), true);
+  ok(await threads.reply(review.id, HUMAN, tid, { body: 'not quite' }));
+  assert.equal(get().resolveProposed, true, 'a human reply does not clear the proposal');
+  assert.equal(needsYou(review.id), false);
+  ok(await threads.reply(review.id, author, tid, { body: 'again' }));
+  assert.equal(needsYou(review.id), true);
+  ok(await threads.setThreadStatus(review.id, tid, { status: 'resolved' }));
+  assert.equal(needsYou(review.id), false);
+});
+
+test('needsYou: a human reopen is the human\'s act even though it carries no message', async () => {
+  // Invariant: a status change by the human after the agent's last message ends needs-you.
+  const { review } = await twoHunks();
+  const tid = ok(await threads.annotate(review.id, HUMAN, { anchor: at('a.js', 2), kind: 'question', body: 'q' })).thread.id;
+  const get = () => store.read(review.id).threads[0];
+  ok(await threads.reply(review.id, author, tid, { body: 'answer' }));
+  ok(await threads.setThreadStatus(review.id, tid, { status: 'resolved' }));
+  ok(await threads.setThreadStatus(review.id, tid, { status: 'open' }));
+  assert.equal(get().status, 'open');
+  assert.equal(get().messages.some((m) => m.seq === get().statusSeq), false, 'the reopen carries no message');
+  assert.equal(needsYou(review.id), false);
+});
+
+test('preview reports nothingToSubmit instead of refusing, and refuses NO_RECIPIENT and REVIEW_CLOSED like compose', async () => {
+  // Invariant: the recap can always open, and its preconditions match compose.
+  const { review } = await twoHunks();
+  await deliver(review.id);
+  assert.equal(ok(await submissions.previewSubmission(review.id)).recap.nothingToSubmit, true);
+  assert.equal(codeOf(await submissions.previewSubmission(review.id, { note: 3 })), 'INVALID_ARGUMENT');
+  ok(await reviews.patchReview(review.id, { recipient: null }));
+  assert.equal(codeOf(await submissions.previewSubmission(review.id)), 'NO_RECIPIENT');
+  ok(await reviews.patchReview(review.id, { recipient: 's-author' }));
+  ok(await reviews.patchReview(review.id, { status: 'closed' }));
+  assert.equal(codeOf(await submissions.previewSubmission(review.id)), 'REVIEW_CLOSED');
+});
+
+test('after a delivered round, preview reports nothingToSubmit false once the human has a new verdict, and separately a new reply', async () => {
+  // Invariant: nothingToSubmit is true only when no human activity followed the last delivered round.
+  const { review, h1 } = await twoHunks();
+  const tid = ok(await threads.annotate(review.id, HUMAN, { anchor: at('a.js', 2), kind: 'question', body: 'q' })).thread.id;
+  await deliver(review.id);
+  assert.equal(ok(await submissions.previewSubmission(review.id)).recap.nothingToSubmit, true);
+  ok(await reviews.setVerdict(review.id, h1.id, 'accepted'));
+  assert.equal(ok(await submissions.previewSubmission(review.id)).recap.nothingToSubmit, false);
+  await deliver(review.id);
+  assert.equal(ok(await submissions.previewSubmission(review.id)).recap.nothingToSubmit, true);
+  ok(await threads.reply(review.id, HUMAN, tid, { body: 'one more' }));
+  assert.equal(ok(await submissions.previewSubmission(review.id)).recap.nothingToSubmit, false);
+});
+
+test('an uncommitted review composed with a note carries the Reviewer note block after the changed-files list; its preview shows it too', async () => {
+  const wt = w.addWorktree();
+  wt.write('a.js', editLines({ 2: 'X' }));
+  const { review } = ok(await reviews.openReview({ project: 'app', worktree: 'feature', kind: 'uncommitted', recipient: 's-author' }, HUMAN));
+  const preview = ok(await submissions.previewSubmission(review.id, { note: 'please start with a.js' })).recap.text;
+  const text = ok(await submissions.composeSubmission(review.id, { note: 'please start with a.js' })).submission.text;
+  assert.equal(preview, text);
+  assert.ok(text.indexOf('- a.js') >= 0 && text.indexOf('- a.js') < text.indexOf('Reviewer note [t1]'), text);
+  assert.ok(text.includes('Reviewer note [t1] (reply on that thread):\nplease start with a.js'));
+});
+
+test('preview of a committed review whose snapshot is unreadable has hunks null and still renders the prompt', async () => {
+  // Invariant: mirrors compose\'s tolerance of an unreadable diff.
+  const { review } = await twoHunks();
+  w.cc.state.execHook = () => ({ status: 502, body: { code: 'SYSTEM_UNREACHABLE', error: 'down' } });
+  const { recap } = ok(await submissions.previewSubmission(review.id, { note: 'n' }));
+  assert.equal(recap.hunks, null);
+  assert.deepEqual(recap.undecided, []);
+  assert.match(recap.text, /Code review/);
+  assert.match(recap.text, /Reviewer note \[t1\]/);
+});
+
+test('before any delivery each open thread is either outgoing or needs you', async () => {
+  // Invariant: with no delivered round the recap partitions open threads into outgoing and needsYou only.
+  const { review } = await twoHunks();
+  const human = ok(await threads.annotate(review.id, HUMAN, { anchor: at('a.js', 2), kind: 'question', body: 'q' })).thread.id;
+  const agentOpened = ok(await threads.annotate(review.id, author, { anchor: at('a.js', 18), kind: 'comment', body: 'heads up' })).thread.id;
+  const { recap } = ok(await submissions.previewSubmission(review.id));
+  assert.equal(recap.waiting, 0);
+  assert.deepEqual(recap.outgoing.map((t) => t.id), [human]);
+  assert.deepEqual(recap.needsYou.map((t) => t.id), [agentOpened]);
+});
+
+test('a deletion-only hunk is listed as undecided on the old side', async () => {
+  // Invariant: a hunk with no new lines points at its old-side start.
+  const wt = w.addWorktree();
+  wt.commit({ 'b.js': null });
+  const { review } = ok(await reviews.openReview({ project: 'app', worktree: 'feature', recipient: 's-author' }, HUMAN));
+  const [hunk] = ok(await reviews.diff(review.id, {})).files.find((f) => f.path === 'b.js').hunks;
+  assert.equal(hunk.newLines, 0);
+  const { recap } = ok(await submissions.previewSubmission(review.id));
+  assert.deepEqual(recap.undecided, [{ id: hunk.id, path: 'b.js', side: 'old', line: hunk.oldStart }]);
+});
+
+test('with 25 undecided hunks the prompt lists 20 and then "… and 5 more"', async () => {
+  // Invariant: the not-reviewed list is capped at 20 lines.
+  const wt = w.addWorktree();
+  wt.commit(Object.fromEntries(Array.from({ length: 25 }, (_, i) => [`f${String(i).padStart(2, '0')}.js`, 'x\n'])));
+  const { review } = ok(await reviews.openReview({ project: 'app', worktree: 'feature', recipient: 's-author' }, HUMAN));
+  const text = ok(await submissions.composeSubmission(review.id)).submission.text;
+  const lines = section(text, 'Not reviewed yet (');
+  assert.equal(lines.length, 21);
+  assert.equal(lines.filter((l) => l.startsWith('- f')).length, 20);
+  assert.equal(lines.at(-1), '- … and 5 more');
+});
+
+test('preview of an uncommitted review has hunks null, a files count and no undecided list', async () => {
+  const wt = w.addWorktree();
+  wt.write('a.js', editLines({ 2: 'X' }));
+  const { review } = ok(await reviews.openReview({ project: 'app', worktree: 'feature', kind: 'uncommitted', recipient: 's-author' }, HUMAN));
+  const { recap } = ok(await submissions.previewSubmission(review.id));
+  assert.deepEqual([recap.kind, recap.hunks, recap.files, recap.undecided], ['uncommitted', null, 1, []]);
+});
+
+test('an uncommitted review with its checkout gone still previews, with files null', async () => {
+  // Invariant: mirrors compose's tolerance of an unreadable diff.
+  const wt = w.addWorktree();
+  wt.write('a.js', editLines({ 2: 'X' }));
+  const { review } = ok(await reviews.openReview({ project: 'app', worktree: 'feature', kind: 'uncommitted', recipient: 's-author' }, HUMAN));
+  wt.destroy();
+  const { recap } = ok(await submissions.previewSubmission(review.id));
+  assert.equal(recap.files, null);
+  assert.deepEqual(recap.undecided, []);
+});
+
+test('a committed review preview counts hunks and lists each pending one with its side and line', async () => {
+  const { review, h1, h2 } = await twoHunks();
+  ok(await reviews.setVerdict(review.id, h1.id, 'accepted'));
+  const { recap } = ok(await submissions.previewSubmission(review.id));
+  assert.deepEqual(recap.hunks, { accepted: 1, rejected: 0, pending: 1 });
+  assert.deepEqual(recap.undecided, [{ id: h2.id, path: 'a.js', side: 'new', line: h2.newStart }]);
 });

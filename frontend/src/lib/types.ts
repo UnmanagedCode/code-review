@@ -82,6 +82,21 @@ export interface ActivityItem {
 export interface SubmissionRef { id: number | string; kind: 'round' | 'guide'; status: 'pending' | 'delivered' | 'failed' | 'superseded'; code: string | null; round: number }
 export interface Submission extends SubmissionRef { recipient: string; text: string; deliveredAt?: string | null }
 
+/** A thread as the round recap lists it; `anchor` routes through `threadPlace`. */
+export interface RecapThread { id: string; kind: ThreadKind; where: string; anchor: Thread['anchor']; status: Thread['status']; note?: string }
+export interface RecapHunk { id: string; path: string; side: 'new' | 'old' | null; line: number | null }
+/** What the next round would send (`POST /reviews/:id/submissions/preview`); `text` is the prompt, rendered with the given note. */
+export interface RoundRecap {
+  round: number; kind: Kind; nothingToSubmit: boolean;
+  hunks: { accepted: number; rejected: number; pending: number } | null;
+  undecided: RecapHunk[];
+  files: number | null;
+  outgoing: (RecapThread & { note: string })[];
+  needsYou: RecapThread[];
+  waiting: number;
+  text: string;
+}
+
 export interface ReviewSummary {
   id: string; project: string; worktree: string | null; branch: string | null; kind: Kind; target: unknown;
   label: string; title: string | null; status: 'open' | 'closed'; recipient: string | null; author: string | null; recipientRole: Role | null;

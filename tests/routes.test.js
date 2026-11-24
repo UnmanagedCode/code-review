@@ -371,3 +371,16 @@ test('POST /reviews/:id/viewed records the marker and needs a JSON content type'
   assert.equal(res.body.review.lastViewedSeq, 0);
   assert.equal((await req('POST', `/reviews/${id}/viewed`, { seq: -1 })).status, HTTP_STATUS.INVALID_ARGUMENT);
 });
+
+test('POST …/submissions/preview answers a recap and POST …/submissions forwards the note', async () => {
+  // Invariant: both bodies reach the backend; preview writes nothing.
+  const id = (await openReview()).review.id;
+  const preview = await req('POST', `/reviews/${id}/submissions/preview`, { note: 'hello there' });
+  assert.equal(preview.status, 200);
+  assert.equal(preview.body.recap.round, 1);
+  assert.ok(preview.body.recap.text.includes('hello there'));
+  assert.equal(store.read(id).submissions.length, 0);
+  const sent = await req('POST', `/reviews/${id}/submissions`, { note: 'hello there' });
+  assert.ok(sent.body.submission.text.includes('hello there'));
+  assert.equal(store.read(id).threads[0].messages[0].body, 'hello there');
+});

@@ -3,6 +3,7 @@ import { clean } from './text.js';
 const clip = (s, n) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
 
 export const MAX_LISTED_FILES = 20;
+export const MAX_LISTED_HUNKS = 20;
 
 function closing(p) {
   if (p.role === 'reviewer') return `Use the code-review tools with review=${p.id}: annotate findings, list_threads and reply.`;
@@ -16,8 +17,12 @@ function closing(p) {
  * Text sent to the recipient session. The body follows the review kind (`uncommitted`), the closing line the role;
  * `author` is the review's stored author session or null. Input is prepared by submissions.js:
  * {id, round, project, worktree, label, role, uncommitted, author, tally, groups:{accepted:[{id, title, hunks:n}], rejected:[{id, title, hunks:[{path, header, id}]}]},
- * rejected:[{path, header, id}], threads:[{id, kind, where, note}], files:[path]|null}
+ * rejected:[{path, header, id}], undecided:[{path, header, id}], note:{id, body}|null, threads:[{id, kind, where, note}], files:[path]|null}
+ * `undecided` lists every hunk with no verdict; `note` is the human's overall note, carried unclipped.
  */
+const noteBlock = (note) => ['', `Reviewer note [${note.id}] (reply on that thread):`, ...note.body.split('\n').map(clean)];
+const hunkLine = (h) => `- ${clean(h.path)} ${clean(h.header)} (h:${h.id})`;
+
 export function renderPrompt(p) {
   const where = clean(p.worktree ? `${p.project}/${p.worktree}` : p.project);
   const out = [`Code review ${p.id} · round ${p.round} · ${where} · ${clean(p.label)} · you are the ${p.role}`];
@@ -28,15 +33,21 @@ export function renderPrompt(p) {
       out.push(...p.files.slice(0, MAX_LISTED_FILES).map((f) => `- ${clean(f)}`));
       if (p.files.length > MAX_LISTED_FILES) out.push(`- … and ${p.files.length - MAX_LISTED_FILES} more`);
     }
+    if (p.note) out.push(...noteBlock(p.note));
   } else {
-    out.push('', `Verdicts: ${p.tally.accepted} accepted, ${p.tally.rejected} rejected, ${p.tally.pending} pending.`);
+    out.push('', `Verdicts: ${p.tally.accepted} accepted, ${p.tally.rejected} rejected, ${p.tally.pending} not reviewed yet.`);
+    if (p.note) out.push(...noteBlock(p.note));
     const { accepted, rejected: rejectedGroups } = p.groups;
     if (accepted.length) out.push('', 'Accepted groups:', ...accepted.map((g) => `- [${g.id}] ${clip(clean(g.title), 120)} (${g.hunks} hunk${g.hunks === 1 ? '' : 's'})`));
     if (rejectedGroups.length) {
       out.push('', 'Rejected groups:');
       for (const g of rejectedGroups) out.push(`- [${g.id}] ${clip(clean(g.title), 120)}`, ...g.hunks.map((h) => `  - ${clean(h.path)} ${clean(h.header)} (h:${h.id})`));
     }
-    if (p.rejected.length) out.push('', 'Rejected hunks:', ...p.rejected.map((h) => `- ${clean(h.path)} ${clean(h.header)} (h:${h.id})`));
+    if (p.rejected.length) out.push('', 'Rejected hunks:', ...p.rejected.map(hunkLine));
+    if (p.undecided.length) {
+      out.push('', 'Not reviewed yet (no verdict from the human; do not treat these as accepted):', ...p.undecided.slice(0, MAX_LISTED_HUNKS).map(hunkLine));
+      if (p.undecided.length > MAX_LISTED_HUNKS) out.push(`- … and ${p.undecided.length - MAX_LISTED_HUNKS} more`);
+    }
   }
   if (p.threads.length) out.push('', 'Threads with new activity:', ...p.threads.map((t) => `[${t.id}] ${t.kind} · ${clean(t.where)}: ${clip(clean(t.note), 120)}`));
   out.push('', closing(p));

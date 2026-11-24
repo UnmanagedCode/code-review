@@ -174,11 +174,59 @@ try {
         await shot('binary-file');
 
         await open(q({ review: range }), page.getByRole('button', { name: 'Submit round' }));
+        // The recap, with a long recipient session title (the worst case for the primary button).
+        const LONG_TITLE = 'A very long session title that goes on and on and on forever';
+        world.session('s-long', { worktree: 'feature', title: LONG_TITLE });
+        await world.call('PATCH', `reviews/${range}`, { recipient: 's-long' });
+        await open(q({ review: range }), page.getByRole('button', { name: 'Submit round' }));
         await page.getByRole('button', { name: 'Submit round' }).click();
-        await page.getByRole('dialog').waitFor();
-        await page.getByLabel('Prompt').waitFor();
-        await shot('submit-dialog');
-        await page.getByRole('button', { name: 'Close' }).first().click();
+        const dialog = page.getByRole('dialog');
+        await page.getByRole('list', { name: 'What this round sends' }).waitFor();
+        const note = Array.from({ length: 20 }, (_, i) => `Note line ${i + 1}`).join('\n');
+        await page.getByLabel('Overall note').fill(note);
+        await shot('submit-recap');
+        await page.getByRole('button', { name: /Preview the prompt/ }).click();
+        const preview = page.getByLabel('Prompt preview');
+        await preview.waitFor();
+        await page.getByText(/Reviewer note \[t\d+\]/).waitFor();
+        await shot('submit-recap-preview');
+        // No sideways overflow in the dialog or the preview; the note stays capped; the primary can be reached; on a wide
+        // dialog the hint, Cancel and the primary share one row.
+        const check = async (label) => {
+          const fits = await dialog.evaluate((d) => d.scrollWidth <= d.clientWidth);
+          const previewFits = await preview.evaluate((p) => p.scrollWidth <= p.clientWidth);
+          const primary = dialog.getByRole('button', { name: /^(Send to|Compose prompt)/ });
+          await primary.scrollIntoViewIfNeeded();
+          const noteHeight = (await page.getByLabel('Overall note').boundingBox()).height;
+          if (!fits || !previewFits || !(await primary.isVisible()) || noteHeight > 200) throw new Error(`${scheme} ${label}: recap overflows (dialog ${fits}, preview ${previewFits}, note ${noteHeight}px)`);
+          if (page.viewportSize().width >= 640) {
+            const mid = async (loc) => { const b = await loc.boundingBox(); return b.y + b.height / 2; };
+            const ys = [await mid(dialog.getByText(/^Delivery shows up/)), await mid(dialog.getByRole('button', { name: 'Cancel' })), await mid(primary)];
+            const hintWidth = (await dialog.getByText(/^Delivery shows up/).boundingBox()).width;
+            if (hintWidth < 150) throw new Error(`${scheme} ${label}: footer hint squeezed to ${hintWidth}px`);
+            if (Math.max(...ys) - Math.min(...ys) > 24) throw new Error(`${scheme} ${label}: footer wraps (${ys.join(', ')})`);
+          }
+        };
+        await check(`${vp} ${size.width}`);
+        if (vp === 'phone') { await page.setViewportSize({ width: 320, height: 844 }); await check('320'); await shot('submit-recap-320'); }
+        else { await page.setViewportSize({ width: 768, height: 800 }); await check('768'); }
+        await page.setViewportSize(size);
+        await page.getByRole('button', { name: 'Cancel' }).click(); // nothing composed: later shots keep the seeded world
+        // With a cc bridge the primary reads "Send to <long title>": it must truncate, not overflow.
+        await page.evaluate(() => { window.ccBridge = { session: undefined, onSession: () => () => {}, openSession: async () => ({ ok: true }), sendPrompt: async () => ({ ok: true }) }; });
+        await page.getByRole('button', { name: 'Submit round' }).click();
+        await page.getByRole('list', { name: 'What this round sends' }).waitFor();
+        await dialog.getByRole('button', { name: /^Send to/ }).waitFor();
+        await page.getByLabel('Overall note').fill(note);
+        await page.getByRole('button', { name: /Preview the prompt/ }).click();
+        await preview.waitFor();
+        await check(`bridge ${vp} ${size.width}`);
+        if (vp === 'phone') { await page.setViewportSize({ width: 320, height: 844 }); await check('bridge 320'); await shot('submit-recap-bridge-320'); }
+        else { await page.setViewportSize({ width: 768, height: 800 }); await check('bridge 768'); await shot('submit-recap-bridge-768'); }
+        await page.setViewportSize(size);
+        await page.getByRole('button', { name: 'Cancel' }).click();
+        await page.evaluate(() => { delete window.ccBridge; });
+        await world.call('PATCH', `reviews/${range}`, { recipient: 's-author' });
 
         await open(q({ review: conducted }), page.getByText('Author: s-author'));
         await shot('conducted-header'); // recipient = the conductor, author = the worker

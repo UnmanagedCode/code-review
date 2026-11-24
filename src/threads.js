@@ -15,7 +15,7 @@ const invalid = (reason) => new Refusal('INVALID_ARGUMENT', reason);
 
 export const MAX_BODY_CHARS = 20000;
 
-function needBody(body) {
+export function needBody(body) {
   if (typeof body !== 'string' || !body.trim()) throw invalid('body is required');
   if (body.length > MAX_BODY_CHARS) throw new Refusal('BODY_TOO_LARGE', `a message body is limited to ${MAX_BODY_CHARS} characters`);
   return body;
@@ -130,16 +130,17 @@ function message(review, actor, body, extra = {}) {
   };
 }
 
-/** Starts a thread on lines, a whole hunk, a whole file, a group or the review. */
-export const annotate = (id, actor, { anchor, kind, severity, body }) => attempt(() => inReview(id, async (review, env) => {
-  assertOpen(review);
+// The cheap field checks of a new thread; they run before any diff is read and before anything is mutated.
+function checkFields({ kind, severity, body }) {
   if (!KINDS.includes(kind)) throw invalid(`kind must be one of ${KINDS.join(', ')}`);
   if (kind === 'finding' && !SEVERITIES.includes(severity)) throw new Refusal('SEVERITY_REQUIRED', `a finding needs a severity: ${SEVERITIES.join(', ')}`);
   needBody(body);
-  checkSpec(anchor);
-  // Only a review or group anchor reads no snapshot, so it can be written while the diff is unreadable.
-  const snap = anchor.kind === 'review' || anchor.kind === 'group' ? null : await env.snapshot();
-  const built = await buildAnchor(review, snap, anchor);
+}
+
+/** Pushes a new open thread on the built anchor with its first message and returns it; checks the fields first, mutates nothing before they pass. */
+export function startThread(review, actor, built, fields) {
+  checkFields(fields);
+  const { kind, severity, body } = fields;
   const first = message(review, actor, body);
   const thread = {
     id: `t${review.nextThread++}`, kind, severity: kind === 'finding' ? severity : null, status: 'open', disposition: null,
@@ -147,6 +148,18 @@ export const annotate = (id, actor, { anchor, kind, severity, body }) => attempt
     humanReadSeq: actor.kind === 'human' ? first.seq : 0, createdAt: now(), messages: [first],
   };
   review.threads.push(thread);
+  return thread;
+}
+
+/** Starts a thread on lines, a whole hunk, a whole file, a group or the review. */
+export const annotate = (id, actor, { anchor, kind, severity, body }) => attempt(() => inReview(id, async (review, env) => {
+  assertOpen(review);
+  checkFields({ kind, severity, body });
+  checkSpec(anchor);
+  // Only a review or group anchor reads no snapshot, so it can be written while the diff is unreadable.
+  const snap = anchor.kind === 'review' || anchor.kind === 'group' ? null : await env.snapshot();
+  const built = await buildAnchor(review, snap, anchor);
+  const thread = startThread(review, actor, built, { kind, severity, body });
   return { ok: true, thread: threadView(review, thread), fileSig: onFile(built) ? liveSig(review, snap, built.file) : null };
 }));
 

@@ -29,12 +29,12 @@ export const prevHunk = (tops: number[], line: number): number => tops.findLastI
 export const readoutIndex = (tops: number[], line: number, active: number, activeInView: boolean): number => (active >= 0 && activeInView ? active : hunkAt(tops, line));
 
 /**
- * The hunk a step goes to, or -1 at an end. With a hunk holding focus (`active` ≥ 0) it steps by index, so it can never
+ * The hunk a step goes to, or -1 at an end. With a hunk holding focus (`active` ≥ 0) that is in view it steps by index, so it can never
  * bounce between hunks the page cannot scroll to the header; `k` first returns to the focused hunk's own start when
- * the view has scrolled past it. With none focused it reads the geometry.
+ * the view has scrolled past it. With none focused, or the focused one scrolled out of view (the readout then follows the scroll too), it reads the geometry.
  */
-export function stepTarget(tops: number[], line: number, active: number, dir: 1 | -1): number {
-  if (active < 0) return dir === 1 ? nextHunk(tops, line) : prevHunk(tops, line);
+export function stepTarget(tops: number[], line: number, active: number, dir: 1 | -1, activeInView = true): number {
+  if (active < 0 || !activeInView) return dir === 1 ? nextHunk(tops, line) : prevHunk(tops, line);
   if (dir === 1) return active < tops.length - 1 ? active + 1 : -1;
   if (tops[active] < line - SLOP) return active;
   return active > 0 ? active - 1 : -1;
@@ -69,12 +69,16 @@ export function useHunkStepper({ file, textFile, rows, limit, setLimit, headerRe
     return id ? hunkIds.indexOf(id) : -1;
   };
 
-  const measure = () => {
-    const t = tops(), l = line();
+  // The one "focused and visible" rule the readout, the chevrons and the keys all share.
+  const focus = (l: number) => {
     const a = activeIndex();
     const rect = a >= 0 ? [...(gridRef.current?.querySelectorAll<HTMLElement>('[data-hunk-id]') ?? [])].find((e) => e.dataset.hunkId === hunkIds[a])?.getBoundingClientRect() : undefined;
-    const inView = !!rect && rect.bottom > l && rect.top < window.innerHeight;
-    const next = { k: readoutIndex(t, l, a, inView) + 1, prev: stepTarget(t, l, a, -1) !== -1, next: stepTarget(t, l, a, 1) !== -1 };
+    return { a, inView: !!rect && rect.bottom > l && rect.top < window.innerHeight };
+  };
+  const measure = () => {
+    const t = tops(), l = line();
+    const { a, inView } = focus(l);
+    const next = { k: readoutIndex(t, l, a, inView) + 1, prev: stepTarget(t, l, a, -1, inView) !== -1, next: stepTarget(t, l, a, 1, inView) !== -1 };
     setPos((p) => (p.k === next.k && p.prev === next.prev && p.next === next.next ? p : next));
   };
 
@@ -103,7 +107,8 @@ export function useHunkStepper({ file, textFile, rows, limit, setLimit, headerRe
 
   const step = (dir: 1 | -1) => {
     const t = tops(), l = line();
-    const i = stepTarget(t, l, activeIndex(), dir);
+    const { a, inView } = focus(l);
+    const i = stepTarget(t, l, a, dir, inView);
     if (i === -1) return false;
     goTo(i);
   };

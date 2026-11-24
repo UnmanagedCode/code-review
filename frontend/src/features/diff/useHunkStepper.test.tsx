@@ -87,6 +87,14 @@ test('stepTarget steps by the focused hunk and clamps; k returns to a scrolled-p
   expect(stepTarget([-300, 100, 400], 100, 1, -1)).toBe(0);
 });
 
+// Invariant: a focused hunk that has scrolled out of view no longer steers the keys: j goes to the first hunk below the header and k to the last above it, as the readout (which follows the scroll then) says.
+test('stepTarget falls back to the geometry when the focused hunk is off screen', () => {
+  const tops = [-2000, -1500, -1000, -500, 98, 400]; // focus is on hunk 0, scrolled far above; the view is at hunk 4
+  expect(stepTarget(tops, 100, 0, 1, false)).toBe(5);
+  expect(stepTarget(tops, 100, 0, -1, false)).toBe(3);
+  expect(stepTarget(tops, 100, 0, 1, true)).toBe(1);
+});
+
 // Invariant: when every hunk fits the viewport (nothing scrolls), j walks 1 → 2 → 3 and stops, k walks back and stops, and the chevrons disable at the ends.
 test('j and k step through hunks of a file that fits the viewport without bouncing', async () => {
   Element.prototype.scrollIntoView = () => {};

@@ -67,9 +67,9 @@ function FileHeader({ ref, file, onBack, extra, view, options, onComment, hunk }
   );
   return (
     <div ref={ref} className="sticky top-0 z-10 flex flex-col border-b bg-background">
-      <div className="flex items-center gap-2 px-3 pt-2 pb-1">
+      <div className="flex flex-wrap items-center gap-2 px-3 pt-2 pb-1">
         {onBack && <Tip label="Back to files"><Button variant="ghost" size="icon-sm" aria-label="Back to files" onClick={onBack}><ArrowLeftIcon /></Button></Tip>}
-        <div className="min-w-0 flex-1">
+        <div className="min-w-0 flex-1 basis-24">
           <p className="truncate font-mono text-sm font-medium" title={file.path}>{file.path}</p>
           {file.oldPath && <p className="truncate font-mono text-xs text-muted-foreground">renamed from {file.oldPath}</p>}
           {!wide && <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">{meta}</div>}

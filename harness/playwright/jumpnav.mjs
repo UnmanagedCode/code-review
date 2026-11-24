@@ -281,6 +281,29 @@ try {
     assert.deepEqual(errors, []);
   }, { headless: true, viewport: { width: 390, height: 844 } });
 
+  // A wide window with the side pane widened leaves a narrow diff: the header wraps, nothing is cut off, the diff does not scroll sideways.
+  await withPage(async (page) => {
+    const errors = watchErrors(page);
+    const shot = shotter(page);
+    await page.addInitScript(() => localStorage.setItem('code-review:sidePaneWidth', '512'));
+    await page.goto(q({ file: 'g2.js' }));
+    await page.getByText('File 2 of 3').waitFor();
+    const fit = await page.evaluate(() => {
+      const main = document.querySelector('main');
+      const header = document.querySelector('div.sticky.top-0.z-10');
+      const edge = main.getBoundingClientRect().right;
+      const cut = [...header.querySelectorAll('button')].filter((b) => b.getBoundingClientRect().width && b.getBoundingClientRect().right > edge + 0.5).map((b) => b.getAttribute('aria-label') || b.textContent);
+      return { main: [main.scrollWidth, main.clientWidth], header: [header.scrollWidth, header.clientWidth], cut };
+    });
+    console.log(`narrow diff pane: main ${fit.main}, header ${fit.header}`);
+    assert.ok(fit.main[1] < 480, `the diff pane is narrow (${fit.main[1]}px)`);
+    assert.ok(fit.main[0] <= fit.main[1], 'the diff does not scroll sideways');
+    assert.ok(fit.header[0] <= fit.header[1], 'the header does not scroll sideways');
+    assert.deepEqual(fit.cut, [], 'no header control is cut off');
+    await shot('stepper-narrow-pane');
+    assert.deepEqual(errors, []);
+  }, { headless: true, viewport: { width: 900, height: 800 } });
+
   console.log('jumpnav ok');
 } finally {
   await world.close();

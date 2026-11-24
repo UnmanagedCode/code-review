@@ -37,17 +37,26 @@ export function ActivityCard() {
     <Card title="What the agent did — since you last looked">
       {items.length ? (
         <ul className="flex flex-col">
-          {items.map((a) => (
-            <li key={a.seq}>
-              <RouteLink to={threadPlace({ id: a.thread.id, status: 'open', anchor: a.thread.anchor })} className="flex items-start gap-2 rounded-md p-1.5 text-sm hover:bg-accent">
+          {items.map((a) => {
+            // As ThreadRow: a file or line thread opens its file, which cannot load while the diff is unreadable.
+            const unavailable = !!review.snapshotError && (a.thread.anchor.kind === 'lines' || a.thread.anchor.kind === 'file');
+            const row = 'flex items-start gap-2 rounded-md p-1.5 text-sm';
+            const body = (
+              <>
                 <BotIcon className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden />
                 <span className="min-w-0 flex-1 break-words">
                   <strong className="font-medium">{name(a.actor)}</strong> {VERB(a)} <span className="break-all font-mono text-xs">{placeLabel(a.thread.anchor, guide)}</span>
                 </span>
-                <span className="shrink-0 text-xs text-muted-foreground">{ago(a.at)}</span>
-              </RouteLink>
-            </li>
-          ))}
+                <span className="shrink-0 text-xs text-muted-foreground">{ago(a.at)}{unavailable && <span> · diff unavailable</span>}</span>
+              </>
+            );
+            return (
+              <li key={a.seq}>
+                {unavailable ? <div className={row}>{body}</div>
+                  : <RouteLink to={threadPlace({ id: a.thread.id, status: 'open', anchor: a.thread.anchor })} className={`${row} hover:bg-accent`}>{body}</RouteLink>}
+              </li>
+            );
+          })}
         </ul>
       ) : <p className="text-sm text-muted-foreground">Nothing new since you last looked</p>}
       <p className="border-t pt-2 text-xs text-muted-foreground">{status}</p>

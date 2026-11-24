@@ -68,12 +68,13 @@ test('every unsent thread is in the next prompt, and a delivery makes it awaitin
   assert.deepEqual(unsent, [first.id, second.id].sort());
   const { submission } = ok(await submissions.composeSubmission(id));
   for (const t of unsent) assert.match(submission.text, new RegExp(`\\[${t}\\]`));
-  // A human reply the agent answers is still in the prompt, but it is the human's move.
+  assert.equal(stateOf((await detail(id)).openThreads, second.id), 'unsent', 'pending is not sent');
+  // A human reply the agent then answers is the human's move, yet a prompt composed after the answer still lists it.
   ok(await threads.reply(id, author, first.id, { body: 'answer' }));
   assert.equal(stateOf((await detail(id)).openThreads, first.id), 'awaiting-human');
-  assert.match(submission.text, new RegExp(`\\[${first.id}\\]`));
-  assert.equal(stateOf((await detail(id)).openThreads, second.id), 'unsent', 'pending is not sent');
-  ok(await submissions.recordResult(id, submission.id, { ok: true }));
+  const fresh = ok(await submissions.composeSubmission(id)).submission;
+  assert.match(fresh.text, new RegExp(`\\[${first.id}\\]`));
+  ok(await submissions.recordResult(id, fresh.id, { ok: true }));
   assert.deepEqual((await detail(id)).openThreads.map((t) => [t.id, t.state]), [[first.id, 'awaiting-human'], [second.id, 'awaiting-agent']]);
 });
 

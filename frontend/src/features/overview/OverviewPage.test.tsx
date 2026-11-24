@@ -146,3 +146,15 @@ test('with an unreadable snapshot file and line rows are not links, review and g
   expect(within(card).getAllByRole('link')).toHaveLength(2);
   expect(within(card).getAllByText('diff unavailable')).toHaveLength(2);
 });
+
+test('with an unreadable snapshot the feed\'s file and line items are not links, review and group items are', () => {
+  const on = (seq: number, anchor: ReturnType<typeof linesAnchor> | { kind: 'file'; file: string; round: number } | { kind: 'review'; round: number } | ReturnType<typeof groupAnchor>) =>
+    activityItem({ seq, thread: { id: `t-${seq}`, kind: 'comment', severity: null, anchor } });
+  renderInReview(<OverviewPage />, {
+    review: review({ snapshotError: 'CHECKOUT_GONE', seq: 9, lastViewedSeq: 0 }),
+    activity: [on(1, linesAnchor()), on(2, { kind: 'file', file: 'src/a.ts', round: 1 }), on(3, { kind: 'review', round: 1 }), on(4, groupAnchor())],
+  });
+  const feed = region('What the agent did — since you last looked');
+  expect(within(feed).getAllByRole('link')).toHaveLength(2);
+  expect(within(feed).getAllByText(/diff unavailable/)).toHaveLength(2);
+});

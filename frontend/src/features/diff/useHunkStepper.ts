@@ -122,7 +122,7 @@ export function useHunkStepper({ file, textFile, rows, limit, setLimit, headerRe
   };
   const decide = (verdict: Verdict) => (e: KeyboardEvent) => {
     const hunk = focusedHunk();
-    if (e.repeat || !hunk || !file) return false;
+    if (!hunk || !file) return false;
     const prev = hunk.verdict ?? 'pending';
     if (prev === verdict) return false;
     // A direct verdict clears every group it contradicts: refuse rather than silently undo a group decision.

@@ -28,16 +28,16 @@ export function JumpNavProvider({ children }: { children: ReactNode }) {
   const sorted = useMemo(() => treeOrder(ctx.files), [ctx.files]);
   const [overlay, setOverlay] = useState(false);
   const last = useRef<Slot | null>(null);
-  const focusRequest = useRef<string | null>(null);
+  const focusRequest = useRef<{ id: string; diffOnly: boolean } | null>(null);
 
   const threadIndex = route.thread ? order.findIndex((t) => t.id === route.thread) : -1;
   const fileIndex = route.file ? sorted.findIndex((f) => f.path === route.file) : -1;
   // A request for a thread that never got routed must not fire on a later, unrelated arrival.
-  useEffect(() => { if (focusRequest.current && route.thread !== focusRequest.current) focusRequest.current = null; }, [route.thread]);
+  useEffect(() => { if (focusRequest.current && route.thread !== focusRequest.current.id) focusRequest.current = null; }, [route.thread]);
 
   const goThread = (t: ThreadDigest, index: number) => {
     last.current = { id: t.id, index };
-    focusRequest.current = t.id;
+    focusRequest.current = { id: t.id, diffOnly: t.anchor.kind === 'lines' || t.anchor.kind === 'file' };
     const place = { ...threadPlace(t), hunk: undefined };
     // A review thread lives in the pane, which a phone never shows beside a file.
     const patch = !wide && t.anchor.kind === 'review' ? { ...LEAVE_FILE, ...place } : place;
@@ -77,8 +77,9 @@ export function JumpNavProvider({ children }: { children: ReactNode }) {
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
-  const takeThreadFocus = useCallback((id: string) => {
-    if (focusRequest.current !== id) return false;
+  const takeThreadFocus = useCallback((id: string, inDiff: boolean) => {
+    const want = focusRequest.current;
+    if (want?.id !== id || (want.diffOnly && !inDiff)) return false;
     focusRequest.current = null;
     return true;
   }, []);

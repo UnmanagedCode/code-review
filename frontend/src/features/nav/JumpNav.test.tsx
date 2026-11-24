@@ -10,6 +10,7 @@ import { renderDiff } from '@/test/renderCtx';
 import { stubFetch } from '@/test/stubFetch';
 import { FileDiff } from '@/features/diff/FileDiff';
 import { SubmitControls } from '@/features/submit/SubmitControls';
+import { ThreadCard } from '@/features/threads/ThreadCard';
 
 const route = () => parseRoute(location.search);
 const at = (file: string, line: number) => linesAnchor({ file, startLine: line, endLine: line });
@@ -185,4 +186,25 @@ test('a stepper-routed card takes focus; a link-routed card does not', async () 
   expect(route().thread).toBe('a1');
   expect(document.activeElement).toBe(screen.getByRole('article', { name: /thread/ }));
   expect(screen.getByText('thread 1 of 5')).toBeTruthy();
+});
+
+// Invariant: a step's focus request for a line thread goes to the card beside the code, not to the pane's copy of the same thread, whatever the mount order; a review thread has no diff card, so its pane card takes it.
+test('the focus of a stepped-to line thread lands on the diff card, not the pane copy', async () => {
+  const t = thread({ id: 'a1', anchor: at('a.ts', 2) as never, messages: [message()] });
+  history.replaceState(null, '', '?file=a.ts');
+  renderDiff(<><div data-testid="pane"><ThreadCard thread={t} /></div><FileDiff /></>, diffFile({ path: 'a.ts', threads: [t] }), { files, openThreads });
+  await keys('n');
+  expect(route().thread).toBe('a1');
+  const focused = document.activeElement as HTMLElement;
+  expect(focused.tagName).toBe('ARTICLE');
+  expect(screen.getByTestId('pane').contains(focused)).toBe(false);
+  expect(focused.closest('[role=grid]')).not.toBeNull();
+});
+
+test('a review thread has no diff card: the pane card takes the focus', async () => {
+  const t = thread({ id: 'rv', anchor: { kind: 'review' } as never, messages: [message()] });
+  history.replaceState(null, '', '?file=a.ts');
+  renderDiff(<><div data-testid="pane"><ThreadCard thread={t} /></div><FileDiff /></>, diffFile({ path: 'a.ts' }), { files, openThreads: [openThreads[4]] });
+  await keys('n');
+  expect(document.activeElement).toBe(screen.getByTestId('pane').querySelector('article'));
 });

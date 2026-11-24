@@ -17,8 +17,11 @@ export interface JumpNav {
   };
   files: { index: number; total: number; step: (dir: 1 | -1) => void; canStep: (dir: 1 | -1) => boolean };
   overlay: { open: boolean; setOpen: (open: boolean) => void };
-  /** True once for the thread a step just routed to: its card focuses itself. */
-  takeThreadFocus: (id: string) => boolean;
+  /**
+   * True once for the thread a step just routed to: its card focuses itself. A line or file thread's request is
+   * answered only by its card in the diff (`inDiff`), never by the pane's copy of the same thread.
+   */
+  takeThreadFocus: (id: string, inDiff: boolean) => boolean;
 }
 
 export const JumpNavContext = createContext<JumpNav | null>(null);

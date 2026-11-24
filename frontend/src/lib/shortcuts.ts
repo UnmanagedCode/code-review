@@ -56,5 +56,7 @@ export function matchShortcut(e: KeyboardEvent): ShortcutId | null {
   if (!altGr && (e.ctrlKey || e.metaKey || e.altKey)) return null;
   const t = e.target instanceof Element ? e.target : null;
   if (t && (isTextEntry(t) || t.tagName === 'SELECT' || t.closest(OWN_KEYS))) return null;
-  return BY_KEY.get(e.key) ?? null;
+  const id = BY_KEY.get(e.key) ?? null;
+  // A held key repeats only for hunk stepping: a repeated file or thread step floods history, and a repeated toggle flickers.
+  return e.repeat && id !== 'next-hunk' && id !== 'prev-hunk' ? null : id;
 }

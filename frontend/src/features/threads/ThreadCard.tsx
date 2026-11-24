@@ -71,8 +71,8 @@ const wasAt = (t: Thread): string => (t.anchor.kind === 'lines'
   : t.anchor.kind === 'group' ? `outdated · its group was retired after round ${t.anchor.round}`
     : `outdated · its file left the diff after round ${t.anchor.round}`);
 
-/** One thread. `unplaced`: a comparison has no place for it, so Focus never moves the file position. `dropped`: a session-local tombstone of an uncommitted thread whose lines changed. `note`: shown under the header. */
-export function ThreadCard({ thread, dropped = false, showLocation = false, unplaced = false, note }: { thread: Thread; dropped?: boolean; showLocation?: boolean; unplaced?: boolean; note?: ReactNode }) {
+/** One thread. `unplaced`: a comparison has no place for it, so Focus never moves the file position. `inDiff`: the card sits beside the code, where a step's focus request for a line or file thread lands. `dropped`: a session-local tombstone of an uncommitted thread whose lines changed. `note`: shown under the header. */
+export function ThreadCard({ thread, dropped = false, showLocation = false, unplaced = false, inDiff = false, note }: { thread: Thread; dropped?: boolean; showLocation?: boolean; unplaced?: boolean; inDiff?: boolean; note?: ReactNode }) {
   const { readOnly, compare, guide } = useReviewCtx();
   const actions = useReviewActions();
   const route = useRoute();
@@ -85,7 +85,7 @@ export function ThreadCard({ thread, dropped = false, showLocation = false, unpl
     if (!focused) { marked.current = false; return; }
     ref.current?.scrollIntoView?.({ block: 'center' });
     // A step (n/p/u) routed here: take focus so Tab reaches the reply box. A hidden copy (a force-mounted tab) leaves the request to the visible one.
-    if (ref.current && !ref.current.closest('[hidden]') && nav.takeThreadFocus(thread.id)) ref.current.focus({ preventScroll: true });
+    if (ref.current && !ref.current.closest('[hidden]') && nav.takeThreadFocus(thread.id, inDiff)) ref.current.focus({ preventScroll: true });
     if (thread.unread > 0 && !marked.current && !dropped) { marked.current = true; void actions.markRead(thread.id); }
   }, [focused, thread.unread, dropped]);
 

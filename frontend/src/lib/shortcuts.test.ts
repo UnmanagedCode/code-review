@@ -41,6 +41,14 @@ test('no shortcut fires from a text field, textarea, contenteditable, select, di
   expect(matchShortcut(handled)).toBeNull();
 });
 
+// Invariant: a held key repeats only for hunk stepping; every other shortcut acts once per press.
+test('key repeat is ignored for every shortcut except j and k', () => {
+  for (const s of SHORTCUTS) {
+    const e = new KeyboardEvent('keydown', { key: s.keys, repeat: true, shiftKey: s.keys === '?' });
+    expect(matchShortcut(e), s.keys).toBe(s.id === 'next-hunk' || s.id === 'prev-hunk' ? s.id : null);
+  }
+});
+
 // Invariant: layouts that type `[`, `]` and `/` with AltGr still get those shortcuts.
 test('AltGr-typed [ ] / still match', () => {
   const altGr = (key: string) => { const e = new KeyboardEvent('keydown', { key, ctrlKey: true, altKey: true }); e.getModifierState = (m) => m === 'AltGraph'; return e; };

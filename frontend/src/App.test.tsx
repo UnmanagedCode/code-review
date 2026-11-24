@@ -28,9 +28,13 @@ function frontendSources(dir: string): string[] {
 const all = frontendSources(frontend);
 const offenders = (re: RegExp, files = all) => files.filter((f) => re.test(readFileSync(f, 'utf8'))).map((f) => path.relative(frontend, f));
 
-test('with no checkout chosen, App offers the project picker', async () => {
-  stubFetch({ 'GET api/projects': { projects: [{ name: 'app' }] } });
+// Invariant: with no checkout chosen the page lands on the inbox, and the Checkout tab still offers the project picker.
+test('with no checkout chosen, App lands on the inbox and the Checkout tab offers the project picker', async () => {
+  installFakeEventSource();
+  stubFetch({ 'GET api/projects': { projects: [{ name: 'app' }] }, 'GET api/inbox': { reviews: [] } });
   render(<App />);
+  await waitFor(() => expect(location.search).toBe('?view=inbox'));
+  await userEvent.setup().click(screen.getByRole('tab', { name: 'Checkout' }));
   expect(await screen.findByText('Choose a project to review')).toBeTruthy();
   expect(await screen.findByRole('option', { name: 'app' })).toBeTruthy();
 });

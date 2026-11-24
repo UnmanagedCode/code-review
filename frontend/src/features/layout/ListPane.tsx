@@ -15,7 +15,9 @@ import type { useFollowSession } from './useFollowSession';
 export function ListPane({ route, follow, arrival, placeholder }: {
   route: Route; follow: ReturnType<typeof useFollowSession>; arrival: number; placeholder?: ReactNode;
 }) {
-  const tab = route.view === 'inbox' ? 'inbox' : 'checkout';
+  const { landing, ...checkout } = follow;
+  // Until the landing rule has run and the route names nothing, the inbox shows: never the empty picker first.
+  const tab = route.view === 'inbox' || (landing === 'pending' && !route.project) ? 'inbox' : 'checkout';
   const choose = (v: string) => navigate({ view: v === 'inbox' ? 'inbox' : undefined }, { replace: true });
   return (
     <Tabs value={tab} onValueChange={choose} className="min-h-0 flex-1 gap-0">
@@ -25,7 +27,7 @@ export function ListPane({ route, follow, arrival, placeholder }: {
       </TabsList>
       <TabsContent value="inbox" className="flex min-h-0 flex-1 flex-col"><Inbox /></TabsContent>
       <TabsContent value="checkout" forceMount hidden={tab !== 'checkout'} className="flex min-h-0 flex-1 flex-col">
-        <CheckoutBar route={route} {...follow} />
+        <CheckoutBar route={route} {...checkout} />
         {route.project ? <ReviewList key={arrival} project={route.project} worktree={route.worktree} /> : placeholder}
       </TabsContent>
     </Tabs>

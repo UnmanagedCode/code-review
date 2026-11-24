@@ -29,7 +29,7 @@ import { useReviewCtx } from '@/state/reviewContext';
 const CLEAR = { review: undefined, ...REVIEW_SCOPED };
 const NO_THREADS = { open: 0, resolved: 0, outdated: 0 };
 
-const asFileState = (f: { path: string; oldPath: string | null; status: FileState['status']; binary: boolean; tooLarge: boolean; additions: number; deletions: number; hunks: unknown[]; sig: string }): FileState => ({
+const asFileState = (f: { path: string; oldPath: string | null; status: FileState['status']; binary: boolean; tooLarge: boolean; additions: number; deletions: number; hunks: unknown[]; hunkIds: string[]; viewed: boolean; sig: string }): FileState => ({
   ...f, hunks: f.hunks.length, verdicts: null, threads: { open: 0, resolved: 0, outdated: 0 }, unread: 0,
 });
 

@@ -14,7 +14,7 @@ export const review = (over: Partial<ReviewSummary> = {}): ReviewSummary => ({
 
 export const fileState = (over: Partial<FileState> = {}): FileState => ({
   path: 'src/a.ts', oldPath: null, status: 'modified', binary: false, tooLarge: false, additions: 2, deletions: 1, hunks: 1,
-  verdicts: { pending: 1, accepted: 0, rejected: 0 }, threads: { open: 0, resolved: 0, outdated: 0 }, unread: 0, sig: 's-1', ...over,
+  verdicts: { pending: 1, accepted: 0, rejected: 0 }, threads: { open: 0, resolved: 0, outdated: 0 }, unread: 0, hunkIds: ['h1'], viewed: false, sig: 's-1', ...over,
 });
 
 export const lines = (spec: string): DiffLine[] => {
@@ -58,6 +58,8 @@ export const refusal = (code: string, status = 409, reason = 'because'): Respons
 export const inboxItem = (over: Partial<InboxItem> = {}): InboxItem => ({
   id: 'r-1', project: 'app', worktree: 'feature', branch: 'feature', kind: 'range', label: 'main…feature', title: '', round: 1,
   unread: 0, seenByHuman: true, lastActivityAt: '2026-01-01T00:00:00Z', turn: 'human', checkoutGone: false,
+  recipient: 's-author', author: null, hunks: { pending: 0, accepted: 1, rejected: 0 }, groupsPending: 0,
+  threadStates: { awaitingHuman: 0, verifyResolution: 0, unsent: 0, awaitingAgent: 0 }, unsent: false, newActivity: false, lastSubmission: null, lastAgentAction: null,
   ...over,
 });
 

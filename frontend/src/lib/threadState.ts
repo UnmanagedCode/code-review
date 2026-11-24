@@ -54,3 +54,13 @@ export function placeLabel(a: Anchor, guide: GuideView | null): string {
   if (a.kind === 'file') return `${a.file} (whole file)`;
   return `${a.file}#${anchorLabel(a).replace(/ \((old|new)\)$/, '')}`;
 }
+
+const base = (path: string) => path.slice(path.lastIndexOf('/') + 1);
+
+/** A thread's place in few characters: `a.ts#L3–L5`, `a.ts` (whole file), `review`, or its group's title. */
+export function shortPlace(a: Anchor, guide: GuideView | null = null): string {
+  if (a.kind === 'review') return 'review';
+  if (a.kind === 'group') return guide?.groups.find((g) => g.id === a.groupId)?.title ?? guide?.retired.find((g) => g.id === a.groupId)?.title ?? 'a group';
+  if (a.kind === 'file') return base(a.file);
+  return `${base(a.file)}#${anchorLabel(a).replace(/ \((old|new)\)$/, '')}`;
+}

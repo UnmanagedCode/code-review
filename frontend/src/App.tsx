@@ -3,6 +3,7 @@ import { ListPane } from '@/features/layout/ListPane';
 import { DesktopLayout, PhoneLayout } from '@/features/layout/layouts';
 import { useFollowSession } from '@/features/layout/useFollowSession';
 import { useMenuTarget } from '@/features/layout/useMenuTarget';
+import { InboxOverview } from '@/features/inbox/InboxOverview';
 import { NewReviewDialog } from '@/features/picker/NewReviewDialog';
 import { ReviewView } from '@/features/review/ReviewView';
 import { parsePrefill } from '@/lib/prefill';
@@ -27,6 +28,7 @@ export function App() {
   if (!wide) {
     return <><PhoneLayout><ListPane route={route} follow={follow} arrival={menu.arrival} placeholder={<Empty title="Choose a project to review" />} /></PhoneLayout>{dialog}</>;
   }
-  const centre = <Empty title={route.project || route.view === 'inbox' ? 'Select a review' : 'Choose a project to review'} />;
+  const inInbox = route.view === 'inbox' || (follow.landing === 'pending' && !route.project);
+  const centre = inInbox ? <InboxOverview /> : <Empty title={route.project ? 'Select a review' : 'Choose a project to review'} />;
   return <><DesktopLayout left={<ListPane route={route} follow={follow} arrival={menu.arrival} />} center={centre} />{dialog}</>;
 }

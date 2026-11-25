@@ -93,15 +93,19 @@ function StepBody({ step, steps, onBack }: { step: Step; steps: Step[]; onBack?:
       <div ref={headerRef} className="sticky top-0 z-10 flex flex-wrap items-center gap-2 border-b bg-background px-3 py-2">
         {onBack && <Button variant="ghost" size="icon-sm" aria-label="Back to steps" onClick={onBack}><ArrowLeftIcon /></Button>}
         <span className="text-xs text-muted-foreground">Step {step.n} of {steps.length}</span>
-        <h2 className="min-w-0 flex-1 basis-40 break-words text-sm font-semibold">{group ? group.title : 'Other changes'}</h2>
-        <Button variant="ghost" size="icon-sm" aria-label="Previous step" disabled={i <= 0} onClick={() => go(steps[i - 1])}><ChevronLeftIcon /></Button>
-        <Button ref={nextRef} variant="ghost" size="icon-sm" aria-label="Next step" disabled={nextDisabled} onClick={() => go(steps[i + 1])}><ChevronRightIcon /></Button>
+        <h2 className="min-w-0 flex-1 basis-40 break-words max-sm:basis-24 text-sm font-semibold">{group ? group.title : 'Other changes'}</h2>
+        <span className="inline-flex shrink-0 gap-2">
+          <Button variant="ghost" size="icon-sm" aria-label="Previous step" disabled={i <= 0} onClick={() => go(steps[i - 1])}><ChevronLeftIcon /></Button>
+          <Button ref={nextRef} variant="ghost" size="icon-sm" aria-label="Next step" disabled={nextDisabled} onClick={() => go(steps[i + 1])}><ChevronRightIcon /></Button>
+        </span>
         {group && (
-          <VerdictChoice
-            ref={verdictRef} label="Group verdict" labels={['Accept group', 'Reject group']} value={group.verdict} disabled={closed}
-            again={group.verdict === 'accepted' && group.hunks.some((h) => h.verdict === 'pending') ? { label: 'Accept group again', onClick: () => decide('accepted', 'Accept group again', false) } : undefined}
-            onChange={(v) => decide(v, v === 'accepted' ? 'Accept group' : 'Reject group', v !== 'pending')}
-          />
+          <div className="max-sm:basis-full">
+            <VerdictChoice
+              ref={verdictRef} label="Group verdict" labels={['Accept group', 'Reject group']} value={group.verdict} disabled={closed}
+              again={group.verdict === 'accepted' && group.hunks.some((h) => h.verdict === 'pending') ? { label: 'Accept group again', onClick: () => decide('accepted', 'Accept group again', false) } : undefined}
+              onChange={(v) => decide(v, v === 'accepted' ? 'Accept group' : 'Reject group', v !== 'pending')}
+            />
+          </div>
         )}
       </div>
       {note && <p className="px-3 pt-2 text-xs text-muted-foreground">{note}</p>}

@@ -1191,6 +1191,28 @@ try {
     await groupBar.getByText('✓ Accepted').waitFor();
     await page.evaluate(() => document.querySelector('main').scrollTo(0, 0));
     await shot('21-14-phone-accepted-header');
+    // The narrowest phone: Previous and Next never split, and the verdict control takes its own line, in every verdict state.
+    await page.setViewportSize({ width: 360, height: 800 });
+    const navRow = async (label) => {
+      const [prev, next] = await Promise.all(['Previous step', 'Next step'].map((n) => page.getByRole('button', { name: n }).boundingBox()));
+      assert.ok(Math.abs(prev.y - next.y) < 2, `${label}: Previous and Next share a row at 360`);
+      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, `${label}: no sideways scroll at 360`);
+    };
+    await navRow('accepted');
+    await shot('21-14-360-accepted');
+    // A carried group (accepted, pending hunks) adds a link beside the chip; the world cannot reach that state, so the link is injected for the layout check.
+    await groupBar.evaluate((el) => { const b = el.querySelector('button').cloneNode(true); b.textContent = 'Accept group again'; el.querySelector('button').before(b); });
+    await navRow('carried');
+    await shot('21-14-360-carried');
+    await groupBar.evaluate((el) => el.querySelector('button').remove());
+    await groupBar.getByRole('button', { name: 'Clear' }).click();
+    await groupBar.getByText('undecided').waitFor();
+    await navRow('undecided');
+    await scrollPastHeading('g1.js', '21-14-360-scrolled-heading');
+    await shot('21-14-360-undecided');
+    await groupBar.getByRole('button', { name: 'Accept group' }).click();
+    await groupBar.getByText('✓ Accepted').waitFor();
+    await page.setViewportSize({ width: 390, height: 844 });
     await page.getByRole('button', { name: 'Back to steps' }).click();
     await step('Tidy').click();
     await page.getByRole('heading', { name: 'Tidy the tail <b>of g1</b>', level: 2 }).waitFor();

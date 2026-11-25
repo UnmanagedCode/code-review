@@ -140,7 +140,7 @@ test('a thread route into a file opens it on the first render of the card, and t
   } finally { Element.prototype.scrollIntoView = orig; }
 });
 
-test('a routed group thread leaves the file bars collapsed', async () => {
+test('a routed group thread opens no second file', async () => {
   // Invariant: group threads render above the files, so routing to one does not open any file.
   at('&step=g1&thread=t-9');
   const t = thread({ id: 't-9', anchor: groupAnchor({ groupId: 'g1' }) });

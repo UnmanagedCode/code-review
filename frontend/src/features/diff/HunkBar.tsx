@@ -10,6 +10,9 @@ import { Composer } from '@/features/threads/Composer';
 
 const ACTIONS = ['accepted', 'rejected'] as const;
 
+// The link variant's primary colour misses AA on the page background, so these actions use the foreground colour.
+const LINK_ACTION = 'h-auto px-0 text-foreground underline';
+
 const CHIP: Record<'accepted' | 'rejected', { text: string; tint: string }> = {
   accepted: { text: '✓ Accepted', tint: 'bg-success/25' },
   rejected: { text: '✗ Rejected', tint: 'bg-destructive/25' },
@@ -41,8 +44,8 @@ export function VerdictChoice({ label, labels, value, disabled, onChange, again,
   return (
     <div ref={ref} tabIndex={-1} role="group" aria-label={label} className="inline-flex flex-wrap items-center gap-2 outline-none">
       <span className={cn('rounded-md px-2 py-1 text-xs font-medium text-foreground', chip.tint)}>{chip.text}</span>
-      {again && <Button size="sm" variant="link" disabled={disabled} className="h-auto px-0" onClick={again.onClick}>{again.label}</Button>}
-      <Button size="sm" variant="link" disabled={disabled} className="h-auto px-0" onClick={() => onChange('pending')}>Clear</Button>
+      {again && <Button size="sm" variant="link" disabled={disabled} className={LINK_ACTION} onClick={again.onClick}>{again.label}</Button>}
+      <Button size="sm" variant="link" disabled={disabled} className={LINK_ACTION} onClick={() => onChange('pending')}>Clear</Button>
     </div>
   );
 }

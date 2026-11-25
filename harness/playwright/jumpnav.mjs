@@ -285,6 +285,24 @@ try {
     await page.getByRole('dialog').waitFor();
     assert.equal(await page.evaluate(() => window.ccBridge.sent.length), 0);
     await page.keyboard.press('Escape');
+
+    // 13. A thread opened by clicking its overview row keeps its slot: after the reply n reaches the next needs-you thread, not the rest tier.
+    await page.goto(q({ view: 'overview' }));
+    const needsRegion = page.getByRole('region', { name: /^Needs you/ });
+    await needsRegion.waitFor();
+    await needsRegion.getByRole('link').filter({ hasText: 'g3.js' }).click();
+    await page.waitForFunction((id) => new URLSearchParams(location.search).get('thread') === id, g3L5);
+    assert.equal(params(page).thread, g3L5);
+    const g3Card = page.locator('article:visible', { hasText: 'Check g3 line 5' });
+    await g3Card.getByLabel('Reply').fill('Seen, thanks.');
+    await g3Card.getByRole('button', { name: 'Reply', exact: true }).click();
+    // Step 3 left a "Will be sent" header in the pane, so wait on the walk order itself: g3L5 is the last thread once it leaves needs-you.
+    await g3Card.getByText('thread 6 of 6').waitFor();
+    await blur(page);
+    await press(page, 'n');
+    assert.equal(params(page).view, 'guided', 'n reached the group thread');
+    assert.ok(params(page).thread && ![g1L50, g2L5, g2Old, g2File, g3L5].includes(params(page).thread), 'the seeded group thread, not one of the rest tier');
+    await shot('click-reply-n');
     assert.deepEqual(errors, []);
   }, { headless: true, viewport: { width: 1280, height: 800 } });
 

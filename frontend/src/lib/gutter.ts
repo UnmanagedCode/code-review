@@ -6,7 +6,9 @@ const STOCK_DIGITS = 3;
 /**
  * The gutter width for a file whose line numbers need more than the stock gutter, as a CSS length (`ch` is the diff's
  * monospace digit); undefined keeps the stock width. It follows the widest number on either side the file can show, so it
- * is fixed for the file: expanding gaps, scrolling and hovering never move it. The extra room is the hover `+` chip
+ * is fixed for the file (`lineCount` bounds every line a gap expansion can reveal; where both counts are null, which a text
+ * file does not have, the hunks are only a lower bound, and `total` in `state/fileDiff.ts` arrives later and would move the
+ * width, so it is not folded in): expanding gaps, scrolling and hovering never move it. The extra room is the hover `+` chip
  * (16px and a 2px gap; the compact chip of the wrapped, narrow layout is 10px) and the cell's side padding.
  */
 export function gutterWidth(file: DiffFile, wrap: boolean): string | undefined {

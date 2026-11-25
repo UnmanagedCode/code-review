@@ -176,8 +176,10 @@ export async function seed() {
       async bigFile() {
         const wb = w.addWorktree('big');
         const text = (edits) => `${Array.from({ length: 11200 }, (_, i) => edits[i + 1] ?? `l${i + 1}`).join('\n')}\n`;
-        const base = wb.commit({ 'big.js': text({}) }, 'add big.js');
-        wb.commit({ 'big.js': text({ 1005: 'changed1005', 11005: 'changed11005' }) }, 'edit big.js');
+        // mid.js: a short file with a three-digit line (the stock gutter), in the same review.
+        const mid = (edit) => `${Array.from({ length: 150 }, (_, i) => (i + 1 === 105 ? edit : `m${i + 1}`)).join('\n')}\n`;
+        const base = wb.commit({ 'big.js': text({}), 'mid.js': mid('m105') }, 'add big.js and mid.js');
+        wb.commit({ 'big.js': text({ 1005: 'changed1005', 11005: 'changed11005' }), 'mid.js': mid('changed105') }, 'edit big.js and mid.js');
         const { review: r } = await call('POST', 'reviews', { project: 'app', worktree: 'big', kind: 'range', base, title: 'Big file' });
         return r.id;
       },

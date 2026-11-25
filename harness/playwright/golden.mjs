@@ -1697,6 +1697,14 @@ try {
   // file of 11000+ lines the hover + never covers a digit (4 and 5 digits, old and new side, desktop and the wrapped phone layout).
   const bigId = await world.bigFile();
   const gutterWidthOf = (loc) => loc.evaluate((el) => Math.round(el.getBoundingClientRect().width * 10) / 10);
+  /** The hover + chip's rect and the number's text range (its text node) do not intersect. */
+  const clearsNumber = (cell) => cell.evaluate((el) => {
+    const range = document.createRange();
+    range.selectNodeContents([...el.childNodes].find((c) => c.nodeType === Node.TEXT_NODE));
+    const text = range.getBoundingClientRect();
+    const c = el.querySelector('[data-comment-plus]').getBoundingClientRect();
+    return c.right <= text.left + 0.01 || text.right <= c.left + 0.01;
+  });
   const bigCheck = async (page, label, stock) => {
     await page.goto(q({ worktree: 'big', review: bigId, file: 'big.js' }));
     await page.getByRole('grid').waitFor();
@@ -1710,14 +1718,7 @@ try {
         assert.equal(await chip.isVisible(), true, `${label} ${side}:${n}: the + shows`);
         assert.equal(await gutterWidthOf(cell), before, `${label} ${side}:${n}: hovering does not move the gutter`);
         assert.ok(before > stock, `${label} ${side}:${n}: the gutter is wider than the stock ${stock}px (${before}px)`);
-        const rects = await cell.evaluate((el) => {
-          const range = document.createRange();
-          range.selectNodeContents([...el.childNodes].find((c) => c.nodeType === Node.TEXT_NODE));
-          const text = range.getBoundingClientRect();
-          const c = el.querySelector('[data-comment-plus]').getBoundingClientRect();
-          return { text: [text.left, text.right], chip: [c.left, c.right], cell: el.getBoundingClientRect().left };
-        });
-        assert.ok(rects.chip[1] <= rects.text[0] + 0.01 || rects.text[1] <= rects.chip[0] + 0.01, `${label} ${side}:${n}: the + does not intersect the number (${JSON.stringify(rects)})`);
+        assert.equal(await clearsNumber(cell), true, `${label} ${side}:${n}: the + does not intersect the number`);
       }
     }
     const widths = await page.evaluate(() => ({ grid: document.querySelector('[role=grid]').scrollWidth <= document.querySelector('[role=grid]').clientWidth, doc: document.documentElement.scrollWidth <= document.documentElement.clientWidth }));
@@ -1744,6 +1745,17 @@ try {
   await withPage(async (page) => {
     const errors = watchErrors(page);
     await stockCheck(page, '390', 36);
+    // The stock 3-digit case: a number just clears the compact chip.
+    await page.goto(q({ worktree: 'big', review: bigId, file: 'mid.js' }));
+    await page.getByRole('grid').waitFor();
+    for (const side of ['new', 'old']) {
+      const cell = page.locator(`[data-cell="${side}:105"]`);
+      await cell.scrollIntoViewIfNeeded();
+      assert.equal(await gutterWidthOf(cell), 36, `390 ${side}:105: a three-digit file keeps the stock gutter`);
+      await cell.hover();
+      assert.equal(await cell.locator('[data-comment-plus]').isVisible(), true, `390 ${side}:105: the + shows`);
+      assert.equal(await clearsNumber(cell), true, `390 ${side}:105: the + does not intersect the number`);
+    }
     await bigCheck(page, '390', 36);
     await shotter(page)('24e-big-file-phone');
     assert.deepEqual(errors, []);

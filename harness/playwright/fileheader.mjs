@@ -78,6 +78,7 @@ const measure = (page) => page.evaluate(() => {
     baseInside: br.left >= hr.left - 0.5 && br.right <= hr.right + 0.5,
     baseShown: Math.round(Math.max(0, Math.min(br.right, pr.right) - Math.max(br.left, pr.left + lead))),
     dirShown: dr ? Math.round(Math.max(0, Math.min(dr.right, pr.right) - Math.max(dr.left, pr.left + lead))) : 0,
+    startGap: Math.round(((dr ?? br).left - pr.left) * 10) / 10,
     dirClipped: dr ? dr.left < pr.left - 0.5 : false,
     dirText: dir?.textContent ?? null,
     height: Math.round(hr.height),
@@ -127,6 +128,8 @@ await withPage(async (_page, { browser }) => {
           assert.ok(m.baseWhole, `${label}: FileTreeToolbar.tsx is whole`);
           assert.ok(m.baseInside, `${label}: the base name lies inside the header`);
         }
+        // A path that fits starts at the box's left edge (dir=rtl would otherwise right-align it).
+        if (!m.truncated) assert.ok(Math.abs(m.startGap) <= 1, `${label} ${kind}: an untruncated path starts at the left edge (gap ${m.startGap}px)`);
         // 3. Leading ellipsis at 992: the directory is cut on its left but not gone.
         if (kind === 'realistic' && cfg.name === '992') {
           assert.ok(m.truncated && m.dirClipped && m.dirShown > 0, `${label}: the directory is truncated from the left, not gone`);

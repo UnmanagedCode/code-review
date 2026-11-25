@@ -66,7 +66,7 @@ function FilePath({ path }: { path: string }) {
   const dir = path.slice(0, cut);
   const base = path.slice(cut);
   return (
-    <p className="min-w-0 truncate font-mono text-sm" dir="rtl" title={path}>
+    <p className="min-w-0 truncate text-left font-mono text-sm" dir="rtl" title={path}>
       <bdi dir="ltr">
         {dir && <span data-path-dir className="text-muted-foreground">{dir}</span>}
         <span data-path-base className="font-medium">{base}</span>

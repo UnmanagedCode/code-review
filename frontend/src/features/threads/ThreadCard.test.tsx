@@ -316,6 +316,14 @@ test('a group thread\'s Focus route clears file, side, lines, round, compare and
   expect(parseRoute(location.search)).toEqual({ review: 'r-1', view: 'guided', step: 'g2', thread: 't-4' });
 });
 
+// Invariant: the card reads the effective pane tab: on the default Guided tab (no view) at its step, Focus only marks the thread and writes no view.
+test('a group thread at the open step on the default Guided tab: Focus does not jump', async () => {
+  history.replaceState(null, '', '?review=r-1&step=g1');
+  renderInReview(<ThreadCard thread={thread({ anchor: groupAnchor({ groupId: 'g1' }) })} />, { guide: guideView({ groups: [guideGroup({ id: 'g1' })] }), guidedDefault: true });
+  await userEvent.setup().click(screen.getByRole('button', { name: 'Focus' }));
+  expect(parseRoute(location.search)).toEqual({ review: 'r-1', step: 'g1', thread: 't-1' });
+});
+
 // Invariant: a group thread's location link names its step and title (or marks it retired), never a bare id the guide can resolve.
 test('a group thread\'s location link names its step and title, or "(retired)"', () => {
   const guide = guideView({ groups: [guideGroup({ id: 'g2', order: 1, title: 'Wire the thing' })], retired: [{ id: 'g5', title: 'Gone', retiredIn: 1, reason: 'refresh' }] });

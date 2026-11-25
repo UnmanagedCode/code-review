@@ -1115,7 +1115,7 @@ try {
     // 9. Open in file: that file with the hunk's lines marked and in view; the Guided tab and step stay.
     await page.getByRole('link', { name: /^Open g1\.js at/ }).first().click();
     await page.waitForURL(/file=g1\.js/);
-    assert.deepEqual({ view: params(page).view, step: params(page).step, side: params(page).side }, { view: 'guided', step: 'g1', side: 'new' });
+    assert.deepEqual({ view: params(page).view, step: params(page).step, side: params(page).side }, { view: undefined, step: 'g1', side: 'new' }); // the Guided tab is this visit's default: nothing was written, and the file keeps it
     const target = page.locator('[data-line-target]');
     await target.waitFor();
     const where = await target.boundingBox();
@@ -1126,6 +1126,15 @@ try {
     await step('Rename').click();
     await page.getByRole('heading', { name: 'Rename the starting values', level: 2 }).waitFor();
     assert.equal(await fileBar('g1.js').getAttribute('aria-expanded'), 'true', 'the file stays open after Open in file and back');
+    // An explicit view=guided (a saved tab choice) survives Open in file; then back to where this visit was.
+    await page.goto(gq({ view: 'guided', step: 'g1' }));
+    await page.getByRole('heading', { name: 'Rename the starting values', level: 2 }).waitFor();
+    await fileBar('g1.js').click();
+    await page.getByRole('link', { name: /^Open g1\.js at/ }).first().click();
+    await page.waitForURL(/file=g1\.js/);
+    assert.equal(params(page).view, 'guided', 'an explicit view=guided survives Open in file');
+    await page.goto(gq({ step: 'g1' }));
+    await page.getByRole('heading', { name: 'Rename the starting values', level: 2 }).waitFor();
 
     // 10. Reload keeps the step; Back returns to the previous one.
     await step('Rename').click();
@@ -1565,7 +1574,7 @@ try {
     await page.getByRole('tablist', { name: 'Review pane' }).getByRole('tab', { name: /^Threads/ }).click();
     await page.keyboard.press('/');
     await page.waitForFunction(() => document.activeElement?.id === 'file-filter');
-    assert.equal(params(page).view, undefined, '/ brings the Files tab forward');
+    assert.equal(params(page).view, 'files', '/ brings the Files tab forward');
     await page.keyboard.type('.js');
     await page.getByText(new RegExp(`^Showing \\d+ of ${total} files`)).waitFor();
     await page.getByRole('button', { name: /^Needs me/ }).click();
@@ -1599,6 +1608,210 @@ try {
     assert.ok(fit.longest >= 200, 'the seeded line is long');
     assert.ok(fit.gutter < 48, `phone gutters are narrower than the desktop's (${fit.gutter}px)`);
     await shot('23e-phone-wrap');
+    assert.deepEqual(errors, []);
+  }, { headless: true, viewport: { width: 390, height: 844 } });
+
+  // 24. Discoverability: the hover `+` on a commentable gutter line, and the default tab (Guided when the review has groups).
+  await withPage(async (page) => {
+    const errors = watchErrors(page);
+    const shot = shotter(page);
+    const cell = (n) => page.locator(`[data-cell="new:${n}"]`);
+    const plus = (n) => cell(n).locator('[data-comment-plus]');
+    const open = async () => {
+      await page.goto(q({ review: range, file: 'a.js' }));
+      const accepted = page.getByRole('button', { name: ACCEPTED_SUMMARY });
+      if (await accepted.count()) await accepted.first().click();
+      await cell(5).waitFor();
+      await cell(5).scrollIntoViewIfNeeded();
+    };
+    const inside = (a, b) => a.x >= b.x - 0.5 && a.y >= b.y - 0.5 && a.x + a.width <= b.x + b.width + 0.5 && a.y + a.height <= b.y + b.height + 0.5;
+    const bg = (loc) => loc.evaluate((el) => getComputedStyle(el).backgroundColor);
+
+    // 24a. The `+` shows on hover, sits inside the cell, never intercepts the pointer, follows the pointer, and a drag under it still selects.
+    await open();
+    await page.mouse.move(2, 2);
+    assert.equal(await plus(5).isVisible(), false, 'no + before hovering');
+    await cell(5).hover();
+    assert.equal(await plus(5).isVisible(), true, 'hovering a line number shows the +');
+    const [chip, host] = [await plus(5).boundingBox(), await cell(5).boundingBox()];
+    assert.ok(inside(chip, host), `the + sits inside its cell (${JSON.stringify(chip)} in ${JSON.stringify(host)})`);
+    const centre = { x: chip.x + chip.width / 2, y: chip.y + chip.height / 2 };
+    const hit = await page.evaluate(({ x, y }) => {
+      const el = document.elementFromPoint(x, y);
+      return { onChip: !!el?.closest('[data-comment-plus]'), cell: el?.closest('[data-cell]')?.getAttribute('data-cell') ?? null };
+    }, centre);
+    assert.deepEqual(hit, { onChip: false, cell: 'new:5' }, 'the pointer lands on the cell beneath, not on the chip');
+    await cell(6).hover();
+    assert.equal(await plus(5).isVisible(), false, 'the + leaves with the pointer');
+    assert.equal(await plus(6).isVisible(), true, 'and follows it to the next line');
+    await cell(5).hover();
+    await shot('24a-plus-light');
+    // The chip is the active rail's colour in each theme (rail contrast, step 15, is measured on that pair).
+    for (const scheme of ['light', 'dark']) {
+      await page.emulateMedia({ colorScheme: scheme });
+      await open();
+      // The active rail's fill, from a sentinel carrying the rail's own classes.
+      const rail = await page.evaluate(() => {
+        const el = Object.assign(document.createElement('span'), { className: 'bg-accent-foreground dark:bg-primary' });
+        document.body.append(el);
+        const v = getComputedStyle(el).backgroundColor;
+        el.remove();
+        return v;
+      });
+      await cell(7).hover();
+      assert.equal(await bg(plus(7)), rail, `${scheme}: the + fill is the active rail colour`);
+      await shot(`24a-plus-${scheme}`);
+    }
+    await page.emulateMedia({ colorScheme: 'light' });
+    // Forced colours: the chip keeps a system-colour fill (a Canvas fill would erase it).
+    await page.emulateMedia({ forcedColors: 'active' });
+    await open();
+    await cell(5).hover();
+    const forced = { chip: await bg(plus(5)), cell: await bg(cell(5)) };
+    assert.equal(await plus(5).isVisible(), true, 'forced colours: the + is visible');
+    assert.notEqual(forced.chip, forced.cell, `forced colours: the + differs from its cell (${JSON.stringify(forced)})`);
+    await shot('24a-plus-forced-colors');
+    await page.emulateMedia({ forcedColors: 'none' });
+    // A drag from L5 to L7 under the chip still opens the composer for that range.
+    await open();
+    await cell(5).hover();
+    const start = await plus(5).boundingBox();
+    await page.mouse.move(start.x + start.width / 2, start.y + start.height / 2);
+    await page.mouse.down();
+    const to = await cell(7).boundingBox();
+    await page.mouse.move(to.x + to.width / 2, to.y + to.height / 2, { steps: 6 });
+    await page.mouse.up();
+    await page.getByRole('form', { name: 'Comment on L5–L7 (new)' }).waitFor();
+
+    // 24b. Read-only: the commit-filter view offers no +.
+    const { commits } = await world.call('GET', `reviews/${range}/commits`);
+    await page.goto(q({ review: range, file: 'a.js', commit: commits[0].sha }));
+    await page.getByRole('grid').waitFor();
+    await page.locator('[data-cell], [role=gridcell]').first().hover();
+    assert.equal(await page.locator('[data-comment-plus]').count(), 0, 'no + in the commit-filter view');
+    assert.equal(await page.locator('[data-comment-hint]').count(), 0, 'no hint in the commit-filter view');
+    assert.deepEqual(errors, []);
+  }, { headless: true, viewport: { width: 1280, height: 800 } });
+
+  // 24e. Gutter width follows the file's widest line number, fixed for the file: stock widths up to three digits, and on a
+  // file of 11000+ lines the hover + never covers a digit (4 and 5 digits, old and new side, desktop and the wrapped phone layout).
+  const bigId = await world.bigFile();
+  const gutterWidthOf = (loc) => loc.evaluate((el) => Math.round(el.getBoundingClientRect().width * 10) / 10);
+  /** The hover + chip's rect and the number's text range (its text node) do not intersect. */
+  const clearsNumber = (cell) => cell.evaluate((el) => {
+    const range = document.createRange();
+    range.selectNodeContents([...el.childNodes].find((c) => c.nodeType === Node.TEXT_NODE));
+    const text = range.getBoundingClientRect();
+    const c = el.querySelector('[data-comment-plus]').getBoundingClientRect();
+    return c.right <= text.left + 0.01 || text.right <= c.left + 0.01;
+  });
+  const bigCheck = async (page, label, stock) => {
+    await page.goto(q({ worktree: 'big', review: bigId, file: 'big.js' }));
+    await page.getByRole('grid').waitFor();
+    for (const n of [1005, 11005]) {
+      for (const side of ['new', 'old']) {
+        const cell = page.locator(`[data-cell="${side}:${n}"]`);
+        await cell.scrollIntoViewIfNeeded();
+        const before = await gutterWidthOf(cell);
+        await cell.hover();
+        const chip = cell.locator('[data-comment-plus]');
+        assert.equal(await chip.isVisible(), true, `${label} ${side}:${n}: the + shows`);
+        assert.equal(await gutterWidthOf(cell), before, `${label} ${side}:${n}: hovering does not move the gutter`);
+        assert.ok(before > stock, `${label} ${side}:${n}: the gutter is wider than the stock ${stock}px (${before}px)`);
+        assert.equal(await clearsNumber(cell), true, `${label} ${side}:${n}: the + does not intersect the number`);
+      }
+    }
+    const widths = await page.evaluate(() => ({ grid: document.querySelector('[role=grid]').scrollWidth <= document.querySelector('[role=grid]').clientWidth, doc: document.documentElement.scrollWidth <= document.documentElement.clientWidth }));
+    assert.deepEqual(widths, { grid: true, doc: true }, `${label}: no sideways overflow`);
+  };
+  const stockCheck = async (page, label, stock) => {
+    for (const url of [q({ worktree: 'guided', review: guided, file: 'g2.js' }), q({ review: range, file: 'a.js' })]) {
+      await page.goto(url);
+      await page.getByRole('grid').waitFor();
+      const accepted = page.getByRole('button', { name: ACCEPTED_SUMMARY });
+      if (await accepted.count()) await accepted.first().click();
+      const cell = page.locator('[data-cell^="new:"]').first();
+      await cell.waitFor();
+      assert.equal(await gutterWidthOf(cell), stock, `${label}: a file up to three digits keeps the stock ${stock}px gutter (${new URL(url).searchParams.get('file')})`);
+    }
+  };
+  await withPage(async (page) => {
+    const errors = watchErrors(page);
+    await stockCheck(page, '1280', 48);
+    await bigCheck(page, '1280', 48);
+    await shotter(page)('24e-big-file-desktop');
+    assert.deepEqual(errors, []);
+  }, { headless: true, viewport: { width: 1280, height: 800 } });
+  await withPage(async (page) => {
+    const errors = watchErrors(page);
+    await stockCheck(page, '390', 36);
+    // The stock 3-digit case: a number just clears the compact chip.
+    await page.goto(q({ worktree: 'big', review: bigId, file: 'mid.js' }));
+    await page.getByRole('grid').waitFor();
+    for (const side of ['new', 'old']) {
+      const cell = page.locator(`[data-cell="${side}:105"]`);
+      await cell.scrollIntoViewIfNeeded();
+      assert.equal(await gutterWidthOf(cell), 36, `390 ${side}:105: a three-digit file keeps the stock gutter`);
+      await cell.hover();
+      assert.equal(await cell.locator('[data-comment-plus]').isVisible(), true, `390 ${side}:105: the + shows`);
+      assert.equal(await clearsNumber(cell), true, `390 ${side}:105: the + does not intersect the number`);
+    }
+    await bigCheck(page, '390', 36);
+    await shotter(page)('24e-big-file-phone');
+    assert.deepEqual(errors, []);
+  }, { headless: true, viewport: { width: 390, height: 844 } });
+
+  await withPage(async (page) => {
+    const errors = watchErrors(page);
+    const shot = shotter(page);
+    const gq = (o = {}) => q({ worktree: 'guided', review: guided, ...o });
+    const guidedTab = () => page.getByRole('tablist', { name: 'Review pane' }).getByRole('tab', { name: 'Guided' });
+    const filesTab = () => page.getByRole('tablist', { name: 'Review pane' }).getByRole('tab', { name: 'Files' });
+    const step = page.getByRole('heading', { name: 'Rename the starting values', level: 2 });
+
+    // 24c. A grouped review opens on Guided with the step in the centre, writes nothing, and keeps the Overview and Files reachable.
+    await page.goto(gq());
+    await step.waitFor();
+    const lenAfterLoad = await page.evaluate(() => history.length);
+    assert.equal(await guidedTab().getAttribute('aria-selected'), 'true', 'a grouped review opens on Guided');
+    assert.equal(params(page).view, undefined, 'the default is not written to the URL');
+    assert.equal(await page.evaluate(() => history.length), lenAfterLoad, 'and adds no history entry');
+    await shot('24c-guided-default');
+    await filesTab().click();
+    assert.equal(params(page).view, 'files', 'a Files click is saved in the URL');
+    await page.reload();
+    await filesTab().waitFor();
+    assert.equal(await filesTab().getAttribute('aria-selected'), 'true', 'Files survives a reload');
+    await page.goto(gq());
+    await step.waitFor();
+    await page.getByRole('link', { name: 'Overview' }).click();
+    await page.getByRole('region', { name: /^Needs you/ }).waitFor();
+    assert.equal(params(page).view, 'overview', 'the strip link reaches the Overview from the default tab');
+    await page.goto(gq());
+    await step.waitFor();
+    await page.evaluate(() => document.activeElement instanceof HTMLElement && document.activeElement.blur());
+    await page.keyboard.press('o');
+    await page.getByRole('region', { name: /^Needs you/ }).waitFor();
+    assert.equal(params(page).view, 'overview', 'o reaches the Overview from the default Guided tab');
+    await page.goto(gq({ file: 'g2.js' }));
+    await page.getByRole('grid').waitFor();
+    assert.equal(await filesTab().getAttribute('aria-selected'), 'true', 'a file deep link opens on Files');
+    // The range review has no groups: Files, with the Overview in the centre.
+    await page.goto(q({ review: range }));
+    await page.getByRole('region', { name: /^Needs you/ }).waitFor();
+    assert.equal(await filesTab().getAttribute('aria-selected'), 'true', 'a review without groups opens on Files');
+    assert.deepEqual(errors, []);
+  }, { headless: true, viewport: { width: 1280, height: 800 } });
+
+  // 24d. Phone: a grouped review opens on the pane's Guided tab with the Steps list and no diff grid.
+  await withPage(async (page) => {
+    const errors = watchErrors(page);
+    const shot = shotter(page);
+    await page.goto(q({ worktree: 'guided', review: guided }));
+    await page.getByRole('navigation', { name: 'Steps' }).waitFor();
+    assert.equal(await page.getByRole('grid').count(), 0, 'no diff grid on the phone default');
+    assert.equal(await page.getByRole('tablist', { name: 'Review pane' }).getByRole('tab', { name: 'Guided' }).getAttribute('aria-selected'), 'true');
+    await shot('24d-phone-guided-default');
     assert.deepEqual(errors, []);
   }, { headless: true, viewport: { width: 390, height: 844 } });
 

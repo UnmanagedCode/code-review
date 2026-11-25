@@ -2,14 +2,13 @@ import { useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { filterFiles, isFiltered, undecidedFile } from '@/lib/fileFilter';
-import { navigate, useRoute } from '@/lib/route';
+import { navigate } from '@/lib/route';
 import type { FileState } from '@/lib/types';
 import { clearFileFilter, setFileFilter, useFileFilter } from '@/state/fileFilter';
 import { useReviewCtx } from '@/state/reviewContext';
+import { usePaneTab } from '@/features/review/paneTab';
 import { useShortcutHandler } from '@/state/shortcutRegistry';
 import { cn } from '@/lib/utils';
-
-const PANE_TABS = ['threads', 'history', 'guided'];
 
 function Toggle({ label, count, on, onChange }: { label: string; count: number; on: boolean; onChange: (on: boolean) => void }) {
   return (
@@ -26,11 +25,10 @@ function Toggle({ label, count, on, onChange }: { label: string; count: number; 
  */
 export function FileTreeToolbar({ files, shown, needsYou, live }: { files: FileState[]; shown: number; needsYou: ReadonlyMap<string, number>; live: boolean }) {
   const { id, review } = useReviewCtx();
-  const route = useRoute();
   const filter = useFileFilter(id);
   const input = useRef<HTMLInputElement>(null);
   const wantFocus = useRef(false);
-  const showTab = PANE_TABS.includes(route.view ?? '');
+  const showTab = usePaneTab() !== 'files';
   const filtered = isFiltered(filter);
   const needsCount = filterFiles(files, { text: '', needsMe: true, undecided: false }, needsYou).length;
   const undecidedCount = files.filter(undecidedFile).length;
@@ -46,7 +44,7 @@ export function FileTreeToolbar({ files, shown, needsYou, live }: { files: FileS
   useShortcutHandler('focus-file-filter', () => {
     if (showTab) {
       wantFocus.current = true;
-      navigate({ view: undefined }, { replace: true });
+      navigate({ view: 'files' }, { replace: true });
     } else focusBox();
     return true;
   });

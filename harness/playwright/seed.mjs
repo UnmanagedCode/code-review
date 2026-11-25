@@ -169,6 +169,20 @@ export async function seed() {
         const { review: r } = await call('POST', 'reviews', { project: 'app', worktree: 'spike', kind: 'range', base: 'main', title: 'Spike experiment' });
         return { id: r.id, destroy: () => wt.destroy() };
       },
+      /**
+       * Adds a worktree `big` with a review of `big.js`, a 11200-line file with one line changed at 1005 and one at 11005, so the
+       * hunks show 4- and 5-digit line numbers (on demand, so earlier steps never list it). Resolves the review id.
+       */
+      async bigFile() {
+        const wb = w.addWorktree('big');
+        const text = (edits) => `${Array.from({ length: 11200 }, (_, i) => edits[i + 1] ?? `l${i + 1}`).join('\n')}\n`;
+        // mid.js: a short file with a three-digit line (the stock gutter), in the same review.
+        const mid = (edit) => `${Array.from({ length: 150 }, (_, i) => (i + 1 === 105 ? edit : `m${i + 1}`)).join('\n')}\n`;
+        const base = wb.commit({ 'big.js': text({}), 'mid.js': mid('m105') }, 'add big.js and mid.js');
+        wb.commit({ 'big.js': text({ 1005: 'changed1005', 11005: 'changed11005' }), 'mid.js': mid('changed105') }, 'edit big.js and mid.js');
+        const { review: r } = await call('POST', 'reviews', { project: 'app', worktree: 'big', kind: 'range', base, title: 'Big file' });
+        return r.id;
+      },
       /** Commits a file under a long directory path to `feature` and refreshes the `range` review: the first undecided file in tree order. Resolves its path. */
       async longPath() {
         const p = 'packages/a-very-long-directory-name-for-the-layout-check/another-long-directory-segment/components/ReviewOverviewHeaderButtonLayoutFixture.tsx';

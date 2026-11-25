@@ -29,7 +29,7 @@ export function SplitRow({ pair, sel, enabled, target, marks, decos }: { pair: P
       role="row"
       aria-selected={halves.some((h) => h.selected)}
       data-line-target={target && pairLine(pair, target.side) === target.start ? '' : undefined}
-      className="grid grid-cols-[3rem_1rem_minmax(0,1fr)_3rem_1rem_minmax(0,1fr)]"
+      className="grid grid-cols-[var(--gutter-w,3rem)_1rem_minmax(0,1fr)_var(--gutter-w,3rem)_1rem_minmax(0,1fr)]"
     >
       {halves.map((h, i) => [
         <Gutter key={`g${i}`} side={h.side} n={h.n} sel={sel} enabled={enabled} marks={h.n == null ? [] : marks(h.side, h.n)} className={h.tint} />,

@@ -26,6 +26,8 @@ export interface ReviewCtx extends Omit<ReviewDetail, 'review'> {
   threadCounts: ThreadCounts;
   /** True when writes are off: closed review, commit-filter view, past-round view or comparison. */
   readOnly: boolean;
+  /** The review opened on Guided (`opensOnGuided` at its first load, pinned for the visit): an absent `view` then means Guided. Absent = Files. */
+  guidedDefault?: boolean;
   /** Counts the review's successful loads; dependants refetch when it moves. */
   version: number;
   fileDiff: FileDiffState;

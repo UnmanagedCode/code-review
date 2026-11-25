@@ -42,6 +42,26 @@ const PHONE_HEADER_MAX = 190;
 const HEADER = 'div.sticky.top-0.z-10';
 const histLen = (page) => page.evaluate(() => history.length);
 const headerHeight = (page) => page.locator(HEADER).evaluate((el) => Math.round(el.getBoundingClientRect().height));
+const hintCount = (page) => page.locator('[data-comment-hint]').count();
+/** The hint line is fully visible: not clipped by its own box, inside the viewport. */
+const hintWhole = async (page, label) => {
+  await page.locator('[data-comment-hint]').waitFor();
+  const r = await page.locator('[data-comment-hint]').evaluate((el) => {
+    const b = el.getBoundingClientRect();
+    return { shown: b.width > 0 && b.height > 0, whole: el.scrollWidth <= el.clientWidth, inside: b.right <= innerWidth };
+  });
+  assert.deepEqual(r, { shown: true, whole: true, inside: true }, `the hint is shown whole at 1280px (${label})`);
+};
+/** The sticky header's height with the comment hint, then without it (the node removed); they must match: the hint lives outside the header. */
+const hintDelta = async (page, label) => {
+  await page.locator('[data-comment-hint]').waitFor();
+  const withHint = await headerHeight(page);
+  await page.locator('[data-comment-hint]').evaluate((el) => el.remove());
+  const without = await headerHeight(page);
+  console.log(`${label}: header ${withHint}px with the hint, ${without}px without`);
+  assert.equal(withHint - without, 0, `the hint adds no header height (${label})`);
+  return withHint;
+};
 const blur = (page) => page.evaluate(() => document.activeElement instanceof HTMLElement && document.activeElement.blur());
 /** Presses `key` with focus on the page body, and waits for the app to settle. */
 const press = async (page, key) => { await page.keyboard.press(key); await page.waitForTimeout(250); };
@@ -66,6 +86,7 @@ await mcp('reply', { review: guided, thread: g2Old, body: 'Removed it. Resolving
 const needs = [g2File, g2Old, g3L5];
 const rest = [g1L50, g2L5];
 
+let fineH = 0;
 try {
   await withPage(async (page) => {
     const errors = watchErrors(page);
@@ -82,6 +103,11 @@ try {
     const desktopH = await headerHeight(page);
     console.log(`header height at 1280px: ${desktopH}px`);
     assert.ok(desktopH <= 100, `the header stays two rows at 1280px (${desktopH}px)`);
+    await hintWhole(page, 'g2.js');
+    await shot('hint-desktop');
+    await hintDelta(page, 'g2.js at 1280px');
+    await page.goto(q({ file: 'g2.js' }));
+    await page.getByText('File 2 of 3').waitFor();
     await shot('stepper-desktop');
     // The widest real header: the seeded range review's a.js (decided hunks, "k/n accepted · r rejected", Accept file, open threads) with the Viewed control.
     await page.goto(`${world.url}/?${new URLSearchParams({ project: 'app', worktree: 'feature', review: world.ids.range, file: 'a.js' })}`);
@@ -93,6 +119,8 @@ try {
     console.log(`range review header height at 1280px (Viewed, steppers, Inline|Split): ${rangeH}px`);
     assert.ok(rangeH <= 100, `the range review's header stays two rows at 1280px (${rangeH}px)`);
     await shot('stepper-desktop-range');
+    await hintWhole(page, 'range a.js');
+    await hintDelta(page, 'range a.js at 1280px');
     await page.goto(q({ file: 'g2.js' }));
     await page.getByText('File 2 of 3').waitFor();
 
@@ -271,6 +299,9 @@ try {
     console.log(`header height at 390px: ${phoneH}px`);
     assert.ok(phoneH <= PHONE_HEADER_MAX, `the phone header stays compact (${phoneH}px)`);
     await shot('stepper-phone');
+    fineH = await hintDelta(page, 'g2.js at 390px, fine pointer');
+    await page.goto(q({ file: 'g2.js' }));
+    await page.getByText('File 2 of 3').waitFor();
     await page.keyboard.press('?');
     const dialog = page.getByRole('dialog', { name: 'Keyboard shortcuts' });
     await dialog.waitFor();
@@ -313,8 +344,29 @@ try {
     assert.ok(fit.header[0] <= fit.header[1], 'the header does not scroll sideways');
     assert.deepEqual(fit.cut, [], 'no header control is cut off');
     await shot('stepper-narrow-pane');
+    await hintDelta(page, 'g2.js at 900px, 512px side pane');
     assert.deepEqual(errors, []);
   }, { headless: true, viewport: { width: 900, height: 800 } });
+
+  // A touch screen (390px, no hover, coarse pointer): no hint, no hover `+`, and a header no taller than the fine-pointer one.
+  // (A touch context gives `(hover: none)` and `(pointer: coarse)`; CDP's setEmulatedMedia does not change them in headless Chromium.)
+  await withPage(async (_page, { browser }) => {
+    const page = await (await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true })).newPage();
+    const errors = watchErrors(page);
+    const shot = shotter(page);
+    await page.goto(q({ file: 'g2.js' }));
+    await page.getByText('File 2 of 3').waitFor();
+    assert.equal(await hintCount(page), 0, 'no comment hint under (hover: none)');
+    const cell = page.locator('[data-cell^="new:"]').first();
+    await cell.waitFor();
+    await cell.hover();
+    assert.equal(await cell.locator('[data-comment-plus]').isVisible(), false, 'no + on a touch screen');
+    const touchH = await headerHeight(page);
+    console.log(`header height at 390px, touch: ${touchH}px (fine pointer: ${fineH}px)`);
+    assert.ok(touchH <= fineH, 'the touch header is no taller than the fine-pointer one');
+    await shot('hint-touch');
+    assert.deepEqual(errors, []);
+  }, { headless: true, viewport: { width: 390, height: 844 } });
 
   console.log('jumpnav ok');
 } finally {

@@ -88,7 +88,7 @@ test.each([
   expect(selected()).toBe(tab);
 });
 
-// Invariant: a tab click replaces the history entry, so Back skips tab switches; Files clears view=.
+// Invariant: a tab click replaces the history entry, so Back skips tab switches; Files writes view=files (absent means the review's default tab).
 test('choosing a tab replaces the history entry', async () => {
   history.replaceState(null, '', '?review=r-1&file=a.js');
   show();
@@ -98,7 +98,7 @@ test('choosing a tab replaces the history entry', async () => {
   await user.click(screen.getByRole('tab', { name: 'History' }));
   expect(parseRoute(location.search)).toEqual({ review: 'r-1', file: 'a.js', view: 'history' });
   await user.click(screen.getByRole('tab', { name: 'Files' }));
-  expect(parseRoute(location.search)).toEqual({ review: 'r-1', file: 'a.js' });
+  expect(parseRoute(location.search)).toEqual({ review: 'r-1', file: 'a.js', view: 'files' });
   expect(replace).toHaveBeenCalledTimes(2);
   expect(push).not.toHaveBeenCalled();
 });
@@ -183,6 +183,6 @@ test('view=guided selects Guided, and choosing a tab writes view with replace', 
   expect(selected()).toBe('Guided');
   const before = history.length;
   await userEvent.setup().click(screen.getByRole('tab', { name: 'Files' }));
-  expect(parseRoute(location.search)).toEqual({ review: 'r-1' });
+  expect(parseRoute(location.search)).toEqual({ review: 'r-1', view: 'files' });
   expect(history.length).toBe(before);
 });

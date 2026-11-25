@@ -4,7 +4,7 @@ import { parseRoute } from '@/lib/route';
 import { WIDE_QUERY } from '@/lib/useMediaQuery';
 import { dispatchShortcut } from '@/state/shortcutRegistry';
 import { installMedia } from '@/test/fakeMedia';
-import { diffFile, fileState, review } from '@/test/fixtures';
+import { diffFile, fileState, guideView, review } from '@/test/fixtures';
 import { renderDiff, renderInReview } from '@/test/renderCtx';
 import { stubFetch } from '@/test/stubFetch';
 import { FileDiff } from '@/features/diff/FileDiff';
@@ -51,10 +51,21 @@ test('/ switches the pane from Threads to Files and focuses the filter', async (
   let result!: ReturnType<typeof press>;
   await act(async () => { result = press('focus-file-filter', '/'); });
   expect(result).toEqual({ acted: true, prevented: true });
-  expect(parseRoute(location.search).view).toBeUndefined();
+  expect(parseRoute(location.search).view).toBe('files');
   await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('searchbox', { name: 'Filter files' })));
   await act(async () => { (document.activeElement as HTMLElement).blur(); press('focus-file-filter', '/'); });
   expect(document.activeElement).toBe(screen.getByRole('searchbox', { name: 'Filter files' }));
+});
+
+// Invariant: `/` reads the effective tab: on the default Guided tab (no `view`) it still brings Files forward.
+test('/ on the default Guided tab writes view=files and focuses the filter', async () => {
+  stubFetch({ 'GET api/reviews/r-1/commits': { commits: [] } });
+  history.replaceState(null, '', '?review=r-1');
+  renderInReview(<ReviewPane />, { review: review({ round: 1 }), guide: guideView(), guidedDefault: true, files: [fileState({ path: 'a.ts' })] });
+  expect(screen.getByRole('tab', { name: 'Guided' }).getAttribute('aria-selected')).toBe('true');
+  await act(async () => { press('focus-file-filter', '/'); });
+  expect(parseRoute(location.search).view).toBe('files');
+  await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('searchbox', { name: 'Filter files' })));
 });
 
 // Invariant: without the tree mounted (a narrow layout with a file open) `/` has no handler and falls through to the browser.

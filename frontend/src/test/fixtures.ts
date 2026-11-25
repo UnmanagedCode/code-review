@@ -60,6 +60,7 @@ export const inboxItem = (over: Partial<InboxItem> = {}): InboxItem => ({
   unread: 0, seenByHuman: true, lastActivityAt: '2026-01-01T00:00:00Z', turn: 'human', checkoutGone: false,
   recipient: 's-author', author: null, hunks: { pending: 0, accepted: 1, rejected: 0 }, groupsPending: 0,
   threadStates: { awaitingHuman: 0, verifyResolution: 0, unsent: 0, awaitingAgent: 0 }, unsent: false, newActivity: false, lastSubmission: null, lastAgentAction: null,
+  bucket: 'nothing', reasons: [], staleReasons: [],
   ...over,
 });
 

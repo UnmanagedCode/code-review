@@ -1323,7 +1323,10 @@ try {
     const spike = await world.spike();
     spike.destroy();
     await page.reload();
+    const stale = inbox.getByRole('region', { name: /^Stale/ });
+    await stale.getByRole('button', { name: /^Stale/ }).click(); // Stale is collapsed until opened
     await row('Spike experiment').getByText('checkout gone').waitFor();
+    assert.equal(await inbox.getByRole('region', { name: /^Needs you/ }).getByText('Spike experiment').count(), 0, 'a gone checkout is stale, never Needs you');
     assert.equal(await row('Feature work').getByText('checkout gone').count(), 0);
     await shot('17-inbox-checkout-gone');
     await row('Spike experiment').getByRole('button', { name: 'Close review Spike experiment' }).click();

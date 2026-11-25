@@ -3,6 +3,7 @@ import { lookupScope } from './lookups.js';
 import { mapLimit, ROW_CONCURRENCY } from './limit.js';
 import { attempt } from './refusals.js';
 import { inboxItem } from './rollup.js';
+import { triage, compareRows } from './triage.js';
 
 /**
  * `checkoutGone` per review, from cc's metadata only: one location lookup per project and one worktrees lookup per project
@@ -36,11 +37,14 @@ function migrated(review) {
   return false;
 }
 
-/** Every open review of every checkout, latest activity first. Store-only plus cc's metadata: no git, no System is asked. */
+/** Every open review of every checkout with its triage (`bucket`, `reasons`, `staleReasons`), in `compareRows` order. Store-only plus cc's metadata: no git, no System is asked. */
 export const listInbox = () => attempt(async () => {
   const open = store.list().filter((r) => r.status === 'open' && migrated(r));
   const gone = open.length ? await goneMarks(open) : [];
-  const reviews = open.map((r, i) => inboxItem(r, gone[i]))
-    .sort((a, b) => b.lastActivityAt.localeCompare(a.lastActivityAt) || b.id.localeCompare(a.id));
+  const now = Date.now();
+  const reviews = open.map((r, i) => {
+    const item = inboxItem(r, gone[i]);
+    return { ...item, ...triage(r, item, now) };
+  }).sort(compareRows);
   return { ok: true, reviews };
 });

@@ -119,6 +119,12 @@ export interface ReviewSummary {
 
 /** Whose move an open review waits on: 'agent' = waiting on the agent, 'human' = your turn (docs/protocol.md → InboxItem). */
 export type Turn = 'human' | 'agent';
+/** The inbox sections, in served order (docs/protocol.md → InboxItem). */
+export type InboxBucket = 'needs-you' | 'waiting' | 'nothing' | 'stale';
+/** Why a review needs the human, most urgent first (docs/protocol.md → InboxItem). */
+export type InboxReason = 'threads' | 'send-failed' | 'send-pending' | 'hunks' | 'groups' | 'not-opened' | 'unsent' | 'never-sent';
+/** Why a review is stale (docs/protocol.md → InboxItem). */
+export type StaleReason = 'checkout-gone' | 'idle';
 /** An open review as `GET /inbox` lists it; `checkoutGone` null = cc could not say. */
 export interface InboxItem {
   id: string; project: string; worktree: string | null; branch: string | null; kind: Kind; label: string; title: string; round: number;
@@ -136,6 +142,12 @@ export interface InboxItem {
   lastSubmission: { status: SubmissionRef['status']; at: string } | null;
   /** The agent's newest act: a thread event, an update with no recorded detail, or null when the agent never acted. */
   lastAgentAction: { kind: 'thread'; event: ActivityItem['event']; thread: { id: string; kind: ThreadKind; anchor: Anchor }; at: string } | { kind: 'update'; at: null } | null;
+  /** The section the server placed the row in (docs/protocol.md → InboxItem). */
+  bucket: InboxBucket;
+  /** Why the human has something to do, most urgent first; computed for every row, stale ones included. */
+  reasons: InboxReason[];
+  /** Why the row is stale; empty unless `bucket` is 'stale'. */
+  staleReasons: StaleReason[];
 }
 
 export interface Session { sessionId: string; project: string; worktree: string | null; label: string | null; status: string; live: boolean; conductor: boolean; conducted: boolean; attached: boolean }

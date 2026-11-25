@@ -24,6 +24,7 @@ await world.call('POST', `reviews/${range}/threads`, { anchor: { kind: 'file', f
 await world.call('POST', `reviews/${range}/threads`, { anchor: { kind: 'review' }, kind: 'question', body: 'Is the overall split into a.js and c.js right?' });
 // Every thread state on the range review (needs you, will be sent, waiting on agent, verify), for the overview and strip shots.
 const { ping } = await overviewStates(world);
+await world.idle(); // a 30-day-old review: the inbox lists it under Stale
 try {
   await withPage(async (page) => {
     const errors = [];
@@ -60,8 +61,14 @@ try {
         await shot('inbox'); // every open review, in triage sections: both turn states, the main checkout's row among the worktree's
         if (vp === 'desktop') {
           await page.getByText(/reviews? needs? you$/).waitFor();
-          await shot('inbox-overview'); // the centre with no review open: what needs you, and a way in
+          const top = await page.getByRole('region', { name: 'Inbox' }).getByRole('region', { name: /^Needs you/ }).getByRole('link').first().locator('span.truncate').first().textContent();
+          await page.getByRole('link', { name: `Start with “${top}”` }).waitFor(); // Start with opens the top Needs-you row
+          await shot('inbox-overview'); // the centre with no review open: what needs you, and a way in (the top Needs-you row)
         }
+        const staleRows = page.getByRole('region', { name: 'Inbox' }).getByRole('region', { name: /^Stale/ });
+        await staleRows.getByRole('button', { name: /^Stale/ }).click();
+        await staleRows.getByText('Old idea').scrollIntoViewIfNeeded();
+        await shot('inbox-stale'); // the Stale section opened: its rows say why (idle 30 d)
 
         await open(q({ view: 'new' }), page.getByRole('dialog'));
         await page.getByRole('radio', { name: /main/ }).first().waitFor();

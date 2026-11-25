@@ -1,5 +1,5 @@
 import { ArrowLeftIcon, ChevronLeftIcon, ChevronRightIcon, KeyboardIcon, MessageSquarePlusIcon } from 'lucide-react';
-import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode, type Ref } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode, type Ref } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { dedupeCopies, type ShownThread } from '@/lib/compare';
@@ -12,6 +12,7 @@ import { lineOn, selectionTouches, type Selection } from '@/lib/selection';
 import { pairLine, splitRows, type SplitRow as SplitRowT } from '@/lib/splitRows';
 import type { DiffFile, DiffLine, Side, TextHunk, Thread } from '@/lib/types';
 import { cn } from '@/lib/utils';
+import { gutterWidth } from '@/lib/gutter';
 import { TOUCH_QUERY } from '@/lib/textEntry';
 import { useMediaQuery, WIDE_QUERY } from '@/lib/useMediaQuery';
 import { isWhitespaceOnly } from '@/lib/whitespace';
@@ -229,6 +230,7 @@ export function FileDiff({ onBack, extra }: { onBack?: () => void; extra?: React
   const split = diffView.view === 'split';
   // A narrow screen wraps long lines (as split does) rather than scrolling each hunk sideways, which clips the code off-screen.
   const wrap = !wide;
+  const gutterW = file && textFile ? gutterWidth(file, wrap) : undefined;
   const shown = visible.slice(0, limit);
   const items: (Row | SplitRowT)[] = split ? splitRows(shown) : shown;
   const blocks: (Row | SplitRowT)[][] = [];
@@ -336,7 +338,7 @@ export function FileDiff({ onBack, extra }: { onBack?: () => void; extra?: React
       )}
       {textFile && !ctx.readOnly && <CommentHint />}
       {textFile && (
-        <div ref={sel.grid} role="grid" aria-label={`Changes in ${file.path}`} aria-multiselectable className="font-mono text-xs leading-5 pointer-coarse:leading-7">
+        <div ref={sel.grid} role="grid" aria-label={`Changes in ${file.path}`} aria-multiselectable style={gutterW ? { '--gutter-w': gutterW } as CSSProperties : undefined} className="font-mono text-xs leading-5 pointer-coarse:leading-7">
           {blocks.map((block, bi) => {
             const first = block[0];
             const hunk = first.kind === 'hunk' && first.hunk.kind === 'text' ? first.hunk : null;

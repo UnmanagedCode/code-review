@@ -1126,6 +1126,15 @@ try {
     await step('Rename').click();
     await page.getByRole('heading', { name: 'Rename the starting values', level: 2 }).waitFor();
     assert.equal(await fileBar('g1.js').getAttribute('aria-expanded'), 'true', 'the file stays open after Open in file and back');
+    // An explicit view=guided (a saved tab choice) survives Open in file; then back to where this visit was.
+    await page.goto(gq({ view: 'guided', step: 'g1' }));
+    await page.getByRole('heading', { name: 'Rename the starting values', level: 2 }).waitFor();
+    await fileBar('g1.js').click();
+    await page.getByRole('link', { name: /^Open g1\.js at/ }).first().click();
+    await page.waitForURL(/file=g1\.js/);
+    assert.equal(params(page).view, 'guided', 'an explicit view=guided survives Open in file');
+    await page.goto(gq({ step: 'g1' }));
+    await page.getByRole('heading', { name: 'Rename the starting values', level: 2 }).waitFor();
 
     // 10. Reload keeps the step; Back returns to the previous one.
     await step('Rename').click();
@@ -1626,8 +1635,12 @@ try {
     assert.equal(await plus(5).isVisible(), true, 'hovering a line number shows the +');
     const [chip, host] = [await plus(5).boundingBox(), await cell(5).boundingBox()];
     assert.ok(inside(chip, host), `the + sits inside its cell (${JSON.stringify(chip)} in ${JSON.stringify(host)})`);
-    const hit = await page.evaluate(([x, y]) => document.elementFromPoint(x, y)?.closest('[data-cell]')?.getAttribute('data-cell'), [chip.x + chip.width / 2, chip.y + chip.height / 2]);
-    assert.equal(hit, 'new:5', 'the pointer lands on the cell, not the chip');
+    const centre = { x: chip.x + chip.width / 2, y: chip.y + chip.height / 2 };
+    const hit = await page.evaluate(({ x, y }) => {
+      const el = document.elementFromPoint(x, y);
+      return { onChip: !!el?.closest('[data-comment-plus]'), cell: el?.closest('[data-cell]')?.getAttribute('data-cell') ?? null };
+    }, centre);
+    assert.deepEqual(hit, { onChip: false, cell: 'new:5' }, 'the pointer lands on the cell beneath, not on the chip');
     await cell(6).hover();
     assert.equal(await plus(5).isVisible(), false, 'the + leaves with the pointer');
     assert.equal(await plus(6).isVisible(), true, 'and follows it to the next line');
@@ -1662,6 +1675,8 @@ try {
     // A drag from L5 to L7 under the chip still opens the composer for that range.
     await open();
     await cell(5).hover();
+    const start = await plus(5).boundingBox();
+    await page.mouse.move(start.x + start.width / 2, start.y + start.height / 2);
     await page.mouse.down();
     const to = await cell(7).boundingBox();
     await page.mouse.move(to.x + to.width / 2, to.y + to.height / 2, { steps: 6 });
@@ -1677,6 +1692,62 @@ try {
     assert.equal(await page.locator('[data-comment-hint]').count(), 0, 'no hint in the commit-filter view');
     assert.deepEqual(errors, []);
   }, { headless: true, viewport: { width: 1280, height: 800 } });
+
+  // 24e. Gutter width follows the file's widest line number, fixed for the file: stock widths up to three digits, and on a
+  // file of 11000+ lines the hover + never covers a digit (4 and 5 digits, old and new side, desktop and the wrapped phone layout).
+  const bigId = await world.bigFile();
+  const gutterWidthOf = (loc) => loc.evaluate((el) => Math.round(el.getBoundingClientRect().width * 10) / 10);
+  const bigCheck = async (page, label, stock) => {
+    await page.goto(q({ worktree: 'big', review: bigId, file: 'big.js' }));
+    await page.getByRole('grid').waitFor();
+    for (const n of [1005, 11005]) {
+      for (const side of ['new', 'old']) {
+        const cell = page.locator(`[data-cell="${side}:${n}"]`);
+        await cell.scrollIntoViewIfNeeded();
+        const before = await gutterWidthOf(cell);
+        await cell.hover();
+        const chip = cell.locator('[data-comment-plus]');
+        assert.equal(await chip.isVisible(), true, `${label} ${side}:${n}: the + shows`);
+        assert.equal(await gutterWidthOf(cell), before, `${label} ${side}:${n}: hovering does not move the gutter`);
+        assert.ok(before > stock, `${label} ${side}:${n}: the gutter is wider than the stock ${stock}px (${before}px)`);
+        const rects = await cell.evaluate((el) => {
+          const range = document.createRange();
+          range.selectNodeContents([...el.childNodes].find((c) => c.nodeType === Node.TEXT_NODE));
+          const text = range.getBoundingClientRect();
+          const c = el.querySelector('[data-comment-plus]').getBoundingClientRect();
+          return { text: [text.left, text.right], chip: [c.left, c.right], cell: el.getBoundingClientRect().left };
+        });
+        assert.ok(rects.chip[1] <= rects.text[0] + 0.01 || rects.text[1] <= rects.chip[0] + 0.01, `${label} ${side}:${n}: the + does not intersect the number (${JSON.stringify(rects)})`);
+      }
+    }
+    const widths = await page.evaluate(() => ({ grid: document.querySelector('[role=grid]').scrollWidth <= document.querySelector('[role=grid]').clientWidth, doc: document.documentElement.scrollWidth <= document.documentElement.clientWidth }));
+    assert.deepEqual(widths, { grid: true, doc: true }, `${label}: no sideways overflow`);
+  };
+  const stockCheck = async (page, label, stock) => {
+    for (const url of [q({ worktree: 'guided', review: guided, file: 'g2.js' }), q({ review: range, file: 'a.js' })]) {
+      await page.goto(url);
+      await page.getByRole('grid').waitFor();
+      const accepted = page.getByRole('button', { name: ACCEPTED_SUMMARY });
+      if (await accepted.count()) await accepted.first().click();
+      const cell = page.locator('[data-cell^="new:"]').first();
+      await cell.waitFor();
+      assert.equal(await gutterWidthOf(cell), stock, `${label}: a file up to three digits keeps the stock ${stock}px gutter (${new URL(url).searchParams.get('file')})`);
+    }
+  };
+  await withPage(async (page) => {
+    const errors = watchErrors(page);
+    await stockCheck(page, '1280', 48);
+    await bigCheck(page, '1280', 48);
+    await shotter(page)('24e-big-file-desktop');
+    assert.deepEqual(errors, []);
+  }, { headless: true, viewport: { width: 1280, height: 800 } });
+  await withPage(async (page) => {
+    const errors = watchErrors(page);
+    await stockCheck(page, '390', 36);
+    await bigCheck(page, '390', 36);
+    await shotter(page)('24e-big-file-phone');
+    assert.deepEqual(errors, []);
+  }, { headless: true, viewport: { width: 390, height: 844 } });
 
   await withPage(async (page) => {
     const errors = watchErrors(page);

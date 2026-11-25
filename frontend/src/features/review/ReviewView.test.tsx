@@ -541,7 +541,8 @@ test('wide: groups arriving after the first load do not switch the tab', async (
   expect(selectedPaneTab()).toBe('Files');
   stub(guideView({ groups: [guideGroup({ id: 'g1', title: 'Wire it up' })], ungrouped: [] }), 2);
   act(() => FakeEventSource.last!.emit({ id: 'r-1', rev: 2 }));
-  await screen.findByRole('tab', { name: 'Guided' });
+  // Wait for the debounced refetch to land: the new group shows in the (hidden) Guided panel's step list.
+  await waitFor(() => expect(screen.getAllByText('Wire it up').length).toBeGreaterThan(0));
   expect(selectedPaneTab()).toBe('Files');
   expect(parseRoute(location.search)).toEqual({ review: 'r-1' });
 });

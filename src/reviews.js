@@ -10,7 +10,7 @@ import { resolveTarget, buildSnapshot, isBinaryFile } from './snapshot.js';
 import { followThreads } from './follow.js';
 import { currentRound, authorFor, assertOpen, inReview, viewReview } from './context.js';
 import { summarize, fileStates, hunkIdsOf, hunkView, threadView, targetLabel, liveView, signStates, diffFiles, liveSig } from './rollup.js';
-import { pickRound, roundDiff } from './rounds.js';
+import { pickRound, roundDiff, wireRound } from './rounds.js';
 import { openThreadDigests, agentActivity } from './overview.js';
 import { groupsHolding, contradictedGroups, carryGroups, groupCounts, guideView } from './grouping.js';
 
@@ -154,7 +154,7 @@ export const getReview = (id) => attempt(() => viewReview(id, async (review, env
   const snap = summary.snapshotError ? null : await env.snapshot();
   const files = snap ? signStates(snap, fileStates(review, snap.files), snap.files, liveView(review)) : [];
   return {
-    ok: true, review: summary, files, rounds: review.rounds.map(({ hunkIds, ...round }) => round), submissions: review.submissions,
+    ok: true, review: summary, files, rounds: review.rounds.map(wireRound), submissions: review.submissions,
     guide: guideView(review, snap?.files ?? null),
     outdatedThreads: review.threads.filter((t) => t.status === 'outdated' && t.anchor.kind !== 'group').map((t) => threadView(review, t)),
     reviewThreads: review.threads.filter((t) => t.anchor.kind === 'review').map((t) => threadView(review, t)),

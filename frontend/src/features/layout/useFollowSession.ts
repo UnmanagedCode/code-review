@@ -74,6 +74,10 @@ export function useFollowSession(route: Route, menuOnLoad = false) {
     return () => { live = false; };
   }, [names?.join(), sessionKey, known]);
 
+  // Without the project list nothing can be decided: settle, so the pending default stops applying and the picker's Retry is reachable.
+  const failed = !!projects.error && !names;
+  useEffect(() => { if (failed) setLanding('done'); }, [failed]);
+
   // A project created since the cached list was fetched becomes followable.
   const missing = !!session && !!names && !known;
   useEffect(() => {

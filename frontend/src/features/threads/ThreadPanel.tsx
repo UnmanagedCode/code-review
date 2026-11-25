@@ -132,7 +132,11 @@ function ReviewThreadPanel({ active }: { active: boolean }) {
   const [status, setStatusState] = useState<'open' | 'resolved' | 'all'>('open');
   const [owner, setOwnerState] = useState<Owner>('all');
   // `need=` (the strip's pills) lists one state group: All, open, any owner. Any other filter choice drops it, so the list never disagrees with the URL.
-  const need = useRoute().need;
+  // Past threads carry no state, so `need` means nothing there: it is dropped (replace) rather than shown over an unfiltered list.
+  const routeNeed = useRoute().need;
+  const live = !ctx.pastView && !ctx.commit;
+  const need = live ? routeNeed : undefined;
+  useEffect(() => { if (routeNeed && !live) clearNeed(); }, [routeNeed, live]);
   useEffect(() => { if (need) { setTabState('all'); setStatusState('open'); setOwnerState('all'); } }, [need, setTabState]);
   const setTab = (v: string) => { clearNeed(); setTabState(v); };
   const setStatus = (v: typeof status) => { clearNeed(); setStatusState(v); };
@@ -143,7 +147,6 @@ function ReviewThreadPanel({ active }: { active: boolean }) {
   const gate = load && !load.loaded ? load.error ? <ErrorState error={load.error} onRetry={load.reload} /> : <Loading label="Loading threads" rows={3} /> : null;
   // The live review's open threads are the overview's digests: no per-file diff is read for them. Only a resolved list, or a
   // past round or commit (whose threads no digest describes), needs the index, and only while this tab is the one showing.
-  const live = !ctx.pastView && !ctx.commit;
   const index = useThreadIndex(ctx.id, ctx.files, active && tab === 'all' && (!live || status !== 'open'), ctx.round);
   const fileThreads = ctx.fileDiff.file?.threads ?? [];
   // Group threads exist only in the live round; the outdated ones are listed with the Outdated tab's.

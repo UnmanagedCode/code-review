@@ -82,7 +82,7 @@ export function FileTree({ files, selected }: { files: FileState[]; selected: st
           : <ul>{tree.children.map((c) => <Node key={c.path + (c.file ? '' : '/')} node={c} depth={0} env={env} />)}</ul>}
       </nav>
       <p className="px-3 py-2 text-xs text-muted-foreground">
-        {live && !readOnly ? '☐ viewed · ' : ''}<span aria-hidden>■</span> accepted · <span aria-hidden>■</span> rejected · <span aria-hidden>□</span> undecided · <MessageSquareIcon className="inline size-3" aria-hidden /> open threads
+        {live && !readOnly ? '☐ viewed · ' : ''}<span aria-hidden className="text-success">■</span> accepted · <span aria-hidden className="text-destructive">■</span> rejected · <span aria-hidden>□</span> undecided · <MessageSquareIcon className="inline size-3" aria-hidden /> open threads
       </p>
     </>
   );

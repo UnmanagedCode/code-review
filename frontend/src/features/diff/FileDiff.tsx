@@ -76,6 +76,7 @@ function FileHeader({ ref, file, onBack, extra, view, options, onComment, hunk }
           {!wide && <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">{meta}</div>}
         </div>
         {wide && meta}
+        {wide && <ViewedToggle path={file.path} />}
         <div className="flex shrink-0 items-center gap-0.5">
           <Tip label="Previous file" id="prev-file"><Button variant="ghost" size="icon-sm" aria-label="Previous file" disabled={!files.canStep(-1) || files.index < 0} onClick={() => files.step(-1)}><ChevronLeftIcon /></Button></Tip>
           {files.index >= 0 && <span className="px-0.5 text-xs whitespace-nowrap text-muted-foreground">File {files.index + 1} of {files.total}</span>}
@@ -87,7 +88,7 @@ function FileHeader({ ref, file, onBack, extra, view, options, onComment, hunk }
         <JumpBar hunk={hunk} />
         <span className="flex-1" />
         <FileVerdict file={file} />
-        <ViewedToggle path={file.path} />
+        {!wide && <ViewedToggle path={file.path} />}
         {onComment && <Tip label="Comment on file"><Button variant="ghost" size="sm" aria-label="Comment on file" onClick={onComment}><MessageSquarePlusIcon />Comment</Button></Tip>}
         <CodeGitFileLink file={file} />
         {view && <ViewToggle view={view.chosen} onChange={view.choose} />}

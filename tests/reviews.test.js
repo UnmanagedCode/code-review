@@ -671,3 +671,19 @@ test('rounds store the snapshot\'s hunk ids in file order; uncommitted rounds st
   ok(await reviews.refreshReview(unc.id, HUMAN));
   assert.equal(store.read(unc.id).rounds[1].hunkIds, null);
 });
+
+test('no round view carries hunkIds: round view, round diff and comparison answer the wire Round', async () => {
+  // Invariant: hunkIds is store-only; every response that returns a round strips it (wireRound).
+  const wt = w.addWorktree();
+  wt.commit({ 'a.js': editLines({ 2: 'x' }) });
+  const { review } = ok(await open());
+  wt.commit({ 'b.js': 'b\n' });
+  ok(await reviews.refreshReview(review.id, HUMAN));
+  assert.ok(store.read(review.id).rounds.every((r) => Array.isArray(r.hunkIds)), 'stored');
+  const { roundView } = await import('../src/rounds.js');
+  const { compareRounds } = await import('../src/compare.js');
+  assert.ok(!('hunkIds' in ok(await roundView(review.id, 1)).round));
+  assert.ok(!('hunkIds' in ok(await reviews.diff(review.id, { round: 1 })).round));
+  const cmp = ok(await compareRounds(review.id, { from: 1, to: 2 }));
+  assert.ok(!('hunkIds' in cmp.from) && !('hunkIds' in cmp.to));
+});

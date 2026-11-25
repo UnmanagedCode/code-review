@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { navigate, type Route } from '@/lib/route';
 import { CheckoutBar } from '@/features/checkout/CheckoutBar';
@@ -17,8 +17,13 @@ export function ListPane({ route, follow, arrival, placeholder }: {
 }) {
   const { landing, ...checkout } = follow;
   // Until the landing rule has run and the route names nothing, the inbox shows: never the empty picker first.
-  const tab = route.view === 'inbox' || (landing === 'pending' && !route.project) ? 'inbox' : 'checkout';
-  const choose = (v: string) => navigate({ view: v === 'inbox' ? 'inbox' : undefined }, { replace: true });
+  // The first paint's default only: a tab the user has clicked wins over a landing still pending.
+  const [picked, setPicked] = useState(false);
+  const tab = route.view === 'inbox' || (landing === 'pending' && !route.project && !picked) ? 'inbox' : 'checkout';
+  const choose = (v: string) => {
+    setPicked(true);
+    navigate({ view: v === 'inbox' ? 'inbox' : undefined }, { replace: true });
+  };
   return (
     <Tabs value={tab} onValueChange={choose} className="min-h-0 flex-1 gap-0">
       <TabsList aria-label="Review lists" className="mx-3 mt-2 mb-1 w-auto">

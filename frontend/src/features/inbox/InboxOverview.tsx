@@ -13,8 +13,9 @@ export function InboxOverview() {
   if (!data) return <Empty title="Select a review" />;
   const needing = data.reviews.filter((r) => bucketOf(r) === 'needs-you');
   const waiting = data.reviews.filter((r) => bucketOf(r) === 'waiting').length;
-  const first = needing[0];
-  if (!first) return <Empty title="Nothing needs you right now">{waiting > 0 ? `${plural(waiting, 'review')} waiting on an agent` : 'Select a review from the inbox.'}</Empty>;
+  // A review whose checkout is gone is a dead end to open, so it never leads the CTA (it still counts and stays listed).
+  const first = needing.find((r) => r.checkoutGone !== true);
+  if (needing.length === 0) return <Empty title="Nothing needs you right now">{waiting > 0 ? `${plural(waiting, 'review')} waiting on an agent` : 'Select a review from the inbox.'}</Empty>;
   const threads = needing.reduce((n, r) => n + needsYouOf(r), 0);
   const withThreads = needing.filter((r) => needsYouOf(r) > 0).length;
   return (
@@ -22,11 +23,13 @@ export function InboxOverview() {
       <p>
         {plural(threads, 'thread')} {threads === 1 ? 'waits' : 'wait'} on you across {plural(withThreads, 'review')} · {waiting} waiting on an agent
       </p>
-      <Button asChild className="mt-3">
-        <RouteLink to={{ project: first.project, worktree: first.worktree ?? undefined, review: first.id, ...REVIEW_SCOPED }}>
-          Start with “{first.title || first.label}”
-        </RouteLink>
-      </Button>
+      {first && (
+        <Button asChild className="mt-3">
+          <RouteLink to={{ project: first.project, worktree: first.worktree ?? undefined, review: first.id, ...REVIEW_SCOPED }}>
+            Start with “{first.title || first.label}”
+          </RouteLink>
+        </Button>
+      )}
     </Empty>
   );
 }

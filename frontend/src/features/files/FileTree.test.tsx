@@ -157,3 +157,11 @@ test('many hunks draw a bar with the same tally', () => {
   tree([fileState({ path: 'big.ts', hunks: 12, verdicts: { pending: 9, accepted: 2, rejected: 1 } })]);
   expect(screen.getByRole('img', { name: '2 accepted, 1 rejected, 9 undecided' })).toBeTruthy();
 });
+
+// Invariant: the legend's accepted and rejected glyphs carry the pips' tones (green, red), not the muted text colour.
+test('the legend glyphs for accepted and rejected are toned like the pips', () => {
+  tree([fileState({ path: 'a.ts' })]);
+  const glyphs = screen.getAllByText('■');
+  expect(glyphs.map((g) => /\btext-success\b/.test(g.className))).toEqual([true, false]);
+  expect(/\btext-destructive\b/.test(glyphs[1].className)).toBe(true);
+});

@@ -36,3 +36,28 @@ test('says nothing needs you when every review is quiet or waiting', async () =>
   expect(await screen.findByText('Nothing needs you right now')).toBeTruthy();
   expect(screen.queryByRole('link', { name: /Start with/ })).toBeNull();
 });
+
+// Invariant: the Start-with button skips a review whose checkout is gone (a dead end), still counting it as needing you; with only gone ones there is no button.
+test('Start with skips checkout-gone reviews', async () => {
+  stubFetch({
+    'GET api/inbox': {
+      reviews: [
+        inboxItem({ ...none, id: 'r-gone', title: 'Gone', checkoutGone: true, threadStates: { ...states, awaitingHuman: 1 } }),
+        inboxItem({ ...none, id: 'r-ok', title: 'Alive', threadStates: { ...states, awaitingHuman: 1 } }),
+      ],
+    },
+  });
+  const { unmount } = render(<InboxOverview />);
+  expect(await screen.findByText('2 reviews need you')).toBeTruthy();
+  expect(parseRoute(screen.getByRole('link', { name: 'Start with “Alive”' }).getAttribute('href')!).review).toBe('r-ok');
+  unmount();
+});
+
+test('Start with is absent when every review that needs you has a gone checkout', async () => {
+  const { resetResources } = await import('@/state/resource');
+  resetResources();
+  stubFetch({ 'GET api/inbox': { reviews: [inboxItem({ ...none, id: 'r-gone', title: 'Gone', checkoutGone: true, threadStates: { ...states, awaitingHuman: 1 } })] } });
+  render(<InboxOverview />);
+  expect(await screen.findByText('1 review needs you')).toBeTruthy();
+  expect(screen.queryByRole('link', { name: /Start with/ })).toBeNull();
+});

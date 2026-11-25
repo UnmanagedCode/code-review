@@ -263,3 +263,18 @@ test('a session change while the New review dialog is open is ignored', async ()
   await act(async () => {});
   expect(location.search).toBe('?project=app&view=new');
 });
+
+// Invariant: the pending landing's Inbox default is not a lock. When the project list fails, the landing settles and the Checkout tab (with its Retry) is reachable; a clicked tab wins even while pending.
+test('a failed project list does not lock the Inbox tab: Checkout and its Retry stay reachable', async () => {
+  installFakeEventSource();
+  stubFetch([
+    [/^GET api\/projects$/, new Response(JSON.stringify({ ok: false, code: 'CONDUCTOR_UNAVAILABLE', reason: 'down' }), { status: 502 })],
+    [/^GET api\/inbox$/, { reviews: [] }],
+  ]);
+  history.replaceState(null, '', '/');
+  render(<App />);
+  const user = userEvent.setup();
+  await user.click(await screen.findByRole('tab', { name: 'Checkout' }));
+  expect(screen.getByRole('tab', { name: 'Checkout' }).getAttribute('aria-selected')).toBe('true');
+  expect(await screen.findByRole('button', { name: 'Retry' })).toBeTruthy();
+});

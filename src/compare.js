@@ -4,7 +4,7 @@ import { buildSnapshot } from './snapshot.js';
 import { fileStates, tally, diffFiles } from './rollup.js';
 import { hunkFor } from './anchor.js';
 import { threadsAt, roundThreadView, anchorChain, reviewThreadsAt } from './history.js';
-import { pickRound } from './rounds.js';
+import { pickRound, wireRound } from './rounds.js';
 
 const byNumber = (a, b) => Number(a.id.slice(1)) - Number(b.id.slice(1));
 
@@ -79,5 +79,5 @@ export const compareRounds = (id, { from, to }) => attempt(() => viewReview(id, 
   const states = await diffFiles(delta, fileStates({ ...review, threads: [], verdicts: {}, viewedFiles: {} }, files).map((s) => ({ ...s, verdicts: null })), files, {
     hunk: (h) => ({ ...h, verdict: null }), threads: (path) => byFile.get(path) ?? [],
   });
-  return { ok: true, readOnly: true, from: a, to: b, files: states, counts, unplaced, reviewThreads: reviewThreadsAt(review, b.n) };
+  return { ok: true, readOnly: true, from: wireRound(a), to: wireRound(b), files: states, counts, unplaced, reviewThreads: reviewThreadsAt(review, b.n) };
 }));

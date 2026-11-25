@@ -490,3 +490,14 @@ test('an inactive panel and an Open list fetch no per-file diff', async () => {
   rerender(<ReviewProvider value={value}><ThreadPanel active /></ReviewProvider>);
   await waitFor(() => expect(net.count('GET api/reviews/r-1/diff')).toBe(1));
 });
+
+// Invariant: in a past round (threads carry no state) a `need=` is dropped from the route and no "Showing:" chip claims a filter the list does not apply.
+test('need is cleared in a past round and no chip shows', async () => {
+  history.replaceState(null, '', '?review=r-1&view=threads&need=needs-you&round=1');
+  stubFetch({ 'GET api/reviews/r-1/diff': { readOnly: true, round: { n: 1 }, files: [diffFile({ threads: [thread({ id: 't-1' })] })] } });
+  const files = [fileState({ threads: { open: 1, resolved: 0, outdated: 0 } })];
+  render(<ReviewProvider value={ctxValue({ files, round: 1, readOnly: true, pastView: true, fileDiff: { file: undefined } as never })}><ThreadPanel /></ReviewProvider>);
+  await waitFor(() => expect(rows()).toHaveLength(1));
+  expect(screen.queryByText(/^Showing:/)).toBeNull();
+  await waitFor(() => expect(parseRoute(location.search).need).toBeUndefined());
+});

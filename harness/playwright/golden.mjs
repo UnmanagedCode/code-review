@@ -1002,7 +1002,12 @@ try {
         while (scroller && !(scroller.scrollHeight > scroller.clientHeight && /auto|scroll/.test(getComputedStyle(scroller).overflowY))) scroller = scroller.parentElement;
         scroller.scrollTop += h.getBoundingClientRect().top - header.getBoundingClientRect().bottom + 60;
       });
-      await page.waitForTimeout(100);
+      // Wait for the pin to settle (heading top within 1px of the header's bottom); a real misalignment times out and fails the assertion below.
+      await page.waitForFunction((p) => {
+        const h = document.querySelector(`section[aria-label="${p}"] h3`);
+        const header = document.querySelector('h2')?.closest('.sticky');
+        return !!h && !!header && Math.abs(h.getBoundingClientRect().top - header.getBoundingClientRect().bottom) <= 1;
+      }, path, { timeout: 3000 }).catch(() => {});
       const [h, header] = await Promise.all([heading.boundingBox(), page.getByRole('heading', { level: 2 }).first().evaluate((e) => e.closest('.sticky').getBoundingClientRect().bottom)]);
       assert.ok(Math.abs(h.y - header) <= 2, `${path}'s heading is pinned below the step header (heading ${h.y}, header bottom ${header})`);
       await shot(name);

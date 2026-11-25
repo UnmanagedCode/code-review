@@ -62,7 +62,8 @@ export function InboxRow({ item: r, accent, onClose }: { item: InboxItem; accent
         </span>
         <span className="truncate text-xs text-muted-foreground">{r.project} · {r.worktree ?? 'main checkout'} · {r.kind} · round {r.round}</span>
         <span className="flex flex-wrap items-center gap-1">
-          {r.reasons.map((code) => reasonChip(code, r))}
+          {/* A waiting row's reasons are not the human's to act on yet, so only Needs you and Stale rows show them. */}
+          {(r.bucket === 'needs-you' || r.bucket === 'stale') && r.reasons.map((code) => reasonChip(code, r))}
           {r.threadStates.unsent > 0 && <Badge variant="info">{r.threadStates.unsent} will be sent</Badge>}
           {r.newActivity && <Badge variant="info">new activity</Badge>}
           {r.turn === 'agent' && r.lastSubmission && <Badge variant="secondary">{sentLabel(r.lastSubmission.at, now)}</Badge>}

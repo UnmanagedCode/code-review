@@ -148,6 +148,25 @@ test('Stale is collapsed with its count, and expands to rows with their stale re
   vi.useRealTimers();
 });
 
+// Invariant: reason chips show on Needs you and Stale rows only; a Waiting row keeps its info chips but lists no reason, since the agent owes the next move.
+test('a Waiting row shows no reason chips', async () => {
+  stubFetch({
+    'GET api/inbox': {
+      reviews: [
+        inboxItem({ ...quiet, id: 'r-w', title: 'Waiting', turn: 'agent', bucket: 'waiting', reasons: ['unsent', 'hunks'], hunks: { pending: 2, accepted: 0, rejected: 0 }, newActivity: true, lastSubmission: { status: 'delivered', at: new Date().toISOString() } }),
+        inboxItem({ ...quiet, id: 'r-s', title: 'Stale one', bucket: 'stale', reasons: ['hunks'], staleReasons: ['idle'], hunks: { pending: 2, accepted: 0, rejected: 0 } }),
+      ],
+    },
+  });
+  render(<Inbox />);
+  const waiting = within(await screen.findByRole('link', { name: /Waiting/ }));
+  expect(waiting.queryByText(/hunks undecided|unsent changes/)).toBeNull();
+  expect(waiting.getByText('new activity')).toBeTruthy();
+  expect(waiting.getByText('sent just now')).toBeTruthy();
+  await expandStale();
+  expect(within(screen.getByRole('link', { name: /Stale one/ })).getByText('2 hunks undecided')).toBeTruthy();
+});
+
 // Invariant: Close shows only on rows whose checkout is gone, PATCHes status closed, then refetches the inbox.
 test('Close shows only on gone rows, closes the review and refetches', async () => {
   const net = stubFetch({

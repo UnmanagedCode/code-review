@@ -18,7 +18,7 @@ function Section({ bucket, items, onClose }: { bucket: InboxBucket; items: Inbox
     <section aria-labelledby={`inbox-${bucket}`}>
       <h2 id={`inbox-${bucket}`} className={bucket === 'stale' ? 'border-b bg-muted/40 text-xs font-semibold tracking-wide text-muted-foreground uppercase' : HEADING}>
         {bucket === 'stale' ? (
-          <button type="button" aria-expanded={open} aria-controls={listId} onClick={() => setOpen(!open)} className={`${HEADING} w-full cursor-pointer border-b-0 text-left`}>
+          <button type="button" aria-expanded={open} aria-controls={listId} onClick={() => setOpen(!open)} className={`${HEADING} w-full cursor-pointer border-b-0 text-left outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring`}>
             {open ? <ChevronDown className="size-3.5" aria-hidden /> : <ChevronRight className="size-3.5" aria-hidden />}
             {BUCKET_LABEL[bucket]}
             {count}

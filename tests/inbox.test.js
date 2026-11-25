@@ -85,7 +85,7 @@ async function commitReview(name) {
 const MINUTES_PER_DAY = 24 * 60;
 
 test('rows are ordered by bucket, then (Needs you) first-reason urgency, then lastActivityAt desc, then id desc', async (t) => {
-  // Invariant: compareRows sorts by BUCKETS index, then for needs-you rows by REASONS.indexOf(reasons[0]), then lastActivityAt descending, then id descending.
+  // Invariant: compareRows sorts by BUCKETS index (needs-you, waiting, nothing, stale), then for needs-you rows by REASONS.indexOf(reasons[0]), then lastActivityAt descending, then id descending.
   const clock = clockOf(t);
   clock.at(0);
   const old = await commitReview('old');
@@ -99,18 +99,21 @@ test('rows are ordered by bucket, then (Needs you) first-reason urgency, then la
   const waiting = await commitReview('wait');
   await decideAll(waiting.id);
   await deliver(waiting.id);
+  const quiet = await commitReview('quiet');
+  await quietUp(quiet.id);
   clock.at(base + 3);
   const hunksA = await commitReview('h1');
   const hunksB = await commitReview('h2');
   clock.at(base + 4);
   const rows = await list();
-  assert.deepEqual(rows.map((r) => r.bucket), ['needs-you', 'needs-you', 'needs-you', 'needs-you', 'waiting', 'stale']);
+  assert.deepEqual(rows.map((r) => r.bucket), ['needs-you', 'needs-you', 'needs-you', 'needs-you', 'waiting', 'nothing', 'stale']);
   assert.deepEqual(rows.slice(0, 4).map((r) => r.reasons[0]), ['threads', 'hunks', 'hunks', 'hunks']);
   assert.equal(rows[0].id, threadsRow.id, 'a more urgent reason beats a newer row');
   assert.deepEqual(rows.slice(1, 3).map((r) => r.id), [hunksA.id, hunksB.id].sort().reverse(), 'equal activity falls to id descending');
   assert.equal(rows[3].id, hunksOlder.id, 'older activity sorts after newer within one reason');
   assert.equal(rows[4].id, waiting.id);
-  assert.equal(rows[5].id, old.id, 'a stale row sorts last whatever its reasons');
+  assert.equal(rows[5].id, quiet.id, 'Nothing pending sorts before Stale');
+  assert.equal(rows[6].id, old.id, 'a stale row sorts last whatever its reasons');
 });
 
 test('every activity stamps lastActivityAt', async (t) => {
@@ -508,4 +511,50 @@ test('several reasons are listed in REASONS order', async () => {
   await TRIGGERS['send-pending'](review.id);
   await TRIGGERS.threads(review.id);
   assert.deepEqual((await item(review.id)).reasons, ['threads', 'send-pending', 'hunks', 'not-opened']);
+});
+
+test('an agent-turn row is waiting even while it lists reasons', async () => {
+  // Invariant: bucket is 'waiting' whenever turn is 'agent' and the row is not stale, however many reasons it has; reasons is still computed.
+  const { review } = await onFeature();
+  await deliver(review.id);
+  const row = await item(review.id);
+  assert.equal(row.turn, 'agent');
+  assert.deepEqual([row.bucket, row.reasons], ['waiting', ['hunks']]);
+});
+
+test('urgency orders Needs-you rows only: Waiting and Stale rows sort by lastActivityAt whatever their reasons', async (t) => {
+  // Invariant: compareRows applies the REASONS-index key to needs-you rows only; inside waiting and inside stale an older row with a more urgent reasons[0] sorts after a newer row with a less urgent one.
+  const clock = clockOf(t);
+  const staleUrgentOld = await commitReview('s1');
+  clock.at(1);
+  const staleCalmNew = await commitReview('s2');
+  await decideAll(staleCalmNew.id);
+  await TRIGGERS['not-opened'](staleCalmNew.id);
+  const base = 20 * MINUTES_PER_DAY;
+  clock.at(base);
+  const waitUrgentOld = await commitReview('w1');
+  await deliver(waitUrgentOld.id);
+  clock.at(base + 1);
+  const waitCalmNew = await commitReview('w2');
+  await decideAll(waitCalmNew.id);
+  await TRIGGERS['not-opened'](waitCalmNew.id);
+  await deliver(waitCalmNew.id);
+  clock.at(base + 2);
+  const rows = await list();
+  const byId = Object.fromEntries(rows.map((r) => [r.id, r]));
+  assert.deepEqual([byId[waitUrgentOld.id].reasons[0], byId[waitCalmNew.id].reasons[0]], ['hunks', 'not-opened']);
+  assert.deepEqual([byId[staleUrgentOld.id].reasons[0], byId[staleCalmNew.id].reasons[0]], ['hunks', 'not-opened']);
+  assert.deepEqual(rows.map((r) => r.id), [waitCalmNew.id, waitUrgentOld.id, staleCalmNew.id, staleUrgentOld.id]);
+});
+
+test('now is read once per request: rows of equal lastActivityAt get one idle verdict even when the clock moves between reads', async (t) => {
+  // Invariant: listInbox reads Date.now() once and judges every row against it; a clock that alternates around the STALE_AFTER_MS boundary on successive reads cannot split equal rows.
+  const ids = [];
+  for (const name of ['a', 'b', 'c', 'd']) ids.push((await commitReview(name)).id);
+  for (const id of ids) await store.mutate(id, (r) => { r.lastActivityAt = iso(0); return { ok: true }; });
+  let reads = 0;
+  t.mock.method(Date, 'now', () => T0 + STALE_AFTER_MS + (reads++ % 2));
+  const rows = await list();
+  assert.equal(rows.length, 4);
+  assert.equal(new Set(rows.map((r) => JSON.stringify(r.staleReasons))).size, 1);
 });

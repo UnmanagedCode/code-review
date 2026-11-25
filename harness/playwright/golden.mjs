@@ -1287,6 +1287,16 @@ try {
     assert.deepEqual(errors.filter((e) => !/^404 .*\/api\/checkout\/lookup\?/.test(e)), []);
   }, { headless: true, viewport: { width: 1280, height: 800 } });
 
+  const textContrast = (locator) => locator.first().evaluate((el) => {
+    const ctx = Object.assign(document.createElement('canvas'), { width: 1, height: 1 }).getContext('2d', { willReadFrequently: true });
+    const paint = (colors) => { ctx.clearRect(0, 0, 1, 1); for (const c of colors) { ctx.fillStyle = c; ctx.fillRect(0, 0, 1, 1); } return [...ctx.getImageData(0, 0, 1, 1).data.slice(0, 3)]; };
+    const lum = (rgb) => { const [r, g, b] = rgb.map((v) => { v /= 255; return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }); return 0.2126 * r + 0.7152 * g + 0.0722 * b; };
+    const layers = [];
+    for (let n = el; n; n = n.parentElement) { const bg = getComputedStyle(n).backgroundColor; if (bg && bg !== 'rgba(0, 0, 0, 0)' && bg !== 'transparent') layers.unshift(bg); }
+    const [a, b] = [lum(paint([...layers, getComputedStyle(el).color])), lum(paint(layers))];
+    return Math.round(((Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05)) * 100) / 100;
+  });
+
   // 17: the inbox, with a stub cc bridge. From an open review, Inbox → the main checkout's row opens that review in its own
   // checkout; a session switch while it is open leaves it open; Back returns to the inbox. A destroyed worktree's row says
   // "checkout gone", and its Close closes the review. Runs last: it removes a worktree.
@@ -1329,6 +1339,21 @@ try {
     assert.equal(await inbox.getByRole('region', { name: /^Needs you/ }).getByText('Spike experiment').count(), 0, 'a gone checkout is stale, never Needs you');
     assert.equal(await row('Feature work').getByText('checkout gone').count(), 0);
     await shot('17-inbox-checkout-gone');
+    // The warning chip's text reaches WCAG AA (4.5:1) in both themes, at rest and with the row hovered.
+    const goneChip = row('Spike experiment').getByText('checkout gone');
+    for (const scheme of ['light', 'dark']) {
+      await page.emulateMedia({ colorScheme: scheme });
+      await page.reload(); // the theme class is set at load
+      await stale.getByRole('button', { name: /^Stale/ }).click();
+      await goneChip.waitFor();
+      const rest = await textContrast(goneChip);
+      await row('Spike experiment').getByRole('link').hover();
+      const hovered = await textContrast(goneChip);
+      await page.mouse.move(0, 0);
+      console.log(`inbox warning chip contrast (${scheme}): rest ${rest}, hovered ${hovered}`);
+      assert.ok(rest >= 4.5 && hovered >= 4.5, `${scheme}: checkout gone chip is ${rest}:1 at rest, ${hovered}:1 hovered, below 4.5:1`);
+    }
+    await page.emulateMedia({ colorScheme: 'light' });
     await row('Spike experiment').getByRole('button', { name: 'Close review Spike experiment' }).click();
     await row('Spike experiment').waitFor({ state: 'detached' });
     assert.equal((await world.call('GET', `reviews/${spike.id}`)).review.status, 'closed');
@@ -1374,15 +1399,6 @@ try {
   const WILL = /threads? will be sent$/;
 
   // WCAG text contrast of an element's colour over its own and its ancestors' backgrounds (translucent tints composited top-down).
-  const textContrast = (locator) => locator.first().evaluate((el) => {
-    const ctx = Object.assign(document.createElement('canvas'), { width: 1, height: 1 }).getContext('2d', { willReadFrequently: true });
-    const paint = (colors) => { ctx.clearRect(0, 0, 1, 1); for (const c of colors) { ctx.fillStyle = c; ctx.fillRect(0, 0, 1, 1); } return [...ctx.getImageData(0, 0, 1, 1).data.slice(0, 3)]; };
-    const lum = (rgb) => { const [r, g, b] = rgb.map((v) => { v /= 255; return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }); return 0.2126 * r + 0.7152 * g + 0.0722 * b; };
-    const layers = [];
-    for (let n = el; n; n = n.parentElement) { const bg = getComputedStyle(n).backgroundColor; if (bg && bg !== 'rgba(0, 0, 0, 0)' && bg !== 'transparent') layers.unshift(bg); }
-    const [a, b] = [lum(paint([...layers, getComputedStyle(el).color])), lum(paint(layers))];
-    return Math.round(((Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05)) * 100) / 100;
-  });
 
   await withPage(async (page) => {
     const errors = watchErrors(page);

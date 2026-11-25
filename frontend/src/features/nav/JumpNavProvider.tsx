@@ -37,8 +37,16 @@ export function JumpNavProvider({ children }: { children: ReactNode }) {
   // A request for a thread that never got routed must not fire on a later, unrelated arrival.
   useEffect(() => { if (focusRequest.current && route.thread !== focusRequest.current.id) focusRequest.current = null; }, [route.thread]);
 
-  const goThread = (t: ThreadDigest, index: number) => {
-    last.current = { id: t.id, index };
+  // The slot is where the routed thread sat in the walk when it was routed, by a step, a click, a link or Back:
+  // a reply then moves it, and n/p continue from that slot (`stepThread`).
+  useEffect(() => { last.current = null; }, [route.thread]);
+  useEffect(() => {
+    if (!route.thread || last.current) return;
+    const index = order.findIndex((t) => t.id === route.thread);
+    if (index !== -1) last.current = { id: route.thread, index }; // a deep link records once openThreads holds it
+  }, [route.thread, order]);
+
+  const goThread = (t: ThreadDigest) => {
     focusRequest.current = { id: t.id, diffOnly: t.anchor.kind === 'lines' || t.anchor.kind === 'file' };
     const place = { ...threadPlace(t), hunk: undefined };
     // A review thread lives in the pane, which a phone never shows beside a file.
@@ -50,12 +58,12 @@ export function JumpNavProvider({ children }: { children: ReactNode }) {
   const stepThreads = (dir: 1 | -1) => {
     const to = peekThread(dir);
     if (!to) return false;
-    goThread(order[to.index], to.index);
+    goThread(order[to.index]);
   };
   const stepNeedsYou = () => {
     const t = nextNeedsYou(placed, route.thread);
     if (!t) { toast('No threads need you'); return; }
-    goThread(t, order.findIndex((o) => o.id === t.id));
+    goThread(t);
   };
 
   const peekFile = (dir: 1 | -1) => sorted[fileIndex === -1 ? (dir === 1 ? 0 : sorted.length - 1) : fileIndex + dir];

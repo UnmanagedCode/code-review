@@ -1,14 +1,18 @@
-import { screen, waitFor, within } from '@testing-library/react';
+import { act, screen, waitFor, within } from '@testing-library/react';
+import type { ReactElement } from 'react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, expect, test } from 'vitest';
-import { parseRoute } from '@/lib/route';
+import { navigate, parseRoute } from '@/lib/route';
 import { WIDE_QUERY } from '@/lib/useMediaQuery';
 import { installBridge } from '@/test/fakeBridge';
 import { installMedia } from '@/test/fakeMedia';
 import { diffFile, fileState, groupAnchor, guideView, linesAnchor, message, review, thread, threadDigest } from '@/test/fixtures';
 import { renderDiff } from '@/test/renderCtx';
+import { ReviewProvider } from '@/test/reviewProvider';
 import { stubFetch } from '@/test/stubFetch';
 import { FileDiff } from '@/features/diff/FileDiff';
+import { ThreadRow as OverviewRow } from '@/features/overview/ThreadRow';
+import { ThreadRow as PaneRow } from '@/features/threads/ThreadRow';
 import { SubmitControls } from '@/features/submit/SubmitControls';
 import { ThreadCard } from '@/features/threads/ThreadCard';
 
@@ -219,4 +223,62 @@ test('a review thread has no diff card: the pane card takes the focus', async ()
   renderDiff(<><div data-testid="pane"><ThreadCard thread={t} /></div><FileDiff /></>, diffFile({ path: 'a.ts' }), { files, openThreads: [openThreads[4]] });
   await keys('n');
   expect(document.activeElement).toBe(screen.getByTestId('pane').querySelector('article'));
+});
+
+// A reply moves a1 out of the needs-you part: the order becomes [a2 | a1 b1 grp rv], so a1 sits at index 1.
+const replied = (id: string) => openThreads.map((t) => (t.id === id ? { ...t, state: 'unsent' as const } : t));
+const mountUi = (url: string, ui: ReactElement) => {
+  history.replaceState(null, '', url);
+  const view = renderDiff(ui, diffFile({ path: 'a.ts' }), { files, openThreads });
+  const reply = (id: string) => view.rerender(<ReviewProvider value={{ ...view.value, openThreads: replied(id) }}>{ui}</ReviewProvider>);
+  return { view, reply };
+};
+
+// Invariant: a thread opened from an overview row keeps the slot it held, so after its reply moved it n continues with the needs-you thread that slid into that slot.
+test('n after replying to a thread opened from an overview row goes to the next needs-you thread', async () => {
+  const { reply } = mountUi('?file=a.ts', <><FileDiff /><OverviewRow thread={openThreads[0]} which="last" withState /></>);
+  await userEvent.setup().click(screen.getByRole('link'));
+  expect(route().thread).toBe('a1');
+  reply('a1');
+  await keys('n');
+  expect(route().thread).toBe('a2');
+});
+
+// Invariant: with nothing before the slot a reply took, p stays where it is.
+test('p after replying to a thread opened from an overview row stays put when nothing precedes its slot', async () => {
+  const { reply } = mountUi('?file=a.ts', <><FileDiff /><OverviewRow thread={openThreads[0]} which="last" withState /></>);
+  await userEvent.setup().click(screen.getByRole('link'));
+  reply('a1');
+  const before = location.search;
+  await keys('p');
+  expect(location.search).toBe(before);
+});
+
+// Invariant: a thread opened from a Threads pane row keeps its slot the same way.
+test('n after replying to a thread opened from a Threads pane row goes to the next needs-you thread', async () => {
+  const row = { ...openThreads[0], status: 'open' as const, last: { at: '2026-01-01T00:00:00Z', preview: 'look here' } };
+  const { reply } = mountUi('?file=a.ts', <><FileDiff /><PaneRow row={row} guide={null} /></>);
+  await userEvent.setup().click(screen.getByRole('button', { name: /look here/ }));
+  expect(route().thread).toBe('a1');
+  reply('a1');
+  await keys('n');
+  expect(route().thread).toBe('a2');
+});
+
+// Invariant: a thread reached by a link (no step) takes its slot too.
+test('n after replying to a deep-linked thread goes to the next needs-you thread', async () => {
+  const { reply } = mountUi('?file=a.ts&thread=a1', <FileDiff />);
+  reply('a1');
+  await keys('n');
+  expect(route().thread).toBe('a2');
+});
+
+// Invariant: leaving a thread and arriving at it again takes a fresh slot, so n continues from where the thread now sits.
+test('arriving at a moved thread again takes its new slot', async () => {
+  const { reply } = mountUi('?file=a.ts&thread=a1', <FileDiff />);
+  reply('a1');
+  act(() => navigate({ thread: undefined }));
+  act(() => navigate({ file: 'a.ts', side: 'new', thread: 'a1' }));
+  await keys('n');
+  expect(route().thread).toBe('b1');
 });

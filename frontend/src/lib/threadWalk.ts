@@ -4,7 +4,7 @@ import type { FileState, GuideView, ThreadDigest } from './types';
 type Walked = Pick<ThreadDigest, 'id' | 'anchor' | 'state'>;
 const needsYou = (t: Walked) => !!t.state && NEEDS_YOU.includes(t.state);
 
-/** The last thread a step landed on and the slot it held then. */
+/** The routed thread and the slot it held when it was routed. */
 export interface Slot { id: string; index: number }
 
 /**
@@ -18,7 +18,7 @@ export function walkOrder<T extends Walked>(threads: T[], files: FileState[], gu
 
 /**
  * The thread `n` (dir 1) or `p` (dir -1) goes to, with its slot; null at an end (no wrap). With no current thread `n` goes
- * to the first and `p` to the last. A current thread that moved since the last step (a reply took it out of the needs-you
+ * to the first and `p` to the last. A current thread that moved since it was routed (a reply took it out of the needs-you
  * tier) steps from the slot it was last at, so the threads that slid into place are not skipped.
  */
 export function stepThread<T extends { id: string }>(order: T[], currentId: string | undefined, last: Slot | null, dir: 1 | -1): { id: string; index: number } | null {

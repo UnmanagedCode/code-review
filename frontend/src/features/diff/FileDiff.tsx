@@ -24,6 +24,7 @@ import { Empty, ErrorState, Loading } from '@/features/common/States';
 import { JumpBar, type HunkStepper } from '@/features/nav/JumpBar';
 import { useJumpNav } from '@/features/nav/jumpNavContext';
 import { Tip } from '@/features/nav/Tip';
+import { StatusLetter } from '@/features/files/StatusLetter';
 import { ViewedToggle } from '@/features/files/ViewedToggle';
 import { Composer } from '@/features/threads/Composer';
 import { CitedExcerpt } from './CitedExcerpt';
@@ -56,6 +57,19 @@ function CommentHint() {
   return <p data-comment-hint="" className="truncate px-3 py-1 text-xs text-muted-foreground">Click or drag line numbers to comment</p>;
 }
 
+/** The path with the base name kept whole: the directory gives way first, from the left (`…/files/`), then the name from the right. */
+function FilePath({ path }: { path: string }) {
+  const cut = path.lastIndexOf('/') + 1;
+  const dir = path.slice(0, cut);
+  const base = path.slice(cut);
+  return (
+    <p className="flex min-w-0 font-mono text-sm" title={path}>
+      {dir && <span data-path-dir dir="rtl" className="min-w-0 truncate text-muted-foreground"><bdi dir="ltr">{dir}</bdi></span>}
+      <span data-path-base className="max-w-full shrink-0 truncate font-medium">{base}</span>
+    </p>
+  );
+}
+
 function FileHeader({ ref, file, onBack, extra, view, options, onComment, hunk }: { ref?: Ref<HTMLDivElement>; file: DiffFile; onBack?: () => void; extra?: ReactNode; view?: { chosen: DiffView; choose: (v: DiffView) => void }; options: boolean; onComment?: () => void; hunk?: HunkStepper }) {
   const { round, compare } = useReviewCtx();
   const { files, overlay } = useJumpNav();
@@ -66,7 +80,7 @@ function FileHeader({ ref, file, onBack, extra, view, options, onComment, hunk }
     <>
       {round !== undefined && <Badge variant="info">round {round} · read-only</Badge>}
       {compare && <Badge variant="info">round {compare.from} → {compare.to} · read-only</Badge>}
-      <Badge variant="outline">{file.status}</Badge>
+      <Tip label={file.status}><StatusLetter status={file.status} /></Tip>
       <span className="text-xs"><span className="text-success">+{file.additions}</span> <span className="text-destructive">−{file.deletions}</span></span>
     </>
   );
@@ -82,7 +96,7 @@ function FileHeader({ ref, file, onBack, extra, view, options, onComment, hunk }
       <div className="flex flex-wrap items-center gap-2 px-3 pt-2 pb-1">
         {onBack && <Tip label="Back to files"><Button variant="ghost" size="icon-sm" aria-label="Back to files" onClick={onBack}><ArrowLeftIcon /></Button></Tip>}
         <div className="min-w-0 flex-1 basis-24">
-          <p className="truncate font-mono text-sm font-medium" title={file.path}>{file.path}</p>
+          <FilePath path={file.path} />
           {file.oldPath && <p className="truncate font-mono text-xs text-muted-foreground">renamed from {file.oldPath}</p>}
           {!wide && <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">{meta}</div>}
         </div>

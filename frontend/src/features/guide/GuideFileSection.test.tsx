@@ -27,18 +27,37 @@ const withThreads = (...threads: ReturnType<typeof thread>[]) => ({
   },
 });
 
-test('every file bar starts collapsed, with its body hidden', async () => {
-  // Invariant: a step opens with no hunk on screen; each bar is a disclosure button wired to a hidden body.
+test('on the first visit to a step only its first file is open', async () => {
+  // Invariant: a step opens on its first file's code; the other files stay collapsed behind a hidden body.
   at('&step=g1');
   guideNet();
   mount();
-  for (const p of ['a.ts', 'b.ts']) {
-    const b = await bar(p);
-    expect(b.getAttribute('aria-expanded')).toBe('false');
-    expect((document.getElementById(b.getAttribute('aria-controls')!) as HTMLElement).hidden).toBe(true);
-  }
-  expect(grids()).toHaveLength(0);
-  expect(screen.queryAllByRole('group', { name: 'Hunk verdict' })).toHaveLength(0);
+  const a = await bar('a.ts');
+  expect(a.getAttribute('aria-expanded')).toBe('true');
+  expect(await within(screen.getByRole('region', { name: 'a.ts' })).findByRole('grid')).toBeTruthy();
+  const b = await bar('b.ts');
+  expect(b.getAttribute('aria-expanded')).toBe('false');
+  expect((document.getElementById(b.getAttribute('aria-controls')!) as HTMLElement).hidden).toBe(true);
+});
+
+test('a first file you collapse stays collapsed when you come back to the step', async () => {
+  // Invariant: the store keeps explicit choices, so collapsing the default-open file is remembered, not re-defaulted.
+  at('&step=g1');
+  guideNet();
+  const first = mount();
+  await userEvent.setup().click(await bar('a.ts'));
+  expect((await bar('a.ts')).getAttribute('aria-expanded')).toBe('false');
+  first.unmount();
+  mount();
+  expect((await bar('a.ts')).getAttribute('aria-expanded')).toBe('false');
+});
+
+test('another step opens its own first file', async () => {
+  // Invariant: the default is per step: a step never visited opens its first file whatever other steps did.
+  at('&step=g2');
+  guideNet();
+  mount();
+  expect((await bar('a.ts')).getAttribute('aria-expanded')).toBe('true');
 });
 
 test('a bar toggles its hunks on click', async () => {
@@ -47,13 +66,13 @@ test('a bar toggles its hunks on click', async () => {
   guideNet();
   mount();
   const user = userEvent.setup();
-  const b = await bar('a.ts');
+  const b = await bar('b.ts');
   await user.click(b);
   expect(b.getAttribute('aria-expanded')).toBe('true');
-  expect(await within(screen.getByRole('region', { name: 'a.ts' })).findByRole('grid')).toBeTruthy();
+  expect(await within(screen.getByRole('region', { name: 'b.ts' })).findByRole('grid')).toBeTruthy();
   await user.click(b);
   expect(b.getAttribute('aria-expanded')).toBe('false');
-  expect(grids()).toHaveLength(0);
+  expect(within(screen.getByRole('region', { name: 'b.ts' })).queryByRole('grid')).toBeNull();
 });
 
 test('a bar toggles from the keyboard with Enter and Space', async () => {
@@ -62,7 +81,7 @@ test('a bar toggles from the keyboard with Enter and Space', async () => {
   guideNet();
   mount();
   const user = userEvent.setup();
-  const b = await bar('a.ts');
+  const b = await bar('b.ts');
   b.focus();
   await user.keyboard('{Enter}');
   expect(b.getAttribute('aria-expanded')).toBe('true');
@@ -88,14 +107,15 @@ test('an open file stays open across a remount, per step', async () => {
   at('&step=g1');
   guideNet();
   const first = mount();
-  await userEvent.setup().click(await bar('a.ts'));
+  await userEvent.setup().click(await bar('b.ts'));
   first.unmount();
   const second = mount();
-  expect((await bar('a.ts')).getAttribute('aria-expanded')).toBe('true');
+  expect((await bar('b.ts')).getAttribute('aria-expanded')).toBe('true');
+  await userEvent.setup().click(await bar('a.ts'));
   second.unmount();
   at('&step=g2');
   mount();
-  expect((await bar('a.ts')).getAttribute('aria-expanded')).toBe('false');
+  expect((await bar('a.ts')).getAttribute('aria-expanded')).toBe('true');
 });
 
 test('a thread route into a file opens it on the first render of the card, and the bar still collapses it', async () => {
@@ -126,7 +146,7 @@ test('a routed group thread leaves the file bars collapsed', async () => {
   const t = thread({ id: 't-9', anchor: groupAnchor({ groupId: 'g1' }) });
   guideNet();
   render(<GuideHarness guide={sampleGuide({ threads: [t] })}><GuideStepView /></GuideHarness>);
-  for (const p of ['a.ts', 'b.ts']) expect((await bar(p)).getAttribute('aria-expanded')).toBe('false');
+  expect((await bar('b.ts')).getAttribute('aria-expanded')).toBe('false');
 });
 
 test('arriving again at a routed thread re-opens its file after the user collapsed it', async () => {
@@ -154,13 +174,16 @@ test('arriving again at a routed thread re-opens its file after the user collaps
   } finally { Element.prototype.scrollIntoView = orig; }
 });
 
-test('a line thread on another hunk of the same file does not open the file', async () => {
+test('a line thread on another hunk of the same file does not force the file open', async () => {
   // Invariant: only a routed thread that touches a hunk shown in this step opens that file; g2 shows h2, the thread sits on h1.
-  at('&step=g2&thread=t-5');
+  at('&step=g2');
   const other = thread({ id: 't-5', anchor: linesAnchor({ file: 'a.ts', hunkId: 'h1', startLine: 3, endLine: 3 }) });
   guideNet({}, withThreads(other));
   mount();
   const b = await bar('a.ts');
+  await userEvent.setup().click(b);
+  expect(b.getAttribute('aria-expanded')).toBe('false');
+  act(() => navigate({ thread: 't-5' }));
   await waitFor(() => expect(b.textContent).toContain('1 hunk'));
   await new Promise((r) => setTimeout(r, 20));
   expect(b.getAttribute('aria-expanded')).toBe('false');

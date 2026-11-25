@@ -505,6 +505,8 @@ test('wide: a grouped review with no view or file opens on Guided, the step in t
   render(<ReviewView id="r-1" />);
   expect(await screen.findByRole('heading', { name: 'Wire it up', level: 2 })).toBeTruthy();
   expect(selectedPaneTab()).toBe('Guided');
+  // The landing screen shows code: the step's first file is already open.
+  expect(await within(screen.getByRole('region', { name: 'src/a.ts' })).findByRole('grid')).toBeTruthy();
   expect(parseRoute(location.search)).toEqual({ review: 'r-1' });
   expect(history.length).toBe(before);
 });

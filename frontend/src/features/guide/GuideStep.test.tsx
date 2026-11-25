@@ -11,9 +11,9 @@ import { GuideStepView } from './GuideStepView';
 const at = (q: string) => history.replaceState(null, '', `?review=r-1&view=guided${q}`);
 const mount = (guide = sampleGuide(), spies = {}) => render(<GuideHarness guide={guide} spies={spies}><GuideStepView /></GuideHarness>);
 const groupBar = () => screen.getByRole('group', { name: 'Group verdict' });
-const pressed = (bar: HTMLElement) => within(bar).getAllByRole('button').filter((b) => b.getAttribute('aria-pressed') === 'true').map((b) => b.textContent);
-/** What a hunk bar shows: `pending` for undecided, else the decided verdict's chip text. */
+/** What a verdict control shows: `pending` for undecided, else the decided verdict's chip text. */
 const hunkState = (bar: HTMLElement) => (within(bar).queryByText('undecided') ? 'pending' : within(bar).getByText(/Accepted|Rejected/).textContent);
+const groupState = hunkState;
 const hunkBars = () => screen.getAllByRole('group', { name: 'Hunk verdict' });
 const loaded = async (...paths: string[]) => { for (const p of paths) { await screen.findByRole('region', { name: p }); await expandFile(p); } await screen.findAllByRole('group', { name: 'Hunk verdict' }); };
 
@@ -80,13 +80,13 @@ test('a group verdict is optimistic on the group only: hunks change when the res
   mount(sampleGuide(), spies);
   await loaded('a.ts', 'b.ts');
   await userEvent.setup().click(screen.getByRole('button', { name: 'Reject group' }));
-  expect(pressed(groupBar())).toEqual(['Reject group']);
+  expect(groupState(groupBar())).toBe('✗ Rejected');
   expect(hunkBars().map(hunkState)).toEqual(['pending', 'pending']);
   await waitFor(() => expect(net.calls.at(-1)?.body).toEqual({ verdict: 'rejected' }));
   const guide = sampleGuide({}, { verdict: 'rejected', hunks: [{ id: 'h1', file: 'a.ts', verdict: 'rejected' }, { id: 'h3', file: 'b.ts', verdict: 'rejected' }] });
   answer({ groupId: 'g1', verdict: 'rejected', hunks: [{ id: 'h1', verdict: 'rejected' }, { id: 'h3', verdict: 'rejected' }], fileSigs: [], guide, review: review({ rev: 2 }) });
   await waitFor(() => expect(hunkBars().map(hunkState)).toEqual(['✗ Rejected', '✗ Rejected']));
-  expect(pressed(groupBar())).toEqual(['Reject group']);
+  expect(groupState(groupBar())).toBe('✗ Rejected');
   expect(spies.applyReview).toHaveBeenCalledWith(review({ rev: 2 }));
   expect(spies.reload).toHaveBeenCalled();
 });
@@ -99,7 +99,7 @@ test('a refused group verdict reverts the control and toasts the refusal', async
   await loaded('a.ts');
   await userEvent.setup().click(screen.getByRole('button', { name: 'Reject group' }));
   await waitFor(() => expect(error).toHaveBeenCalledWith('The review is closed; reopen it to change it'));
-  expect(pressed(groupBar())).toEqual(['Pending']);
+  expect(groupState(groupBar())).toBe('pending');
 });
 
 test('a per-hunk verdict that the server says cleared the group flips it to Pending with a note, from the response alone', async () => {
@@ -112,10 +112,10 @@ test('a per-hunk verdict that the server says cleared the group flips it to Pend
   });
   mount(sampleGuide({}, { verdict: 'rejected', hunks: rejected }));
   await loaded('a.ts', 'b.ts');
-  expect(pressed(groupBar())).toEqual(['Reject group']);
+  expect(groupState(groupBar())).toBe('✗ Rejected');
   expect(screen.queryByText(/Set back to pending/)).toBeNull();
   await userEvent.setup().click(within(hunkBars()[0]).getByRole('button', { name: 'Clear' }));
-  await waitFor(() => expect(pressed(groupBar())).toEqual(['Pending']));
+  await waitFor(() => expect(groupState(groupBar())).toBe('pending'));
   expect(screen.getByText('Set back to pending: you changed the verdict of one of its hunks.')).toBeTruthy();
 });
 
@@ -124,8 +124,58 @@ test('an accepted group that still holds a pending hunk says so, and Accept grou
   const net = guideNet({ h1: 'accepted' }, { 'PUT api/reviews/r-1/groups/g1/verdict': (): never => { throw new Error('stop'); } });
   mount(sampleGuide({}, { verdict: 'accepted', hunks: [{ id: 'h1', file: 'a.ts', verdict: 'accepted' }, { id: 'h3', file: 'b.ts', verdict: 'pending' }] }));
   expect(screen.getByText('1 hunk still pending — Accept group again to accept them.')).toBeTruthy();
-  await userEvent.setup().click(screen.getByRole('button', { name: 'Accept group' }));
+  await userEvent.setup().click(screen.getByRole('button', { name: 'Accept group again' }));
   await waitFor(() => expect(net.calls.some((c) => c.method === 'PUT' && c.body && (c.body as { verdict: string }).verdict === 'accepted')).toBe(true));
+});
+
+test('an undecided group offers Accept group | Reject group with neither pressed and no Pending', async () => {
+  // Invariant: an undecided group is not drawn as "Pending chosen": two actions, nothing pressed, "undecided" says why.
+  at('&step=g1');
+  guideNet();
+  mount();
+  const bar = within(groupBar());
+  expect(bar.getByText('undecided')).toBeTruthy();
+  expect(bar.getAllByRole('button').map((b) => [b.textContent, b.getAttribute('aria-pressed')])).toEqual([['Accept group', 'false'], ['Reject group', 'false']]);
+  expect(bar.queryByRole('button', { name: 'Pending' })).toBeNull();
+});
+
+test('a decided group shows its chip and Clear; Clear sends pending', async () => {
+  // Invariant: reopening a decided group is Clear, which writes the pending verdict.
+  at('&step=g1');
+  const net = guideNet({}, { 'PUT api/reviews/r-1/groups/g1/verdict': (): never => { throw new Error('stop'); } });
+  mount(sampleGuide({}, { verdict: 'accepted' }));
+  expect(groupState(groupBar())).toBe('✓ Accepted');
+  expect(within(groupBar()).queryByRole('button', { name: 'Accept group' })).toBeNull();
+  await userEvent.setup().click(within(groupBar()).getByRole('button', { name: 'Clear' }));
+  await waitFor(() => expect(net.calls.find((c) => c.method === 'PUT')?.body).toEqual({ verdict: 'pending' }));
+});
+
+test('focus moves to Next step only after the server confirms, and the step does not advance', async () => {
+  // Invariant: a confirmed Accept group hands focus to Next step (never auto-advances); an unconfirmed one does not.
+  at('&step=g1');
+  let answer!: (v: unknown) => void;
+  guideNet({}, { 'PUT api/reviews/r-1/groups/g1/verdict': () => new Promise((r) => { answer = r; }) });
+  mount();
+  const next = screen.getByRole('button', { name: 'Next step' });
+  await userEvent.setup().click(screen.getByRole('button', { name: 'Accept group' }));
+  await waitFor(() => expect(answer).toBeTypeOf('function'));
+  expect(document.activeElement).not.toBe(next);
+  const guide = sampleGuide({}, { verdict: 'accepted', hunks: [{ id: 'h1', file: 'a.ts', verdict: 'accepted' }, { id: 'h3', file: 'b.ts', verdict: 'accepted' }] });
+  answer({ groupId: 'g1', verdict: 'accepted', hunks: [{ id: 'h1', verdict: 'accepted' }, { id: 'h3', verdict: 'accepted' }], fileSigs: [], guide, review: review({ rev: 2 }) });
+  await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Next step' })));
+  expect(parseRoute(location.search).step).toBe('g1');
+});
+
+test('a refused verdict leaves focus on the verdict control', async () => {
+  // Invariant: a refusal never moves focus to Next step; it stays on the button that was clicked.
+  const error = vi.spyOn(toast, 'error').mockImplementation(() => '');
+  at('&step=g1');
+  guideNet({}, { 'PUT api/reviews/r-1/groups/g1/verdict': refusal('REVIEW_CLOSED') });
+  mount();
+  await userEvent.setup().click(screen.getByRole('button', { name: 'Reject group' }));
+  await waitFor(() => expect(error).toHaveBeenCalled());
+  await waitFor(() => expect(document.activeElement).toBe(within(groupBar()).getByRole('button', { name: 'Reject group' })));
+  expect(parseRoute(location.search).step).toBe('g1');
 });
 
 test('Comment on group posts a group anchor', async () => {

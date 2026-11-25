@@ -1009,14 +1009,13 @@ try {
       await page.evaluate(() => document.querySelector('main').scrollTo(0, 0));
       await page.setViewportSize(size);
     };
-    // A step's file bars start collapsed; this is the bar (a button inside the pinned heading) of `path`.
+    // A step's first file bar starts open and the rest collapsed; this is the bar (a button inside the pinned heading) of `path`.
     const fileBar = (path) => page.getByRole('region', { name: path }).getByRole('button', { name: new RegExp(`^${path.replace('.', '\\.')}`) });
     const expandFile = async (path) => {
       const bar = fileBar(path);
       if ((await bar.getAttribute('aria-expanded')) !== 'true') await bar.click();
       await page.getByRole('region', { name: path }).getByRole('grid').first().waitFor();
     };
-    const pressed = (bar) => bar.locator('[aria-pressed="true"]').allTextContents();
 
     // 1. The Guided tab lists the steps (three groups and Other changes); nothing is offered to ask for yet.
     await page.goto(gq({}));
@@ -1047,19 +1046,19 @@ try {
     const g1 = page.getByRole('region', { name: 'g1.js' });
     const g2 = page.getByRole('region', { name: 'g2.js' });
     await fileBar('g1.js').waitFor();
-    assert.equal(await fileBar('g1.js').getAttribute('aria-expanded'), 'false', 'file bars start collapsed');
-    assert.equal(await fileBar('g2.js').getAttribute('aria-expanded'), 'false', 'file bars start collapsed');
-    assert.equal(await page.getByRole('grid').count(), 0, 'no hunk is on screen while collapsed');
-    assert.match(await fileBar('g1.js').textContent(), /\d+ hunks? · \d+ pending/, 'the collapsed bar says what is inside');
-    await shot('21-3-step-collapsed');
-    await expandFile('g1.js');
+    assert.equal(await fileBar('g1.js').getAttribute('aria-expanded'), 'true', 'the first file starts open');
+    assert.equal(await fileBar('g2.js').getAttribute('aria-expanded'), 'false', 'the other files start collapsed');
+    await g1.getByRole('grid').first().waitFor();
+    assert.match(await fileBar('g2.js').textContent(), /\d+ hunks? · \d+ pending/, 'a collapsed bar says what is inside');
+    await shot('21-3-step-first-open');
     await expandFile('g2.js');
     await shot('21-3-step-one');
     await scrollPastHeading('g1.js', '21-3-scrolled-heading');
     await page.getByRole('button', { name: 'Accept group' }).click();
     await page.getByRole('button', { name: ACCEPTED_SUMMARY }).first().waitFor();
     assert.equal(await page.getByRole('button', { name: ACCEPTED_SUMMARY }).count(), 2, 'both hunks are accepted and collapsed');
-    assert.deepEqual(await pressed(groupBar), ['Accept group']);
+    await groupBar.getByText('✓ Accepted').waitFor();
+    await page.waitForFunction(() => document.activeElement === document.querySelector('button[aria-label="Next step"]'));
     await step('Rename').getByText('accepted').waitFor();
     await shot('21-3-accepted');
 
@@ -1074,7 +1073,7 @@ try {
     await shot('21-4-dark-step');
     await page.emulateMedia({ colorScheme: 'light' });
     await page.getByRole('button', { name: 'Reject group' }).click();
-    await page.waitForFunction(() => [...document.querySelectorAll('[aria-label="Group verdict"] [aria-pressed="true"]')].map((b) => b.textContent).join() === 'Reject group');
+    await groupBar.getByText('✗ Rejected').waitFor();
     await shot('21-4-rejected');
 
     // 5. Comment on group: the thread appears in the step.
@@ -1088,9 +1087,8 @@ try {
     await page.getByRole('button', { name: 'Next step' }).click();
     await page.getByRole('heading', { name: 'Other changes', level: 2 }).waitFor();
     assert.equal(await page.getByRole('group', { name: 'Group verdict' }).count(), 0, 'Other changes has no group verdict');
-    const otherPath = await page.getByRole('region').filter({ has: page.getByRole('button', { expanded: false }) }).first().getAttribute('aria-label');
-    const otherFile = page.getByRole('region', { name: otherPath });
-    await otherFile.getByRole('button', { expanded: false }).click();
+    const otherFile = page.getByRole('region').filter({ has: page.getByRole('button', { expanded: true }) }).first();
+    await otherFile.getByRole('grid').first().waitFor();
     const pendingBefore = await otherFile.getByRole('button').first().textContent();
     assert.match(pendingBefore, /pending/, 'the bar counts what is still to decide');
     await page.getByRole('group', { name: 'Hunk verdict' }).first().getByRole('button', { name: 'Accept', exact: true }).click();
@@ -1108,7 +1106,7 @@ try {
     await step('Rename').click();
     await page.getByRole('button', { name: ACCEPTED_SUMMARY }).first().click();
     await page.getByRole('group', { name: 'Hunk verdict' }).first().getByRole('button', { name: 'Clear', exact: true }).click();
-    await page.waitForFunction(() => [...document.querySelectorAll('[aria-label="Group verdict"] [aria-pressed="true"]')].map((b) => b.textContent).join() === 'Pending');
+    await groupBar.getByText('undecided').waitFor();
     await page.getByText('Set back to pending: you changed the verdict of one of its hunks.').waitFor();
     await shot('21-8-set-back-to-pending');
 
@@ -1129,7 +1127,7 @@ try {
     // An explicit view=guided (a saved tab choice) survives Open in file; then back to where this visit was.
     await page.goto(gq({ view: 'guided', step: 'g1' }));
     await page.getByRole('heading', { name: 'Rename the starting values', level: 2 }).waitFor();
-    await fileBar('g1.js').click();
+    await expandFile('g1.js');
     await page.getByRole('link', { name: /^Open g1\.js at/ }).first().click();
     await page.waitForURL(/file=g1\.js/);
     assert.equal(params(page).view, 'guided', 'an explicit view=guided survives Open in file');
@@ -1185,10 +1183,14 @@ try {
     await shot('21-14-phone-steps');
     await step('Rename').click();
     await fileBar('g2.js').waitFor();
-    await shot('21-14-phone-step-collapsed');
-    await expandFile('g1.js');
+    assert.equal(await fileBar('g1.js').getAttribute('aria-expanded'), 'true', 'the first file starts open on a phone too');
+    await shot('21-14-phone-step-first-open');
     await expandFile('g2.js');
     await scrollPastHeading('g1.js', '21-14-phone-scrolled-heading');
+    await page.getByRole('button', { name: 'Accept group' }).click();
+    await groupBar.getByText('✓ Accepted').waitFor();
+    await page.evaluate(() => document.querySelector('main').scrollTo(0, 0));
+    await shot('21-14-phone-accepted-header');
     await page.getByRole('button', { name: 'Back to steps' }).click();
     await step('Tidy').click();
     await page.getByRole('heading', { name: 'Tidy the tail <b>of g1</b>', level: 2 }).waitFor();

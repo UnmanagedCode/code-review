@@ -22,7 +22,7 @@ test('the group flips in the guide before the PUT resolves, and no hunk is patch
   let answer!: (v: unknown) => void;
   stubFetch({ 'PUT api/reviews/r-1/groups/g1/verdict': () => new Promise((r) => { answer = r; }) });
   const { value, result } = setup();
-  let done!: Promise<void>;
+  let done!: Promise<boolean>;
   act(() => { done = result.current.setGroupVerdict('g1', 'rejected', 'pending'); });
   expect(value.patchGuide).toHaveBeenCalledTimes(1);
   expect(applied(value).groups.map((g) => [g.id, g.verdict])).toEqual([['g1', 'rejected'], ['g2', 'pending']]);

@@ -2,19 +2,22 @@ import { ArrowLeftIcon, ChevronLeftIcon, ChevronRightIcon, MessageSquarePlusIcon
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { byFile, guideSteps, stepAt, type Step } from '@/lib/guide';
-import type { GuideGroup } from '@/lib/types';
+import type { GuideGroup, Verdict } from '@/lib/types';
 import { LEAVE_FILE, navigate, useRoute } from '@/lib/route';
 import { useClearedGroups } from '@/state/clearedGroups';
 import { useGroupActions } from '@/state/groups';
 import { useReviewCtx } from '@/state/reviewContext';
 import { Empty } from '@/features/common/States';
-import { VerdictToggle } from '@/features/diff/HunkBar';
+import { VerdictChoice } from '@/features/diff/HunkBar';
 import { SettledThread } from '@/features/diff/SettledThread';
 import { useCollapse } from '@/features/diff/useCollapse';
 import { Composer } from '@/features/threads/Composer';
 import { Markdown } from '@/features/threads/Markdown';
 import { GuideFileSection } from './GuideFileSection';
 import { RetiredGroupView } from './RetiredGroupView';
+
+/** Where focus goes once a group verdict resolves: the header's Next step, the verdict group, or the button that was clicked. */
+type FocusIntent = { to: 'next' } | { to: 'group' } | { to: 'button'; label: string };
 
 const NO_CITATIONS: never[] = [];
 
@@ -36,6 +39,34 @@ function StepBody({ step, steps, onBack }: { step: Step; steps: Step[]; onBack?:
   const group = step.kind === 'group' ? step.group : null;
   const note = useNote(group);
   const i = steps.findIndex((s) => s.key === step.key);
+  const nextDisabled = i < 0 || i >= steps.length - 1;
+  const headerRef = useRef<HTMLDivElement>(null);
+  const nextRef = useRef<HTMLButtonElement>(null);
+  const verdictRef = useRef<HTMLDivElement>(null);
+  const stepKeyRef = useRef(step.key);
+  stepKeyRef.current = step.key;
+  const [intent, setIntent] = useState<FocusIntent | null>(null);
+  // Focus waits for the server: the optimistic patch and a revert both re-render (unmount) the clicked button, so it is applied
+  // after commit, and only while the step is the same and the user hasn't put focus somewhere of their own.
+  const decide = async (verdict: Verdict, clicked: string, advance: boolean) => {
+    if (!group) return;
+    const key = step.key;
+    const ok = await actions.setGroupVerdict(group.id, verdict, group.verdict);
+    if (key !== stepKeyRef.current) return;
+    setIntent(!ok ? { to: 'button', label: clicked } : advance ? { to: 'next' } : { to: 'group' });
+  };
+  useEffect(() => {
+    if (!intent) return;
+    setIntent(null);
+    const active = document.activeElement;
+    if (active && active !== document.body && !headerRef.current?.contains(active)) return;
+    const vg = verdictRef.current;
+    if (intent.to === 'next' && nextRef.current && !nextRef.current.disabled) nextRef.current.focus();
+    else if (intent.to === 'button') {
+      const btn = [...(vg?.querySelectorAll('button') ?? [])].find((b) => b.textContent === intent.label);
+      (btn ?? vg)?.focus();
+    } else vg?.focus();
+  }, [intent]);
   const go = (s: Step | undefined) => s && navigate({ ...LEAVE_FILE, step: s.key });
   const closed = ctx.review.status === 'closed';
   const threads = useMemo(() => (group ? (ctx.guide?.threads ?? []).filter((t) => t.anchor.kind === 'group' && t.anchor.groupId === group.id) : []), [ctx.guide, group]);
@@ -45,7 +76,6 @@ function StepBody({ step, steps, onBack }: { step: Step; steps: Step[]; onBack?:
   useEffect(() => { setComposing(false); }, [step.key]);
   // The file headings pin just below this header, whose height varies as it wraps: publish it as a CSS variable.
   const rootRef = useRef<HTMLDivElement>(null);
-  const headerRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const root = rootRef.current;
     const header = headerRef.current;
@@ -65,11 +95,12 @@ function StepBody({ step, steps, onBack }: { step: Step; steps: Step[]; onBack?:
         <span className="text-xs text-muted-foreground">Step {step.n} of {steps.length}</span>
         <h2 className="min-w-0 flex-1 basis-40 break-words text-sm font-semibold">{group ? group.title : 'Other changes'}</h2>
         <Button variant="ghost" size="icon-sm" aria-label="Previous step" disabled={i <= 0} onClick={() => go(steps[i - 1])}><ChevronLeftIcon /></Button>
-        <Button variant="ghost" size="icon-sm" aria-label="Next step" disabled={i < 0 || i >= steps.length - 1} onClick={() => go(steps[i + 1])}><ChevronRightIcon /></Button>
+        <Button ref={nextRef} variant="ghost" size="icon-sm" aria-label="Next step" disabled={nextDisabled} onClick={() => go(steps[i + 1])}><ChevronRightIcon /></Button>
         {group && (
-          <VerdictToggle
-            label="Group verdict" value={group.verdict} labels={['Accept group', 'Reject group', 'Pending']} disabled={closed} repeatable
-            onChange={(v) => actions.setGroupVerdict(group.id, v, group.verdict)}
+          <VerdictChoice
+            ref={verdictRef} label="Group verdict" labels={['Accept group', 'Reject group']} value={group.verdict} disabled={closed}
+            again={group.verdict === 'accepted' && group.hunks.some((h) => h.verdict === 'pending') ? { label: 'Accept group again', onClick: () => decide('accepted', 'Accept group again', false) } : undefined}
+            onChange={(v) => decide(v, v === 'accepted' ? 'Accept group' : 'Reject group', v !== 'pending')}
           />
         )}
       </div>
@@ -87,7 +118,7 @@ function StepBody({ step, steps, onBack }: { step: Step; steps: Step[]; onBack?:
             : <div><Button size="sm" variant="outline" onClick={() => setComposing(true)}><MessageSquarePlusIcon />Comment on group</Button></div>)}
         </section>
       )}
-      {byFile(hunks).map((b) => <GuideFileSection key={b.file ?? '\0unknown'} path={b.file} hunks={b.hunks} stepKey={step.key} />)}
+      {byFile(hunks).map((b, n) => <GuideFileSection key={b.file ?? '\0unknown'} path={b.file} hunks={b.hunks} stepKey={step.key} first={n === 0} />)}
     </div>
   );
 }

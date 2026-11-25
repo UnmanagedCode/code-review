@@ -13,7 +13,8 @@ import { useReviewCtx } from './reviewContext';
 export function useGroupActions() {
   const { id, diffs, patchGuide, reload, applyReview } = useReviewCtx();
   return {
-    async setGroupVerdict(groupId: string, verdict: Verdict, previous: Verdict) {
+    /** Resolves `true` once the server confirmed the verdict, `false` after a refusal (reverted and toasted). */
+    async setGroupVerdict(groupId: string, verdict: Verdict, previous: Verdict): Promise<boolean> {
       patchGuide((g) => withGroupVerdict(g, groupId, verdict));
       forgetCleared(id, groupId);
       try {
@@ -29,11 +30,13 @@ export function useGroupActions() {
         byFile.forEach((verdicts, file) => diffs.patchVerdicts(file, verdicts));
         res.fileSigs.forEach((fs) => diffs.patchSig(fs));
         reload();
+        return true;
       } catch (e) {
         patchGuide((g) => withGroupVerdict(g, groupId, previous));
         toast.error(errorText(e));
         const code = (e as { code?: string }).code;
         if (code && (STALE_DIFF.has(code) || code === 'GROUP_UNKNOWN' || code === 'NO_GROUPS')) reload();
+        return false;
       }
     },
   };

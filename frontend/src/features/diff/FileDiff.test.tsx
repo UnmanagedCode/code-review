@@ -21,7 +21,7 @@ test('code text and a path containing markup render as text nodes, not elements'
   const { container } = renderDiff(<FileDiff />, diffFile({ path, hunks: [h] }));
   expect(container.querySelector('script, b')).toBeNull();
   expect(screen.getByText('<script>alert(1)</script>')).toBeTruthy();
-  expect(screen.getByText(path)).toBeTruthy();
+  expect(screen.getByTitle(path).textContent).toBe(path);
 });
 
 test.each([[{ binary: true }, 'Binary file changed'], [{ tooLarge: true }, 'Too large to diff']])('%o shows a placeholder with only the verdict bar', (flags, text) => {
@@ -70,12 +70,37 @@ test('a file switch keeps the previous file visible, busy and inert; a cold load
   withRoute('src/b.ts');
   const file = diffFile({ path: 'src/a.ts' });
   const { container, unmount } = renderInReview(<FileDiff />, { fileDiff: { file, rows: [], total: null, loading: true, switching: true } as unknown as FileDiffState });
-  expect(screen.getByText('src/a.ts')).toBeTruthy();
+  expect(screen.getByTitle('src/a.ts').textContent).toBe('src/a.ts');
   const busy = container.querySelector('[aria-busy="true"]');
   expect(busy?.hasAttribute('inert')).toBe(true);
   unmount();
   renderInReview(<FileDiff />, { fileDiff: { file: undefined, rows: [], total: null, loading: true, switching: false } as unknown as FileDiffState });
   expect(screen.getByLabelText('Loading diff')).toBeTruthy();
+});
+
+// Invariant: the header's path reads as the full path (title, copied text, accessible text) while the base name and directory sit in separate elements, so CSS can elide the directory first.
+test('the header names the file by its full path, base name and directory apart', () => {
+  withRoute('deep/dir/name.ts');
+  const { container, unmount } = renderDiff(<FileDiff />, diffFile({ path: 'deep/dir/name.ts' }));
+  expect(screen.getByTitle('deep/dir/name.ts').textContent).toBe('deep/dir/name.ts');
+  expect(container.querySelector('[data-path-base]')?.textContent).toBe('name.ts');
+  expect(container.querySelector('[data-path-dir]')?.textContent).toBe('deep/dir/');
+  unmount();
+  withRoute('a.ts');
+  const root = renderDiff(<FileDiff />, diffFile({ path: 'a.ts' }));
+  expect(root.container.querySelector('[data-path-dir]')).toBeNull();
+  expect(root.container.querySelector('[data-path-base]')?.textContent).toBe('a.ts');
+});
+
+// Invariant: the header shows the status as the tree's one letter, with the full word only for assistive tech.
+test('the file status is the tree\'s letter, named for assistive tech', () => {
+  withRoute('src/a.ts');
+  const { container } = renderDiff(<FileDiff />, diffFile({ path: 'src/a.ts', status: 'modified' }));
+  const word = screen.getByText('modified');
+  expect(word.className).toContain('sr-only');
+  expect(word.previousElementSibling?.textContent).toBe('M');
+  expect(word.previousElementSibling?.getAttribute('aria-hidden')).toBe('true');
+  expect(container.querySelector('[class*="badge"]')).toBeNull();
 });
 
 // ---- file threads ----

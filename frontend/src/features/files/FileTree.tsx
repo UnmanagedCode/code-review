@@ -11,8 +11,7 @@ import { useReviewCtx } from '@/state/reviewContext';
 import { useReviewActions } from '@/state/threads';
 import { FileTreeToolbar } from './FileTreeToolbar';
 import { HunkPips } from './HunkPips';
-
-const STATUS: Record<FileState['status'], string> = { added: 'A', deleted: 'D', modified: 'M', renamed: 'R' };
+import { StatusLetter } from './StatusLetter';
 
 interface RowEnv { selected: string | undefined; needsYou: ReadonlyMap<string, number>; checkable: boolean; onViewed: (path: string, viewed: boolean) => void }
 
@@ -45,7 +44,7 @@ function Node({ node, depth, env }: { node: TreeNode; depth: number; env: RowEnv
         className="flex min-w-0 flex-1 items-center gap-2 py-1 text-sm"
       >
         <FileIcon className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
-        <span className="font-mono text-xs text-muted-foreground" aria-label={f.status}>{STATUS[f.status]}</span>
+        <StatusLetter status={f.status} />
         <span className={cn('min-w-0 flex-1 truncate', f.viewed && 'text-muted-foreground')}>{node.name}</span>
         <HunkPips file={f} />
         {open > 0 && (

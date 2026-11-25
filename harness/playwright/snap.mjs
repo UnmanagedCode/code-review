@@ -187,7 +187,7 @@ try {
         // Guided review: the pane's step list beside step 1 (a phone shows the step on its own, and its list on a screen of its own).
         const guidedStep = page.getByRole('heading', { name: 'Rename the starting values', level: 2 });
         await open(q({ worktree: 'guided', review: guided, view: 'guided', step: 'g1' }), guidedStep);
-        // A step's file bars start collapsed; expand both so the screenshot shows the hunks (golden's fileBar / expandFile).
+        // A step's first file bar starts open and the rest collapsed; expand both so the screenshot shows the hunks (golden's fileBar / expandFile).
         const fileBar = (path) => page.getByRole('region', { name: path }).getByRole('button', { name: new RegExp(`^${path.replace('.', '\\.')}`) });
         for (const path of ['g1.js', 'g2.js']) {
           const bar = fileBar(path);

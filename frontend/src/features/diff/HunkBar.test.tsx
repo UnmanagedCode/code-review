@@ -8,7 +8,7 @@ import { ReviewProvider } from '@/test/reviewProvider';
 import { hunk, refusal, review } from '@/test/fixtures';
 import { ctxValue, renderInReview } from '@/test/renderCtx';
 import { stubFetch } from '@/test/stubFetch';
-import { HunkBar, VerdictToggle } from './HunkBar';
+import { HunkBar } from './HunkBar';
 
 const ok = (verdict: string) => ({ hunkId: 'h1', verdict, clearedGroups: [], review: review({ rev: 2 }), fileSig: { path: 'src/a.ts', sig: 's-2' } });
 
@@ -125,20 +125,6 @@ test.each([['accepted', '✓ Accepted', 'success', 'destructive'], ['rejected', 
   expect(className).toMatch(new RegExp(`\\bbg-${hue}/\\d+\\b`));
   expect(className).toMatch(/\btext-foreground\b/);
   expect(className).not.toMatch(new RegExp(`-${other}\\b`));
-});
-
-// Invariant: the group verdict control keeps its tint keyed on aria-pressed: own hue in the background only, neutral text, both hover shades (the dark one is required: ghost's dark hover out-specifies the plain background).
-const HUES = { Accept: 'success', Reject: 'destructive', Pending: 'info' } as const;
-test.each(Object.entries(HUES))('the group %s segment carries its own aria-pressed hue (%s) in the background, neutral text, both hover shades, and no other tint', (name, hue) => {
-  render(<VerdictToggle label="Group verdict" value="pending" labels={['Accept', 'Reject', 'Pending']} onChange={() => {}} />);
-  const { className } = screen.getByRole('button', { name });
-  expect(className).toMatch(new RegExp(`\\baria-pressed:bg-${hue}/\\d+\\b`));
-  expect(className).toMatch(new RegExp(`(^|\\s)aria-pressed:hover:bg-${hue}/\\d+\\b`));
-  expect(className).toMatch(new RegExp(`(^|\\s)dark:aria-pressed:hover:bg-${hue}/\\d+\\b`));
-  expect(className).toMatch(/(^|\s)aria-pressed:text-foreground\b/);
-  expect(className).not.toMatch(new RegExp(`\\baria-pressed:(hover:)?text-(${Object.values(HUES).join('|')}|primary)\\b`));
-  for (const other of Object.values(HUES).filter((h) => h !== hue)) expect(className).not.toMatch(new RegExp(`-${other}\\b`));
-  expect(className).not.toMatch(/\bbg-primary\b/);
 });
 
 test('the past-round view renders no bar at all', () => {

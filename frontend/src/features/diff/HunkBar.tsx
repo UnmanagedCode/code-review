@@ -1,5 +1,5 @@
 import { MessageSquarePlusIcon } from 'lucide-react';
-import { useState } from 'react';
+import { useState, type Ref } from 'react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import type { Hunk, Verdict } from '@/lib/types';
@@ -8,36 +8,10 @@ import { useReviewActions } from '@/state/threads';
 import { SEGMENT_SHAPE } from '@/features/common/segment';
 import { Composer } from '@/features/threads/Composer';
 
-// The active segment carries its verdict's hue in the background, with neutral text for contrast; unpressed segments stay neutral. Classes are written out so Tailwind's scanner sees them.
-const VERDICTS: { value: Verdict; label: string; tint: string }[] = [
-  { value: 'accepted', label: 'Accept', tint: 'aria-pressed:bg-success/25 aria-pressed:text-foreground aria-pressed:hover:bg-success/30 dark:aria-pressed:hover:bg-success/30' },
-  { value: 'rejected', label: 'Reject', tint: 'aria-pressed:bg-destructive/25 aria-pressed:text-foreground aria-pressed:hover:bg-destructive/30 dark:aria-pressed:hover:bg-destructive/30' },
-  { value: 'pending', label: 'Pending', tint: 'aria-pressed:bg-info/25 aria-pressed:text-foreground aria-pressed:hover:bg-info/30 dark:aria-pressed:hover:bg-info/30' },
-];
+const ACTIONS = ['accepted', 'rejected'] as const;
 
-/** The segmented Accept / Reject / Pending control; `labels` name the three segments in that order. */
-/** `repeatable`: choosing the pressed segment again still fires `onChange` (a group verdict re-runs its hunk writes). */
-export function VerdictToggle({ label, value, labels, disabled, repeatable, onChange }: {
-  label: string; value: Verdict; labels: [string, string, string]; disabled?: boolean; repeatable?: boolean; onChange: (v: Verdict) => void;
-}) {
-  return (
-    <div role="group" aria-label={label} className="inline-flex rounded-md border">
-      {VERDICTS.map((v, i) => (
-        <Button
-          key={v.value}
-          size="sm"
-          variant="ghost"
-          aria-pressed={value === v.value}
-          disabled={disabled}
-          className={cn(SEGMENT_SHAPE, v.tint)}
-          onClick={() => (repeatable || value !== v.value) && onChange(v.value)}
-        >
-          {labels[i]}
-        </Button>
-      ))}
-    </div>
-  );
-}
+// The link variant's primary colour misses AA on the page background, so these actions use the foreground colour.
+const LINK_ACTION = 'h-auto px-0 text-foreground underline';
 
 const CHIP: Record<'accepted' | 'rejected', { text: string; tint: string }> = {
   accepted: { text: '✓ Accepted', tint: 'bg-success/25' },
@@ -45,17 +19,22 @@ const CHIP: Record<'accepted' | 'rejected', { text: string; tint: string }> = {
 };
 
 /**
- * A hunk's verdict: an undecided hunk offers Accept | Reject with neither drawn as chosen; a decided one shows its verdict as
- * a chip with a Clear link. Both write through `onChange`, so the keys `a`, `x` and `0` and this bar stay one path.
+ * An Accept | Reject verdict: an undecided subject offers the two with neither drawn as chosen; a decided one shows its verdict
+ * as a chip with a Clear link (and `again`, when a decided verdict can still be re-applied). Every change goes through
+ * `onChange`, so keys, buttons and the server write stay one path. `labels` name Accept and Reject; `ref` reaches the group
+ * element, which takes focus without being a tab stop.
  */
-export function HunkVerdict({ value, disabled, onChange }: { value: Verdict; disabled?: boolean; onChange: (v: Verdict) => void }) {
+export function VerdictChoice({ label, labels, value, disabled, onChange, again, ref }: {
+  label: string; labels: [string, string]; value: Verdict; disabled?: boolean; onChange: (v: Verdict) => void;
+  again?: { label: string; onClick: () => void }; ref?: Ref<HTMLDivElement>;
+}) {
   if (value === 'pending') {
     return (
-      <div role="group" aria-label="Hunk verdict" className="inline-flex items-center gap-2">
+      <div ref={ref} tabIndex={-1} role="group" aria-label={label} className="inline-flex items-center gap-2 outline-none">
         <span className="text-xs text-muted-foreground">undecided</span>
         <span className="inline-flex rounded-md border">
-          {VERDICTS.slice(0, 2).map((v) => (
-            <Button key={v.value} size="sm" variant="ghost" aria-pressed={false} disabled={disabled} className={SEGMENT_SHAPE} onClick={() => onChange(v.value)}>{v.label}</Button>
+          {ACTIONS.map((a, i) => (
+            <Button key={a} size="sm" variant="ghost" aria-pressed={false} disabled={disabled} className={SEGMENT_SHAPE} onClick={() => onChange(a)}>{labels[i]}</Button>
           ))}
         </span>
       </div>
@@ -63,9 +42,10 @@ export function HunkVerdict({ value, disabled, onChange }: { value: Verdict; dis
   }
   const chip = CHIP[value];
   return (
-    <div role="group" aria-label="Hunk verdict" className="inline-flex items-center gap-2">
+    <div ref={ref} tabIndex={-1} role="group" aria-label={label} className="inline-flex flex-wrap items-center gap-2 outline-none">
       <span className={cn('rounded-md px-2 py-1 text-xs font-medium text-foreground', chip.tint)}>{chip.text}</span>
-      <Button size="sm" variant="link" disabled={disabled} className="h-auto px-0" onClick={() => onChange('pending')}>Clear</Button>
+      {again && <Button size="sm" variant="link" disabled={disabled} className={LINK_ACTION} onClick={again.onClick}>{again.label}</Button>}
+      <Button size="sm" variant="link" disabled={disabled} className={LINK_ACTION} onClick={() => onChange('pending')}>Clear</Button>
     </div>
   );
 }
@@ -81,7 +61,7 @@ export function HunkBar({ hunk, path, commentable }: { hunk: Hunk; path: string;
   return (
     <div className="flex flex-wrap items-center gap-2 py-1">
       {hasVerdicts && (
-        <HunkVerdict value={hunk.verdict ?? 'pending'} disabled={closed} onChange={(v) => actions.setVerdict(path, hunk.id, v, hunk.verdict)} />
+        <VerdictChoice label="Hunk verdict" labels={['Accept', 'Reject']} value={hunk.verdict ?? 'pending'} disabled={closed} onChange={(v) => actions.setVerdict(path, hunk.id, v, hunk.verdict)} />
       )}
       {commentable && !readOnly && (
         <Button size="sm" variant="ghost" onClick={() => setComposing(true)}><MessageSquarePlusIcon />Comment on hunk</Button>

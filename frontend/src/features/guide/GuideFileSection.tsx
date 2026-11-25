@@ -6,7 +6,7 @@ import { useRoute } from '@/lib/route';
 import { selectionTouches } from '@/lib/selection';
 import type { GuideHunk as GuideHunkRef, TextHunk } from '@/lib/types';
 import { useDiffEntry } from '@/state/diffResource';
-import { setFileOpen, useOpenFiles } from '@/state/guideOpenFiles';
+import { setFileOpen, useFileOpen } from '@/state/guideOpenFiles';
 import { useReviewCtx } from '@/state/reviewContext';
 import { ErrorState, Loading } from '@/features/common/States';
 import { useCollapse } from '@/features/diff/useCollapse';
@@ -16,7 +16,7 @@ import { GuideHunk } from './GuideHunk';
  * One file's share of a step: the step's hunks of that file, read from the file's cached diff (the same entry the file view
  * uses). Accepted hunks and resolved line threads collapse like they do there, per section, reset on each step.
  */
-function LoadedSection({ path, hunks: refs, stepKey }: { path: string; hunks: GuideHunkRef[]; stepKey: string }) {
+function LoadedSection({ path, hunks: refs, stepKey, first }: { path: string; hunks: GuideHunkRef[]; stepKey: string; first: boolean }) {
   const ctx = useReviewCtx();
   const route = useRoute();
   const hunkIds = useMemo(() => refs.map((h) => h.id), [refs]);
@@ -35,7 +35,7 @@ function LoadedSection({ path, hunks: refs, stepKey }: { path: string; hunks: Gu
     return [...hunks.filter((h) => h.verdict === 'accepted').map((h) => `h:${h.id}`), ...here.filter((t) => t.status === 'resolved').map((t) => `t:${t.id}`)];
   }, [file, shown, here]);
   const openThreads = file ? here.filter((t) => t.status === 'open').length : 0;
-  const stored = useOpenFiles(ctx.id, stepKey).has(path);
+  const stored = useFileOpen(ctx.id, stepKey, path) ?? first;
   const [released, setReleased] = useState<string | null>(null);
   // A release belongs to one visit to a routed thread: any other route clears it, so arriving again force-opens the file again.
   if (released !== null && released !== route.thread) setReleased(null);
@@ -73,10 +73,11 @@ function LoadedSection({ path, hunks: refs, stepKey }: { path: string; hunks: Gu
 }
 
 /** `path` null: the snapshot is unreadable, so the hunks' files are unknown. */
-export function GuideFileSection({ path, hunks, stepKey }: { path: string | null; hunks: GuideHunkRef[]; stepKey: string }) {
+/** `first`: the step's first file, open until you choose otherwise. */
+export function GuideFileSection({ path, hunks, stepKey, first = false }: { path: string | null; hunks: GuideHunkRef[]; stepKey: string; first?: boolean }) {
   const { review } = useReviewCtx();
   if (path === null) {
     return <section aria-label="Unknown file" className="border-t"><ErrorState error={{ code: review.snapshotError ?? 'SNAPSHOT_GONE', reason: '' }} /></section>;
   }
-  return <LoadedSection path={path} hunks={hunks} stepKey={stepKey} />;
+  return <LoadedSection path={path} hunks={hunks} stepKey={stepKey} first={first} />;
 }

@@ -57,15 +57,20 @@ function CommentHint() {
   return <p data-comment-hint="" className="truncate px-3 py-1 text-xs text-muted-foreground">Click or drag line numbers to comment</p>;
 }
 
-/** The path with the base name kept whole: the directory gives way first, from the left (`…/files/`), then the name from the right. */
+/**
+ * The path in one text box, so a selection copies it as one string (separate flex children would copy with a newline between them).
+ * It overflows from the left (`dir="rtl"` + `truncate`), so the directory gives way first and the base name last; the inner `<bdi dir="ltr">` keeps the trailing `/` in place.
+ */
 function FilePath({ path }: { path: string }) {
   const cut = path.lastIndexOf('/') + 1;
   const dir = path.slice(0, cut);
   const base = path.slice(cut);
   return (
-    <p className="flex min-w-0 font-mono text-sm" title={path}>
-      {dir && <span data-path-dir dir="rtl" className="min-w-0 truncate text-muted-foreground"><bdi dir="ltr">{dir}</bdi></span>}
-      <span data-path-base className="max-w-full shrink-0 truncate font-medium">{base}</span>
+    <p className="min-w-0 truncate font-mono text-sm" dir="rtl" title={path}>
+      <bdi dir="ltr">
+        {dir && <span data-path-dir className="text-muted-foreground">{dir}</span>}
+        <span data-path-base className="font-medium">{base}</span>
+      </bdi>
     </p>
   );
 }

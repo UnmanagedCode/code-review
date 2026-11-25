@@ -9,5 +9,5 @@ test.each([['added', 'A'], ['deleted', 'D'], ['modified', 'M'], ['renamed', 'R']
   const [shown, word] = container.querySelectorAll('span > span');
   expect(shown.textContent).toBe(letter);
   expect(shown.getAttribute('aria-hidden')).toBe('true');
-  expect(word.textContent).toBe(status);
+  expect(word.textContent).toBe(`${status} `); // the trailing space keeps the word apart from the name that follows it
 });

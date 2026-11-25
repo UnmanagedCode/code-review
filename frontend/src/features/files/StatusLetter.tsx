@@ -9,7 +9,7 @@ export function StatusLetter({ status, className, ...rest }: { status: FileState
   return (
     <span {...rest} className={cn('font-mono text-xs text-muted-foreground', className)}>
       <span aria-hidden>{STATUS[status]}</span>
-      <span className="sr-only">{status}</span>
+      <span className="sr-only">{status} </span>
     </span>
   );
 }

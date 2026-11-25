@@ -45,7 +45,7 @@ const contrastOf = (locator) => locator.evaluate((el) => {
   return Math.round(((Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05)) * 100) / 100;
 });
 
-/** The path's measurements and the overflow checks for the open file. */
+/** The path's measurements and the overflow checks for the open file. The path is one left-overflowing text box; `ell` is the width the left ellipsis takes. */
 const measure = (page) => page.evaluate(() => {
   const header = document.querySelector('div.sticky.top-0.z-10');
   const box = header.querySelector('p[title]');
@@ -54,12 +54,32 @@ const measure = (page) => page.evaluate(() => {
   const main = document.querySelector('main');
   const edge = main.getBoundingClientRect().right;
   const hr = header.getBoundingClientRect();
+  const pr = box.getBoundingClientRect();
   const br = base.getBoundingClientRect();
+  const probe = Object.assign(document.createElement('span'), { textContent: '…' });
+  box.append(probe);
+  const ell = probe.getBoundingClientRect().width;
+  probe.remove();
+  const sel = getSelection();
+  const range = document.createRange();
+  range.selectNodeContents(box);
+  sel.removeAllRanges();
+  sel.addRange(range);
+  const selected = sel.toString();
+  sel.removeAllRanges();
+  const truncated = box.scrollWidth > box.clientWidth;
+  const lead = truncated ? ell : 0;
+  const dr = dir?.getBoundingClientRect();
   return {
-    title: box.title, text: box.textContent,
-    box: Math.round(box.getBoundingClientRect().width),
-    base: { client: base.clientWidth, scroll: base.scrollWidth, inside: br.left >= hr.left - 0.5 && br.right <= hr.right + 0.5 },
-    dir: dir ? { client: dir.clientWidth, scroll: dir.scrollWidth, text: dir.textContent } : null,
+    title: box.title, text: box.textContent, selected,
+    box: Math.round(pr.width), truncated,
+    // The name is whole when it starts at or after the ellipsis; the directory shows what lies right of the ellipsis.
+    baseWhole: br.left >= pr.left + lead - 0.5 && br.right <= pr.right + 0.5,
+    baseInside: br.left >= hr.left - 0.5 && br.right <= hr.right + 0.5,
+    baseShown: Math.round(Math.max(0, Math.min(br.right, pr.right) - Math.max(br.left, pr.left + lead))),
+    dirShown: dr ? Math.round(Math.max(0, Math.min(dr.right, pr.right) - Math.max(dr.left, pr.left + lead))) : 0,
+    dirClipped: dr ? dr.left < pr.left - 0.5 : false,
+    dirText: dir?.textContent ?? null,
     height: Math.round(hr.height),
     headerFits: header.scrollWidth <= header.clientWidth,
     cut: [...header.querySelectorAll('button')].filter((b) => b.getBoundingClientRect().width && b.getBoundingClientRect().right > edge + 0.5).map((b) => b.getAttribute('aria-label') || b.textContent),
@@ -77,8 +97,8 @@ const CONFIGS = [
   { name: '320', width: 320, height: 844 },
 ];
 // The seeded files are added or modified; the sr-only word names whichever it is.
-const STATUS_WORD = /^(added|modified|deleted|renamed)$/;
-const WHOLE_AT = new Set(['992', '1280', '390']);
+const STATUS_WORD = /^(added|modified|deleted|renamed)\s*$/;
+const WHOLE_AT = new Set(['992', '1280', '390', '390-touch']);
 
 await withPage(async (_page, { browser }) => {
   const heights = {};
@@ -95,21 +115,22 @@ await withPage(async (_page, { browser }) => {
         await page.locator(`${HEADER} p[title]`).waitFor();
         const m = await measure(page);
         const key = `${cfg.name}/${scheme}`;
-        console.log(`${label} ${kind}: path box ${m.box}px, base ${m.base.client}/${m.base.scroll}px, dir ${m.dir ? `${m.dir.client}/${m.dir.scroll}px` : '-'}, header ${m.height}px`);
-        // 4. The full path is available as the title and as the text.
+        console.log(`${label} ${kind}: path box ${m.box}px, base shown ${m.baseShown}px, dir shown ${m.dirShown}px, header ${m.height}px`);
+        // 4. The full path is available as the title, as the text and as a copied selection (one string, no newline).
         assert.equal(m.title, file, `${label} ${kind}: the title is the full path`);
         assert.equal(m.text, file, `${label} ${kind}: the text is the full path`);
-        // 2. The directory gives way first.
-        if (m.base.scroll > m.base.client) assert.equal(m.dir?.client ?? 0, 0, `${label} ${kind}: the base name is cut only once the directory is gone`);
+        assert.equal(m.selected, file, `${label} ${kind}: selecting the path copies it as one string`);
+        // 2. The directory gives way first: the name is clipped only once none of the directory shows.
+        if (!m.baseWhole) assert.equal(m.dirShown, 0, `${label} ${kind}: the name is cut only once the directory is gone`);
         // 1. The base name is whole.
         if (kind === 'realistic' && WHOLE_AT.has(cfg.name)) {
-          assert.ok(m.base.scroll <= m.base.client, `${label}: FileTreeToolbar.tsx is whole`);
-          assert.ok(m.base.inside, `${label}: the base name lies inside the header`);
+          assert.ok(m.baseWhole, `${label}: FileTreeToolbar.tsx is whole`);
+          assert.ok(m.baseInside, `${label}: the base name lies inside the header`);
         }
-        // 3. Leading ellipsis at 992.
+        // 3. Leading ellipsis at 992: the directory is cut on its left but not gone.
         if (kind === 'realistic' && cfg.name === '992') {
-          assert.ok(m.dir.scroll > m.dir.client && m.dir.client > 0, `${label}: the directory is truncated, not gone`);
-          assert.equal(m.dir.text, 'frontend/src/features/files/');
+          assert.ok(m.truncated && m.dirClipped && m.dirShown > 0, `${label}: the directory is truncated from the left, not gone`);
+          assert.equal(m.dirText, 'frontend/src/features/files/');
         }
         // 5/6. No overflow.
         assert.ok(m.headerFits, `${label} ${kind}: the header does not scroll sideways`);

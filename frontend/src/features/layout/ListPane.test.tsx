@@ -21,7 +21,7 @@ const world = () => stubFetch([
 ]);
 
 function Pane() {
-  return <ListPane route={useRoute()} follow={{ landing: 'done', followingTitle: undefined, unfollowable: false }} arrival={0} />;
+  return <ListPane route={useRoute()} follow={{ landing: 'done', cancelLanding: () => {}, followingTitle: undefined, unfollowable: false }} arrival={0} />;
 }
 
 // Invariant: the Inbox tab is view=inbox written with replace; Checkout clears view, also with replace.

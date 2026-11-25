@@ -278,3 +278,25 @@ test('a failed project list does not lock the Inbox tab: Checkout and its Retry 
   expect(screen.getByRole('tab', { name: 'Checkout' }).getAttribute('aria-selected')).toBe('true');
   expect(await screen.findByRole('button', { name: 'Retry' })).toBeTruthy();
 });
+
+// Invariant: an explicit Checkout click cancels the pending landing: when the project list (standalone) or the inbox (embedded) resolves afterwards, nothing navigates over the choice.
+test.each(['standalone', 'embedded'])('a Checkout click during a %s landing sticks after the landing resolves', async (mode) => {
+  installFakeEventSource();
+  let release!: () => void;
+  const hold = new Promise<void>((r) => { release = r; });
+  stubFetch([
+    [/^GET api\/projects$/, async () => { if (mode === 'standalone') await hold; return { projects: [{ name: 'app' }] }; }],
+    [/^GET api\/checkout\?/, { checkout: { project: 'app', worktree: null, path: '/x', branch: 'main', headSha: 'h', dirty: false, exists: true }, forkPoints: [], worktrees: [] }],
+    [/^GET api\/sessions/, { sessions: [] }],
+    [/^GET api\/reviews\?/, { reviews: [] }],
+    [/^GET api\/inbox$/, async () => { if (mode === 'embedded') await hold; return { reviews: [] }; }],
+  ]);
+  if (mode === 'embedded') installBridge({ sessionId: 's-none', project: 'app', worktree: null });
+  history.replaceState(null, '', '/');
+  render(<App />);
+  await userEvent.setup().click(await screen.findByRole('tab', { name: 'Checkout' }));
+  await act(async () => { release(); });
+  await act(async () => {});
+  expect(screen.getByRole('tab', { name: 'Checkout' }).getAttribute('aria-selected')).toBe('true');
+  expect(location.search).not.toContain('view=inbox');
+});

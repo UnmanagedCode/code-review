@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { getBridge, useBridgeSession } from '@/lib/bridge';
 import { sessionLanding } from '@/lib/landing';
 import { navigateTo, type Route } from '@/lib/route';
@@ -38,6 +38,13 @@ export function useFollowSession(route: Route, menuOnLoad = false) {
   const routeProject = route.project;
   /** The session (by id and checkout) the last rule was applied for; null before the first. */
   const handled = useRef<string | null>(null);
+  /** The user picked a list tab before the first landing was applied, or while one was in flight: it must not navigate over the choice. */
+  const pickedFirst = useRef(false);
+  const cancelled = useRef(false);
+  const cancelLanding = useCallback(() => {
+    if (handled.current === null) pickedFirst.current = true;
+    cancelled.current = true;
+  }, []);
   const [landing, setLanding] = useState<'pending' | 'done'>('pending');
   const sessions = useSessions(routeProject, route.worktree ?? null);
   const sessionKey = session ? JSON.stringify([session.sessionId, session.project, session.worktree]) : '';
@@ -49,6 +56,8 @@ export function useFollowSession(route: Route, menuOnLoad = false) {
     const first = handled.current === null;
     if (!first && handled.current === sessionKey) return; // not a session change: the project list alone never re-lands
     const done = () => { handled.current = sessionKey; setLanding('done'); };
+    if (first && pickedFirst.current) return done(); // the user chose a tab first: nothing to land
+    cancelled.current = false;
     // An open review is never closed by following, nor is the New review dialog (its fields follow the session themselves).
     if (route.review || route.view === 'new') return done();
     if (first && (routeProject || menuOnLoad)) return done(); // a route-named or menu-named checkout wins on load
@@ -64,7 +73,7 @@ export function useFollowSession(route: Route, menuOnLoad = false) {
     let live = true;
     const apply = (open: InboxItem[] | null) => {
       if (!live) return; // superseded by a newer session or a remount: that run decides
-      if (location.search !== at) return done(); // the user (or cc) navigated meanwhile: their move stands
+      if (cancelled.current || location.search !== at) return done(); // a tab choice or a navigation meanwhile: the user's move stands
       const land = sessionLanding(session, open ?? [], { knownProject: known, fallback, view: first ? 'inbox' : view });
       // A later change to a project the list lacks, with no review to open, leaves the page where it is.
       if (first || land.review || known) navigateTo(land, { replace: true });
@@ -86,7 +95,7 @@ export function useFollowSession(route: Route, menuOnLoad = false) {
 
   const followed = known ? sessions.data?.sessions.find((s) => s.sessionId === session!.sessionId) : undefined;
   return {
-    landing,
+    landing, cancelLanding,
     followingTitle: known && session!.project === routeProject && (session!.worktree ?? undefined) === route.worktree ? (followed?.label || session!.sessionId.slice(0, 8)) : undefined,
     unfollowable: !!session && !!names && !known,
   };

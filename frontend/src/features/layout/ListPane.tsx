@@ -15,13 +15,14 @@ import type { useFollowSession } from './useFollowSession';
 export function ListPane({ route, follow, arrival, placeholder }: {
   route: Route; follow: ReturnType<typeof useFollowSession>; arrival: number; placeholder?: ReactNode;
 }) {
-  const { landing, ...checkout } = follow;
+  const { landing, cancelLanding, ...checkout } = follow;
   // Until the landing rule has run and the route names nothing, the inbox shows: never the empty picker first.
   // The first paint's default only: a tab the user has clicked wins over a landing still pending.
   const [picked, setPicked] = useState(false);
   const tab = route.view === 'inbox' || (landing === 'pending' && !route.project && !picked) ? 'inbox' : 'checkout';
   const choose = (v: string) => {
     setPicked(true);
+    cancelLanding();
     navigate({ view: v === 'inbox' ? 'inbox' : undefined }, { replace: true });
   };
   return (

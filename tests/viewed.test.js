@@ -118,3 +118,32 @@ test('the last-viewed marker write is a separate route and is unaffected', async
   assert.equal(stored.lastViewedSeq, 1);
   assert.deepEqual(Object.keys(stored.viewedFiles), ['a.js']);
 });
+
+test('a marked file read through the commit filter is viewed:false though its hunk ids equal the mark', async () => {
+  // Invariant: the commit-filter view never reports a live mark, even for a file whose hunk ids equal the stored ones (its review copy has viewedFiles: {}).
+  const wt = w.addWorktree();
+  const sha = wt.commit({ 'a.js': editLines({ 2: 'top' }) }, 'a');
+  const { review } = ok(await reviews.openReview({ project: 'app', worktree: 'feature', base: 'main' }, HUMAN));
+  const a = await fileOf(review.id, 'a.js');
+  ok(await mark(review.id, 'a.js', a.hunkIds));
+  assert.equal((await fileOf(review.id, 'a.js')).viewed, true);
+  const commit = ok(await reviews.diff(review.id, { commit: sha.slice(0, 8) })).files.find((f) => f.path === 'a.js');
+  assert.deepEqual(commit.hunkIds, a.hunkIds, 'same ids as the mark');
+  assert.equal(commit.viewed, false);
+});
+
+test('a marked file read through a comparison is viewed:false though its hunk ids equal the mark', async () => {
+  // Invariant: the comparison view never reports a live mark: a.js is untouched in round 1, so the 1→2 delta holds the same hunk (same ids) as the live round, which is marked.
+  const wt = w.addWorktree();
+  wt.commit({ 'b.js': 'b\n' }, 'b');
+  const { review } = ok(await reviews.openReview({ project: 'app', worktree: 'feature', base: 'main' }, HUMAN));
+  wt.commit({ 'a.js': editLines({ 2: 'top' }) }, 'a');
+  ok(await reviews.refreshReview(review.id, HUMAN));
+  const a = await fileOf(review.id, 'a.js');
+  ok(await mark(review.id, 'a.js', a.hunkIds));
+  assert.equal((await fileOf(review.id, 'a.js')).viewed, true);
+  const cmp = ok(await compareRounds(review.id, { from: 1, to: 2 })).files.find((f) => f.path === 'a.js');
+  assert.ok(cmp, 'a.js is in the comparison delta');
+  assert.deepEqual(cmp.hunkIds, a.hunkIds, 'same ids as the mark');
+  assert.equal(cmp.viewed, false);
+});

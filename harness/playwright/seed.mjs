@@ -1,5 +1,6 @@
 // One deterministic world for the visual harness: a temp repo with a `feature` worktree, a fake cc, a temp store and
 // a booted server, seeded through the REST/MCP API. Reuses the backend test helpers, so there is one implementation.
+import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { BROWSER } from './resolve.mjs';
@@ -168,6 +169,19 @@ export async function seed() {
         wt.commit({ 'd.js': 'spike\n' }, 'spike');
         const { review: r } = await call('POST', 'reviews', { project: 'app', worktree: 'spike', kind: 'range', base: 'main', title: 'Spike experiment' });
         return { id: r.id, destroy: () => wt.destroy() };
+      },
+      /**
+       * Opens a commit review of the main checkout titled "Old idea" and ages its `lastActivityAt` to 30 days ago in the stored
+       * file (the store reads files on every request), so the inbox lists it as stale (on demand, so earlier steps never list it).
+       * Resolves the review id.
+       */
+      async idle() {
+        const { review: r } = await call('POST', 'reviews', { project: 'app', kind: 'commit', title: 'Old idea' });
+        const file = path.join(w.store.dir, 'reviews', `${r.id}.json`);
+        const stored = JSON.parse(fs.readFileSync(file, 'utf8'));
+        stored.lastActivityAt = new Date(Date.now() - 30 * 24 * 3_600_000).toISOString();
+        fs.writeFileSync(file, JSON.stringify(stored));
+        return r.id;
       },
       /**
        * Adds a worktree `big` with a review of `big.js`, a 11200-line file with one line changed at 1005 and one at 11005, so the

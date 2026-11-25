@@ -1,7 +1,7 @@
 import { RouteLink } from '@/components/RouteLink';
 import { Button } from '@/components/ui/button';
 import { Empty } from '@/features/common/States';
-import { bucketOf, needsYouOf } from '@/lib/inbox';
+import { needsYouOf } from '@/lib/inbox';
 import { REVIEW_SCOPED } from '@/lib/route';
 import { useInbox } from '@/state/inbox';
 
@@ -11,10 +11,9 @@ const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? o
 export function InboxOverview() {
   const { data } = useInbox();
   if (!data) return <Empty title="Select a review" />;
-  const needing = data.reviews.filter((r) => bucketOf(r) === 'needs-you');
-  const waiting = data.reviews.filter((r) => bucketOf(r) === 'waiting').length;
-  // A review whose checkout is gone is a dead end to open, so it never leads the CTA (it still counts and stays listed).
-  const first = needing.find((r) => r.checkoutGone !== true);
+  const needing = data.reviews.filter((r) => r.bucket === 'needs-you');
+  const waiting = data.reviews.filter((r) => r.bucket === 'waiting').length;
+  const first = needing[0]; // the server orders Needs you by urgency
   if (needing.length === 0) return <Empty title="Nothing needs you right now">{waiting > 0 ? `${plural(waiting, 'review')} waiting on an agent` : 'Select a review from the inbox.'}</Empty>;
   const threads = needing.reduce((n, r) => n + needsYouOf(r), 0);
   const withThreads = needing.filter((r) => needsYouOf(r) > 0).length;

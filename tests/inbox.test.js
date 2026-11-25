@@ -12,6 +12,7 @@ import * as submissions from '../src/submissions.js';
 import * as inbox from '../src/inbox.js';
 import * as groups from '../src/groups.js';
 import * as store from '../src/store.js';
+import { STALE_AFTER_MS, REASONS } from '../src/triage.js';
 
 let w;
 beforeEach(async () => {
@@ -72,20 +73,47 @@ test('the inbox lists the open reviews of every project and checkout; closed one
   assert.deepEqual(rows.map((r) => [r.project, r.worktree]).sort(), [['app', 'feature'], ['app', null], ['lib', null]].sort());
 });
 
-test('rows are ordered by lastActivityAt, newest first, ties by id descending', async (t) => {
-  // Invariant: the sort is lastActivityAt descending, then id descending.
+// Each hunk of a review decided, so the 'hunks' reason is not raised.
+const decideAll = async (id) => {
+  for (const f of ok(await reviews.diff(id, {})).files) for (const h of f.hunks) ok(await reviews.setVerdict(id, h.id, 'accepted'));
+};
+/** A commit review of main on a fresh commit, so several can be open at once. */
+async function commitReview(name) {
+  w.repo.commit({ [`${name}.js`]: `${name}\n` });
+  return ok(await reviews.openReview({ project: 'app', kind: 'commit', recipient: 's-author' }, HUMAN)).review;
+}
+const MINUTES_PER_DAY = 24 * 60;
+
+test('rows are ordered by bucket, then (Needs you) first-reason urgency, then lastActivityAt desc, then id desc', async (t) => {
+  // Invariant: compareRows sorts by BUCKETS index (needs-you, waiting, nothing, stale), then for needs-you rows by REASONS.indexOf(reasons[0]), then lastActivityAt descending, then id descending.
   const clock = clockOf(t);
-  w.repo.write('a.js', editLines({ 5: 'dirty' }));
-  clock.at(1);
-  const unc = ok(await reviews.openReview({ project: 'app', kind: 'uncommitted' }, HUMAN)).review;
-  clock.at(2);
-  const commit = ok(await reviews.openReview({ project: 'app', kind: 'commit' }, HUMAN)).review;
-  const { review: feature } = await onFeature();
-  clock.at(3);
-  ok(await threads.annotate(unc.id, HUMAN, { anchor: at('a.js', 5), kind: 'comment', body: 'latest' }));
+  clock.at(0);
+  const old = await commitReview('old');
+  const base = 20 * MINUTES_PER_DAY;
+  clock.at(base);
+  const hunksOlder = await commitReview('h0');
+  clock.at(base + 1);
+  const { review: threadsRow } = await onFeature();
+  ok(await threads.annotate(threadsRow.id, author, { anchor: at('a.js', 2), kind: 'comment', body: 'agent' }));
+  clock.at(base + 2);
+  const waiting = await commitReview('wait');
+  await decideAll(waiting.id);
+  await deliver(waiting.id);
+  const quiet = await commitReview('quiet');
+  await quietUp(quiet.id);
+  clock.at(base + 3);
+  const hunksA = await commitReview('h1');
+  const hunksB = await commitReview('h2');
+  clock.at(base + 4);
   const rows = await list();
-  assert.deepEqual(rows.map((r) => r.lastActivityAt), [iso(3), iso(2), iso(2)]);
-  assert.deepEqual(rows.map((r) => r.id), [unc.id, ...[commit.id, feature.id].sort().reverse()]);
+  assert.deepEqual(rows.map((r) => r.bucket), ['needs-you', 'needs-you', 'needs-you', 'needs-you', 'waiting', 'nothing', 'stale']);
+  assert.deepEqual(rows.slice(0, 4).map((r) => r.reasons[0]), ['threads', 'hunks', 'hunks', 'hunks']);
+  assert.equal(rows[0].id, threadsRow.id, 'a more urgent reason beats a newer row');
+  assert.deepEqual(rows.slice(1, 3).map((r) => r.id), [hunksA.id, hunksB.id].sort().reverse(), 'equal activity falls to id descending');
+  assert.equal(rows[3].id, hunksOlder.id, 'older activity sorts after newer within one reason');
+  assert.equal(rows[4].id, waiting.id);
+  assert.equal(rows[5].id, quiet.id, 'Nothing pending sorts before Stale');
+  assert.equal(rows[6].id, old.id, 'a stale row sorts last whatever its reasons');
 });
 
 test('every activity stamps lastActivityAt', async (t) => {
@@ -215,6 +243,7 @@ test('a row carries the review\'s identity, label, title, round, unread count an
     recipient: 's-author', author: null, hunks: { pending: 2, accepted: 0, rejected: 0 }, groupsPending: 0,
     threadStates: { awaitingHuman: 2, verifyResolution: 0, unsent: 0, awaitingAgent: 0 }, unsent: true, newActivity: true,
     lastSubmission: null, lastAgentAction: { kind: 'update', at: null },
+    bucket: 'needs-you', reasons: ['threads', 'hunks', 'not-opened'], staleReasons: [],
   });
   ok(await reviews.patchReview(review.id, { title: 'Named' }));
   ok(await threads.markRead(review.id));
@@ -321,7 +350,7 @@ test('GET /api/inbox serves {ok, reviews}', async (t) => {
   assert.equal(res.status, 200);
   const body = await res.json();
   assert.equal(body.ok, true);
-  assert.deepEqual(body.reviews.map((r) => [r.id, r.turn, r.checkoutGone]), [[review.id, 'human', false]]);
+  assert.deepEqual(body.reviews.map((r) => [r.id, r.turn, r.checkoutGone, r.bucket]), [[review.id, 'human', false, 'needs-you']]);
 });
 
 test('hunks is the stored tally and follows verdicts; null for uncommitted reviews and for a round stored without ids', async () => {
@@ -378,4 +407,154 @@ test('lastAgentAction names the agent\'s newest thread event, is an update after
   wt.commit({ 'b.js': 'agent\n' });
   ok(await reviews.refreshReview(review.id, author));
   assert.deepEqual((await item(review.id)).lastAgentAction, { kind: 'update', at: null });
+});
+
+test('idle is strictly older than STALE_AFTER_MS, and stale beats needs-you, waiting and nothing; reasons are still computed', async (t) => {
+  // Invariant: staleReasons has 'idle' iff now - lastActivityAt > STALE_AFTER_MS (strict); a stale row's bucket is 'stale' from every other bucket and its reasons are unchanged.
+  const clock = clockOf(t);
+  clock.at(0);
+  const needs = await commitReview('needs');
+  const waiting = await commitReview('wait');
+  await decideAll(waiting.id);
+  await deliver(waiting.id);
+  const quiet = await commitReview('quiet');
+  await quietUp(quiet.id);
+  const before = await list();
+  assert.deepEqual(Object.fromEntries(before.map((r) => [r.id, r.bucket])), { [needs.id]: 'needs-you', [waiting.id]: 'waiting', [quiet.id]: 'nothing' });
+  t.mock.timers.setTime(T0 + STALE_AFTER_MS);
+  assert.deepEqual((await list()).map((r) => r.staleReasons), [[], [], []], 'exactly at the threshold is not idle');
+  t.mock.timers.setTime(T0 + STALE_AFTER_MS + 1);
+  const after = await list();
+  assert.deepEqual(after.map((r) => [r.bucket, r.staleReasons]), [['stale', ['idle']], ['stale', ['idle']], ['stale', ['idle']]]);
+  assert.deepEqual(after.find((r) => r.id === needs.id).reasons, ['hunks']);
+});
+
+test('checkout-gone is stale only for checkoutGone === true; a cc that cannot answer marks nothing stale', async () => {
+  // Invariant: staleReasons has 'checkout-gone' iff checkoutGone === true; null never stales; a fresh gone row is stale with only that reason.
+  const { review: feature } = await onFeature();
+  const other = w.addWorktree('other');
+  other.commit({ 'b.js': 'x\n' });
+  const gone = ok(await reviews.openReview({ project: 'app', worktree: 'other' }, HUMAN)).review;
+  other.destroy();
+  const rows = await list();
+  assert.deepEqual(rows.map((r) => [r.id, r.bucket, r.staleReasons]).sort(), [[feature.id, 'needs-you', []], [gone.id, 'stale', ['checkout-gone']]].sort());
+  w.cc.state.mode = 'error';
+  assert.deepEqual((await list()).map((r) => [r.checkoutGone, r.bucket, r.staleReasons]).sort(), [[null, 'needs-you', []], [null, 'needs-you', []]]);
+});
+
+/** A review with nothing for the human to do and the turn theirs: decided hunks, a delivered round, an agent thread resolved. */
+async function quietUp(id) {
+  await decideAll(id);
+  await deliver(id);
+  ok(await threads.annotate(id, author, { anchor: { kind: 'review' }, kind: 'comment', body: 'fyi' }));
+  await store.mutate(id, (r) => { r.threads.forEach((th) => { th.status = 'resolved'; }); r.humanSeq = 0; return { ok: true }; });
+}
+
+test('a human-turn row with unsent work and no primary reason gets one fallback: never-sent before a delivered round, unsent after; none without unsent work', async () => {
+  // Invariant: 'never-sent'/'unsent' appear only when no primary reason applies and unsent is true: never-sent iff no round was ever delivered; otherwise the row is 'nothing'.
+  const { review } = await onFeature();
+  await decideAll(review.id);
+  await store.mutate(review.id, (r) => { r.rounds[r.rounds.length - 1].hunkIds = null; return { ok: true }; });
+  let row = await item(review.id);
+  assert.deepEqual([row.hunks, row.reasons, row.bucket], [null, ['never-sent'], 'needs-you']);
+  await quietUp(review.id);
+  await store.mutate(review.id, (r) => { r.rounds[r.rounds.length - 1].hunkIds = null; return { ok: true }; });
+  row = await item(review.id);
+  assert.deepEqual([row.reasons, row.bucket], [[], 'nothing']);
+  await store.mutate(review.id, (r) => { r.humanSeq = r.seq + 1; return { ok: true }; });
+  row = await item(review.id);
+  assert.deepEqual([row.reasons, row.bucket], [['unsent'], 'needs-you']);
+});
+
+const TRIGGERS = {
+  threads: async (id) => { ok(await threads.annotate(id, author, { anchor: at('a.js', 2), kind: 'comment', body: 'agent' })); },
+  'verify-resolution': async (id) => {
+    const tid = ok(await threads.annotate(id, HUMAN, { anchor: at('a.js', 2), kind: 'question', body: 'why?' })).thread.id;
+    ok(await threads.reply(id, author, tid, { body: 'fixed', resolve: true }));
+  },
+  'send-failed': async (id) => {
+    ok(await threads.annotate(id, HUMAN, { anchor: at('a.js', 2), kind: 'comment', body: 'x' }));
+    const { submission } = ok(await submissions.composeSubmission(id));
+    ok(await submissions.recordResult(id, submission.id, { ok: false, code: 'SESSION_NOT_LIVE' }));
+  },
+  'send-pending': async (id) => {
+    ok(await threads.annotate(id, HUMAN, { anchor: at('a.js', 2), kind: 'comment', body: 'x' }));
+    ok(await submissions.composeSubmission(id));
+  },
+  hunks: async () => {},
+  groups: async (id) => {
+    const [hunk] = ok(await reviews.diff(id, {})).files[0].hunks;
+    w.session('s-cond', { project: '.conduct' });
+    ok(await groups.proposeGroups(id, agent('s-cond', '.conduct'), [{ title: 'g', description: 'd', hunks: [hunk.id] }]));
+  },
+  'not-opened': async (id) => { await store.mutate(id, (r) => { r.seenByHuman = false; return { ok: true }; }); },
+};
+const EXPECTED = { 'verify-resolution': 'threads' };
+
+for (const [name, trigger] of Object.entries(TRIGGERS)) {
+  test(`trigger ${name} alone makes a Needs-you row with exactly its reason`, async () => {
+    // Invariant: each primary trigger alone yields exactly its REASONS code, and bucket is 'needs-you' iff the turn is the human's, the row is not stale and reasons is non-empty.
+    const { review } = await onFeature();
+    if (name !== 'hunks') await decideAll(review.id);
+    await trigger(review.id);
+    const row = await item(review.id);
+    const code = EXPECTED[name] ?? name;
+    assert.ok(REASONS.includes(code));
+    assert.deepEqual([row.reasons, row.bucket, row.staleReasons], [[code], 'needs-you', []]);
+  });
+}
+
+test('several reasons are listed in REASONS order', async () => {
+  // Invariant: reasons lists every applicable primary code in REASONS order, whatever order the causes arose in.
+  const { review } = await onFeature();
+  await store.mutate(review.id, (r) => { r.seenByHuman = false; return { ok: true }; });
+  await TRIGGERS['send-pending'](review.id);
+  await TRIGGERS.threads(review.id);
+  assert.deepEqual((await item(review.id)).reasons, ['threads', 'send-pending', 'hunks', 'not-opened']);
+});
+
+test('an agent-turn row is waiting even while it lists reasons', async () => {
+  // Invariant: bucket is 'waiting' whenever turn is 'agent' and the row is not stale, however many reasons it has; reasons is still computed.
+  const { review } = await onFeature();
+  await deliver(review.id);
+  const row = await item(review.id);
+  assert.equal(row.turn, 'agent');
+  assert.deepEqual([row.bucket, row.reasons], ['waiting', ['hunks']]);
+});
+
+test('urgency orders Needs-you rows only: Waiting and Stale rows sort by lastActivityAt whatever their reasons', async (t) => {
+  // Invariant: compareRows applies the REASONS-index key to needs-you rows only; inside waiting and inside stale an older row with a more urgent reasons[0] sorts after a newer row with a less urgent one.
+  const clock = clockOf(t);
+  const staleUrgentOld = await commitReview('s1');
+  clock.at(1);
+  const staleCalmNew = await commitReview('s2');
+  await decideAll(staleCalmNew.id);
+  await TRIGGERS['not-opened'](staleCalmNew.id);
+  const base = 20 * MINUTES_PER_DAY;
+  clock.at(base);
+  const waitUrgentOld = await commitReview('w1');
+  await deliver(waitUrgentOld.id);
+  clock.at(base + 1);
+  const waitCalmNew = await commitReview('w2');
+  await decideAll(waitCalmNew.id);
+  await TRIGGERS['not-opened'](waitCalmNew.id);
+  await deliver(waitCalmNew.id);
+  clock.at(base + 2);
+  const rows = await list();
+  const byId = Object.fromEntries(rows.map((r) => [r.id, r]));
+  assert.deepEqual([byId[waitUrgentOld.id].reasons[0], byId[waitCalmNew.id].reasons[0]], ['hunks', 'not-opened']);
+  assert.deepEqual([byId[staleUrgentOld.id].reasons[0], byId[staleCalmNew.id].reasons[0]], ['hunks', 'not-opened']);
+  assert.deepEqual(rows.map((r) => r.id), [waitCalmNew.id, waitUrgentOld.id, staleCalmNew.id, staleUrgentOld.id]);
+});
+
+test('now is read once per request: rows of equal lastActivityAt get one idle verdict even when the clock moves between reads', async (t) => {
+  // Invariant: listInbox reads Date.now() once and judges every row against it; a clock that alternates around the STALE_AFTER_MS boundary on successive reads cannot split equal rows.
+  const ids = [];
+  for (const name of ['a', 'b', 'c', 'd']) ids.push((await commitReview(name)).id);
+  for (const id of ids) await store.mutate(id, (r) => { r.lastActivityAt = iso(0); return { ok: true }; });
+  let reads = 0;
+  t.mock.method(Date, 'now', () => T0 + STALE_AFTER_MS + (reads++ % 2));
+  const rows = await list();
+  assert.equal(rows.length, 4);
+  assert.equal(new Set(rows.map((r) => JSON.stringify(r.staleReasons))).size, 1);
 });

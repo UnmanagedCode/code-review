@@ -3,7 +3,7 @@
 /** A human status change takes its own seq; opening and agent resolves share the seq of a message. */
 export const humanChangedStatus = (t, since) => t.statusSeq > since && !t.messages.some((m) => m.seq === t.statusSeq);
 
-const lastDeliveredRound = (review) => review.submissions.findLast((s) => s.kind === 'round' && s.status === 'delivered');
+export const lastDeliveredRound = (review) => review.submissions.findLast((s) => s.kind === 'round' && s.status === 'delivered');
 
 /** `seq` of the newest delivered round submission (Guide me prompts never count), 0 when none. */
 export const lastDeliveredRoundSeq = (review) => lastDeliveredRound(review)?.seq ?? 0;

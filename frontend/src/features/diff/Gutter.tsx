@@ -1,3 +1,4 @@
+import { PlusIcon } from 'lucide-react';
 import type { CSSProperties } from 'react';
 import { markNote, type RangeMark } from '@/lib/ranges';
 import type { Side } from '@/lib/types';
@@ -26,6 +27,23 @@ function Rails({ marks }: { marks: RangeMark[] }) {
   );
 }
 
+/**
+ * The hover/focus cue that a line number can be clicked or dragged. `pointer-events-none`: the press, the drag
+ * (`pointerenter` on the cells) and the release must land on the cell. Hidden until `hover:` (wrapped in
+ * `(hover: hover)`, so never on touch) or focus-visible. The fill is the active rail pair (≥ 3:1 on every row tint),
+ * and opts out of forced colours like the rails do, else its background would paint as Canvas.
+ */
+function CommentPlus() {
+  return (
+    <span
+      aria-hidden data-comment-plus=""
+      className="pointer-events-none absolute top-1/2 left-0.5 z-10 hidden size-4 -translate-y-1/2 items-center justify-center rounded bg-accent-foreground text-background group-hover/gutter:flex group-focus-visible/gutter:flex dark:bg-primary forced-color-adjust-none forced-colors:bg-[CanvasText]! forced-colors:text-[Canvas]!"
+    >
+      <PlusIcon className="size-3" />
+    </span>
+  );
+}
+
 /** One line-number cell. Selectable when it carries a number and selection is on. */
 export function Gutter({ side, n, sel, enabled, marks, className }: { side: Side; n: number | null; sel: LineSelection; enabled: boolean; marks: RangeMark[]; className?: string }) {
   if (n == null) return <div role="gridcell" aria-hidden className={cn('w-12 shrink-0', className)} />;
@@ -48,9 +66,10 @@ export function Gutter({ side, n, sel, enabled, marks, className }: { side: Side
       onPointerDown={sel.onPointerDown(side, n)}
       onPointerEnter={sel.onPointerEnter(side, n)}
       onKeyDown={sel.onKeyDown(side, n)}
-      className={cn('relative w-12 shrink-0 cursor-pointer px-1 text-right text-muted-foreground select-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none pointer-coarse:py-1.5', active, className)}
+      className={cn('group/gutter relative w-12 shrink-0 cursor-pointer px-1 text-right text-muted-foreground select-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none pointer-coarse:py-1.5', active, className)}
     >
       <Rails marks={marks} />
+      <CommentPlus />
       {n}
     </div>
   );

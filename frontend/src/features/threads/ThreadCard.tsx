@@ -9,6 +9,7 @@ import type { ComparedThread, GuideView, Thread } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import { useReviewCtx } from '@/state/reviewContext';
 import { useReviewActions } from '@/state/threads';
+import { usePaneTab } from '@/features/review/paneTab';
 import { useJumpNav } from '@/features/nav/jumpNavContext';
 import { AuthorBadge } from './AuthorBadge';
 import { KindBadge } from './KindBadge';
@@ -76,6 +77,7 @@ export function ThreadCard({ thread, dropped = false, showLocation = false, unpl
   const { readOnly, compare, guide } = useReviewCtx();
   const actions = useReviewActions();
   const route = useRoute();
+  const paneTab = usePaneTab();
   const ref = useRef<HTMLElement>(null);
   const nav = useJumpNav();
   const focused = route.thread === thread.id;
@@ -98,7 +100,7 @@ export function ThreadCard({ thread, dropped = false, showLocation = false, unpl
   // A review thread is shown in the pane, so Focus opens it there; a file-bound one opens its file unless that is open.
   const a = thread.anchor;
   const elsewhere = a.kind === 'review' ? route.view !== 'threads'
-    : a.kind === 'group' ? route.view !== 'guided' || route.step !== a.groupId
+    : a.kind === 'group' ? paneTab !== 'guided' || route.step !== a.groupId
       : a.file !== route.file;
   return (
     <article

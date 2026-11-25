@@ -1,9 +1,10 @@
 import { MessagesSquareIcon } from 'lucide-react';
-import { useEffect, useMemo, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { RouteLink } from '@/components/RouteLink';
 import { Button } from '@/components/ui/button';
 import * as ep from '@/lib/endpoints';
 import { compareFileState } from '@/lib/compare';
+import { opensOnGuided } from '@/lib/guide';
 import { LEAVE_FILE, navigate, parseCompare, REVIEW_SCOPED, useRoute } from '@/lib/route';
 import type { FileState } from '@/lib/types';
 import { useMediaQuery, WIDE_QUERY } from '@/lib/useMediaQuery';
@@ -23,7 +24,8 @@ import { Tip } from '@/features/nav/Tip';
 import { JumpNavProvider } from '@/features/nav/JumpNavProvider';
 import { OverviewPage } from '@/features/overview/OverviewPage';
 import { useLastViewed } from '@/state/lastViewed';
-import { paneTab, ReviewPane, ThreadsBadge } from './ReviewPane';
+import { usePaneTab } from './paneTab';
+import { ReviewPane, ThreadsBadge } from './ReviewPane';
 import { useReviewCtx } from '@/state/reviewContext';
 
 const CLEAR = { review: undefined, ...REVIEW_SCOPED };
@@ -57,9 +59,9 @@ function ViewedMarker() {
  */
 function Body() {
   const route = useRoute();
-  const { review, guide, pastView, commit } = useReviewCtx();
+  const { pastView, commit } = useReviewCtx();
   const wide = useMediaQuery(WIDE_QUERY);
-  const guided = paneTab(route, { review, guide, pastView, commit }) === 'guided';
+  const guided = usePaneTab() === 'guided';
   const live = !pastView && !commit;
   const overview = live && route.view === 'overview';
   let body;
@@ -73,7 +75,7 @@ function Body() {
     body = (
       <PhoneLayout>
         {route.file ? <FileDiff onBack={() => navigate(LEAVE_FILE)} extra={<PhoneThreadsButton />} />
-          : overview ? <OverviewPage onBack={() => navigate({ view: undefined })} />
+          : overview ? <OverviewPage onBack={() => navigate({ view: 'files' })} />
             : guided && route.step ? <GuideStepView onBack={() => navigate({ step: undefined })} /> : <ReviewPane />}
       </PhoneLayout>
     );
@@ -123,6 +125,13 @@ export function ReviewView({ id, chrome }: { id: string; chrome?: ReactNode }) {
   const badCompare = detail && route.compare && !route.commit && !cmpValid;
   useEffect(() => { if (badCompare) navigate({ compare: undefined }, { replace: true }); }, [badCompare]);
 
+  // Pinned at the first load of this visit (the mount; `App` keys this by review) and never written to the URL: a URL
+  // write would cancel a pending session or menu landing, which drop themselves when the search changes.
+  const [guidedDefault, setGuidedDefault] = useState<boolean | null>(null);
+  if (detail && guidedDefault === null) {
+    setGuidedDefault(opensOnGuided({ review: detail.review, guide: detail.guide, pastView: round !== undefined || !!compare, commit: route.commit, file: route.file }));
+  }
+
   if (rv.deleted) return <Empty title="This review was deleted"><RouteLink to={CLEAR} className="underline">Back to reviews</RouteLink></Empty>;
   if (!detail) return rv.error ? <ErrorState error={rv.error} onRetry={rv.reload} /> : <Loading label="Loading review" rows={8} />;
   if (route.commit && commitDiff.error) return <ErrorState error={commitDiff.error} onRetry={commitDiff.reload} />;
@@ -133,7 +142,7 @@ export function ReviewView({ id, chrome }: { id: string; chrome?: ReactNode }) {
     <ReviewProvider value={{
       ...detail, id, commit: route.commit, readOnly, fileDiff, version: rv.version, sessions: sessions.data?.sessions ?? [],
       files: treeFiles, reload: rv.reload, applyReview: rv.applyReview, patchGuide: rv.patchGuide, patchFiles: rv.patchFiles, diffs,
-      round, compare: compare && { ...compare, view: compareView.data }, pastView,
+      round, compare: compare && { ...compare, view: compareView.data }, pastView, guidedDefault: !!guidedDefault,
       viewLoad: past && { loading: past.loading && !past.data, error: past.error, loaded: !!past.data, reload: past.reload },
       outdatedThreads: past ? (round !== undefined && roundView.data?.outdatedThreads) || [] : detail.outdatedThreads,
       reviewThreads: past ? past.data?.reviewThreads ?? [] : detail.reviewThreads,

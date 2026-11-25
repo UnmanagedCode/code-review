@@ -2,7 +2,7 @@ import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, expect, test, vi } from 'vitest';
 import { WIDE_QUERY } from '@/lib/useMediaQuery';
-import { installFakeEventSource } from '@/test/fakeEventSource';
+import { FakeEventSource, installFakeEventSource } from '@/test/fakeEventSource';
 import { installMedia } from '@/test/fakeMedia';
 import { parseRoute } from '@/lib/route';
 import { diffFile, fileState, guideGroup, guideView, refusal, review, thread, threadDigest, linesAnchor } from '@/test/fixtures';
@@ -494,6 +494,88 @@ test('phone: step list without a step, the step with Back to steps, and Back fro
   expect((await screen.findByRole('button', { name: /^src\/a\.ts/ })).getAttribute('aria-expanded')).toBe('true');
 });
 
+const selectedPaneTab = () => within(screen.getByRole('tablist', { name: 'Review pane' })).getAllByRole('tab').find((t) => t.getAttribute('aria-selected') === 'true')!.textContent;
+
+// Invariant: a review with groups opens on Guided, and the default is derived: it writes nothing to the URL or the history.
+test('wide: a grouped review with no view or file opens on Guided, the step in the centre, and writes nothing', async () => {
+  installMedia({ [WIDE_QUERY]: true });
+  guided();
+  history.replaceState(null, '', '?review=r-1');
+  const before = history.length;
+  render(<ReviewView id="r-1" />);
+  expect(await screen.findByRole('heading', { name: 'Wire it up', level: 2 })).toBeTruthy();
+  expect(selectedPaneTab()).toBe('Guided');
+  expect(parseRoute(location.search)).toEqual({ review: 'r-1' });
+  expect(history.length).toBe(before);
+});
+
+// Invariant: a file deep link wins over the default for the whole visit; a saved view=files choice wins too.
+test('wide: file= or view=files on a grouped review opens on Files', async () => {
+  installMedia({ [WIDE_QUERY]: true });
+  guided();
+  history.replaceState(null, '', '?review=r-1&file=src%2Fa.ts');
+  const { unmount } = render(<ReviewView id="r-1" />);
+  await screen.findByRole('grid', { name: 'Changes in src/a.ts' });
+  expect(selectedPaneTab()).toBe('Files');
+  unmount();
+  history.replaceState(null, '', '?review=r-1&view=files');
+  render(<ReviewView id="r-1" />);
+  await screen.findByRole('region', { name: /^Needs you/ });
+  expect(selectedPaneTab()).toBe('Files');
+});
+
+// Invariant: the default is decided once at the first load: groups arriving later never switch the tab.
+test('wide: groups arriving after the first load do not switch the tab', async () => {
+  installMedia({ [WIDE_QUERY]: true });
+  const offered = guideView({ groups: [], ungrouped: [], guideMe: { offered: true, noGroups: true, droppedGroups: 0, newUngrouped: 0 } });
+  const stub = (guide: ReturnType<typeof guideView>, rev: number) => stubFetch({
+    'GET api/reviews/r-1': { review: review({ rev }), files: [fileState()], rounds: [], submissions: [], outdatedThreads: [], reviewThreads: [], openThreads: [], activity: [], guide },
+    'GET api/reviews/r-1/diff': { review: review({ rev }), files: [diffFile()] },
+    'GET api/reviews/r-1/commits': { commits: [] },
+    'GET api/sessions': { sessions: [] },
+  });
+  stub(offered, 1);
+  history.replaceState(null, '', '?review=r-1');
+  render(<ReviewView id="r-1" />);
+  await screen.findByRole('region', { name: /^Needs you/ });
+  expect(selectedPaneTab()).toBe('Files');
+  stub(guideView({ groups: [guideGroup({ id: 'g1', title: 'Wire it up' })], ungrouped: [] }), 2);
+  act(() => FakeEventSource.last!.emit({ id: 'r-1', rev: 2 }));
+  await screen.findByRole('tab', { name: 'Guided' });
+  expect(selectedPaneTab()).toBe('Files');
+  expect(parseRoute(location.search)).toEqual({ review: 'r-1' });
+});
+
+// Invariant: the Overview stays reachable from the default Guided tab through the progress strip's link.
+test('wide: the strip\'s Overview link from the default Guided tab shows the overview', async () => {
+  installMedia({ [WIDE_QUERY]: true });
+  guided();
+  history.replaceState(null, '', '?review=r-1');
+  render(<ReviewView id="r-1" />);
+  await screen.findByRole('heading', { name: 'Wire it up', level: 2 });
+  await userEvent.setup().click(screen.getByRole('link', { name: 'Overview' }));
+  expect(parseRoute(location.search)).toEqual({ review: 'r-1', view: 'overview' });
+  expect(await screen.findByRole('region', { name: /^Needs you/ })).toBeTruthy();
+});
+
+// Invariant: on a phone a grouped review opens on the pane's Guided tab (the step list); a step's file returns to that step, and the overview's Back writes view=files.
+test('phone: a grouped review opens on Guided; Back from a step\'s file returns to the step', async () => {
+  installMedia({ [WIDE_QUERY]: false });
+  guided();
+  history.replaceState(null, '', '?review=r-1');
+  render(<ReviewView id="r-1" />);
+  const user = userEvent.setup();
+  expect(await screen.findByRole('navigation', { name: 'Steps' })).toBeTruthy();
+  expect(selectedPaneTab()).toBe('Guided');
+  expect(screen.queryByRole('grid')).toBeNull();
+  await user.click(screen.getByRole('button', { name: /Wire it up/ }));
+  await expandFile('src/a.ts');
+  await user.click(await screen.findByRole('link', { name: /^Open src\/a\.ts/ }));
+  await user.click(await screen.findByRole('button', { name: 'Back to files' }));
+  expect(parseRoute(location.search)).toEqual({ review: 'r-1', step: 'g1' });
+  expect(await screen.findByRole('heading', { name: 'Wire it up', level: 2 })).toBeTruthy();
+});
+
 /** A live range review whose changes are at `seq`, last viewed at `lastViewedSeq`. `viewed` answers each viewed write with the summary it would return. */
 function overviewWorld({ seq = 4, lastViewedSeq = 0 }: { seq?: number; lastViewedSeq?: number } = {}) {
   const rv = review({ seq, lastViewedSeq });
@@ -562,7 +644,7 @@ test('phone: view=overview shows the overview, Back to files returns to the pane
   await user.click(await screen.findByRole('button', { name: 'Back to files' }));
   expect(parseRoute(location.search)).toEqual({ review: 'r-1', view: 'overview' });
   await user.click(await screen.findByRole('button', { name: 'Back to files' }));
-  expect(parseRoute(location.search)).toEqual({ review: 'r-1' });
+  expect(parseRoute(location.search)).toEqual({ review: 'r-1', view: 'files' });
   expect(await screen.findByRole('tablist', { name: 'Review pane' })).toBeTruthy();
 });
 

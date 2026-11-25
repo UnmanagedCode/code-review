@@ -5,7 +5,7 @@ import { parseRoute } from '@/lib/route';
 import { WIDE_QUERY } from '@/lib/useMediaQuery';
 import { installBridge } from '@/test/fakeBridge';
 import { installMedia } from '@/test/fakeMedia';
-import { diffFile, fileState, groupAnchor, linesAnchor, message, review, thread, threadDigest } from '@/test/fixtures';
+import { diffFile, fileState, groupAnchor, guideView, linesAnchor, message, review, thread, threadDigest } from '@/test/fixtures';
 import { renderDiff } from '@/test/renderCtx';
 import { stubFetch } from '@/test/stubFetch';
 import { FileDiff } from '@/features/diff/FileDiff';
@@ -153,6 +153,18 @@ test('o leaves the file and keeps the pane tab', async () => {
   mount('?file=a.ts&thread=a1&view=threads');
   await keys('o');
   expect(route()).toEqual({ view: 'threads' });
+});
+
+// Invariant: on the Guided tab leaving the file would show the step, so o writes the overview (the pane moves to Files, as the progress strip's link does); with no file open it works too.
+test('o on the default Guided tab opens the overview, with or without a file', async () => {
+  mount('?review=r-1', { guide: guideView(), guidedDefault: true });
+  await keys('o');
+  expect(route()).toEqual({ review: 'r-1', view: 'overview' });
+});
+test('o with a file open on view=guided opens the overview and clears the file', async () => {
+  mount('?file=a.ts&view=guided', { guide: guideView() });
+  await keys('o');
+  expect(route()).toEqual({ view: 'overview' });
 });
 
 // Invariant: s does what Submit round does: it opens the recap and sends nothing; where Submit is disabled the key is inert.

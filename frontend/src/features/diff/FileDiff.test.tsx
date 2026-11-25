@@ -3,6 +3,8 @@ import userEvent from '@testing-library/user-event';
 import { expect, test, vi } from 'vitest';
 import { diffFile, hunk, message, review, thread, linesAnchor } from '@/test/fixtures';
 import type { Thread } from '@/lib/types';
+import { installMedia } from '@/test/fakeMedia';
+import { TOUCH_QUERY } from '@/lib/textEntry';
 import { stubFetch } from '@/test/stubFetch';
 import type { FileDiffState } from '@/state/fileDiff';
 import { ctxValue, renderDiff, renderInReview } from '@/test/renderCtx';
@@ -102,6 +104,27 @@ test.each([
   withRoute('src/a.ts');
   renderDiff(<FileDiff />, diffFile(), over);
   expect(screen.queryByRole('button', { name: 'Comment on file' })).toBeNull();
+});
+
+// Invariant: the hover `+` and the header hint appear exactly where line commenting works, and stay out of the accessibility tree.
+test('a writable text file has a decorative + on each line-number cell and the comment hint; the cell keeps its name', () => {
+  withRoute('src/a.ts');
+  const { container } = renderDiff(<FileDiff />, diffFile());
+  const cell = container.querySelector('[data-cell^="new:"]')!;
+  const n = cell.getAttribute('data-cell')!.split(':')[1];
+  expect(cell.querySelector('[data-comment-plus]')?.getAttribute('aria-hidden')).toBe('true');
+  expect(cell.getAttribute('aria-label')).toMatch(new RegExp(`^new line ${n}`));
+  expect(container.querySelector('[data-comment-hint]')).not.toBeNull();
+});
+test('no + and no hint where writes are off, nor under a touch pointer', () => {
+  withRoute('src/a.ts');
+  const closed = renderDiff(<FileDiff />, diffFile(), { review: review({ status: 'closed' }), readOnly: true });
+  expect(closed.container.querySelector('[data-comment-plus]')).toBeNull();
+  expect(closed.container.querySelector('[data-comment-hint]')).toBeNull();
+  closed.unmount();
+  installMedia({ [TOUCH_QUERY]: true });
+  const touch = renderDiff(<FileDiff />, diffFile());
+  expect(touch.container.querySelector('[data-comment-hint]')).toBeNull();
 });
 
 // Invariant: the file composer posts a file anchor naming the open file, with no side or lines.

@@ -2,7 +2,7 @@ import { useSyncExternalStore } from 'react';
 
 export interface Route {
   project?: string; worktree?: string; review?: string; file?: string; side?: 'old' | 'new';
-  lines?: string; thread?: string; commit?: string; round?: string; compare?: string; view?: 'new' | 'threads' | 'history' | 'guided' | 'inbox' | 'overview';
+  lines?: string; thread?: string; commit?: string; round?: string; compare?: string; view?: 'new' | 'files' | 'threads' | 'history' | 'guided' | 'inbox' | 'overview';
   /** Guided tab: a group id (current or retired) or `other` (the hunks in no group). */
   step?: string;
   /** Threads tab: only the open threads in this state group (`stateGroup` in `lib/threadState.ts`). */
@@ -44,7 +44,7 @@ export function parseRoute(search: string): Route {
     const v = p.get(k);
     if (v === null || v === '') continue;
     if (k === 'side' && v !== 'old' && v !== 'new') continue;
-    if (k === 'view' && v !== 'new' && v !== 'threads' && v !== 'history' && v !== 'guided' && v !== 'inbox' && v !== 'overview') continue;
+    if (k === 'view' && v !== 'new' && v !== 'files' && v !== 'threads' && v !== 'history' && v !== 'guided' && v !== 'inbox' && v !== 'overview') continue;
     if (k === 'need' && v !== 'needs-you' && v !== 'unsent' && v !== 'waiting') continue;
     if (k === 'hunk' && v !== 'undecided') continue;
     if (k === 'step' && !/^(g[1-9]\d*|other)$/.test(v)) continue;

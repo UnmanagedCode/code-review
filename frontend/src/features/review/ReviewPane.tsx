@@ -5,7 +5,6 @@ import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { guideAvailable } from '@/lib/guide';
 import { LEAVE_FILE, navigate, useRoute, type Route } from '@/lib/route';
-import type { GuideView, ReviewSummary } from '@/lib/types';
 import { useReviewAdmin } from '@/state/admin';
 import { useReviewCtx } from '@/state/reviewContext';
 import { Empty, ErrorState, Loading } from '@/features/common/States';
@@ -15,9 +14,8 @@ import { GuidePanel } from '@/features/guide/GuidePanel';
 import { HistoryList } from './HistoryList';
 import { RefreshControls } from './RefreshControls';
 import { ReviewHeader } from './ReviewHeader';
+import { usePaneTab, type PaneTab } from './paneTab';
 import { ScopeIndicator } from './ScopeIndicator';
-
-type PaneTab = 'files' | 'guided' | 'threads' | 'history';
 
 /** The open threads of what is shown (a past round's or a comparison's own counts), hidden at none. It is what the All list counts under the default filters. */
 export function ThreadsBadge() {
@@ -65,27 +63,17 @@ function Files() {
 }
 
 /**
- * The pane tab a route selects. `view=guided` where Guided isn't available (uncommitted, past views, commit filter, no
- * guide) shows Files, derived without rewriting the URL; so does `view=history` outside a range review.
- */
-export function paneTab(route: Route, ctx: { review: ReviewSummary; guide: GuideView | null; pastView: boolean; commit: string | undefined }): PaneTab {
-  if (route.view === 'guided' && guideAvailable(ctx)) return 'guided';
-  return route.view === 'threads' ? 'threads' : route.view === 'history' && ctx.review.kind === 'range' ? 'history' : 'files';
-}
-
-/**
  * The review's side pane: header, banners, refresh and scope on top, then the Files | Guided | Threads | History tabs. The tab
- * is the route's `view` (absent = Files), written with replace so Back skips tab switches; every other navigation
+ * is the route's `view` (absent = the review's default tab), written with replace so Back skips tab switches; every other navigation
  * merges into the route and so keeps it. Inactive panels stay mounted (their state survives) but `hidden`.
  */
 export function ReviewPane() {
   const { review, guide, pastView, commit } = useReviewCtx();
-  const route = useRoute();
   const historyTab = useRef<HTMLButtonElement>(null);
   const hasHistory = review.kind === 'range';
   const hasGuide = guideAvailable({ review, guide, pastView, commit });
-  const tab = paneTab(route, { review, guide, pastView, commit });
-  const choose = (v: string) => navigate({ view: v === 'files' ? undefined : v as Route['view'] }, { replace: true });
+  const tab = usePaneTab();
+  const choose = (v: string) => navigate({ view: v as Route['view'] }, { replace: true });
   const panel = (value: PaneTab, className: string, children: ReactNode) => (
     <TabsContent value={value} forceMount hidden={tab !== value} className={className}>{children}</TabsContent>
   );

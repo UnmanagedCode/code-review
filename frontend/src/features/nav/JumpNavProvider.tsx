@@ -9,6 +9,7 @@ import type { ThreadDigest } from '@/lib/types';
 import { useMediaQuery, WIDE_QUERY } from '@/lib/useMediaQuery';
 import { dispatchShortcut, useShortcutHandler } from '@/state/shortcutRegistry';
 import { useReviewCtx } from '@/state/reviewContext';
+import { usePaneTab } from '@/features/review/paneTab';
 import { threadPlace } from '@/features/threads/ThreadCard';
 import { JumpNavContext, type JumpNav } from './jumpNavContext';
 import { ShortcutsDialog } from './ShortcutsDialog';
@@ -22,6 +23,7 @@ const OFF_FILE = { lines: undefined, side: undefined, thread: undefined, hunk: u
 export function JumpNavProvider({ children }: { children: ReactNode }) {
   const ctx = useReviewCtx();
   const route = useRoute();
+  const paneTab = usePaneTab();
   const wide = useMediaQuery(WIDE_QUERY);
   const live = !ctx.pastView && !ctx.commit;
   const { placed, order } = useMemo(() => walkOrder(ctx.openThreads, ctx.files, ctx.guide), [ctx.openThreads, ctx.files, ctx.guide]);
@@ -68,7 +70,11 @@ export function JumpNavProvider({ children }: { children: ReactNode }) {
   useShortcutHandler('next-needs-you', live ? stepNeedsYou : null);
   useShortcutHandler('next-file', () => stepFiles(1));
   useShortcutHandler('prev-file', () => stepFiles(-1));
-  useShortcutHandler('overview', () => (route.file ? navigate(LEAVE_FILE) : false));
+  // On the Guided tab, leaving the file would show the step: the overview is `view=overview`, as the progress strip's link writes it.
+  useShortcutHandler('overview', () => {
+    if (paneTab === 'guided') { navigate({ ...LEAVE_FILE, view: 'overview' }); return true; }
+    return route.file ? navigate(LEAVE_FILE) : false;
+  });
   useShortcutHandler('shortcuts', () => setOverlay((o) => !o));
 
   useEffect(() => {

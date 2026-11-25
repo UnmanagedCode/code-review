@@ -2,7 +2,7 @@ import { expect, test } from 'vitest';
 import { guideGroup, guideView, hunk, review } from '@/test/fixtures';
 import type { GuideHunk } from './types';
 import {
-  byFile, clearGroups, fileSummary, groupLabel, guideAvailable, guideProgress, guideSteps, hunkPlace, OTHER, stepAt, withGroupVerdict, withHunkVerdicts,
+  byFile, clearGroups, fileSummary, groupLabel, guideAvailable, guideProgress, opensOnGuided, guideSteps, hunkPlace, OTHER, stepAt, withGroupVerdict, withHunkVerdicts,
 } from './guide';
 
 const gh = (id: string, file: string | null, verdict: GuideHunk['verdict'] = 'pending'): GuideHunk => ({ id, file, verdict });
@@ -97,4 +97,16 @@ test('fileSummary counts hunks, says pending or decided, and mentions threads on
   expect(fileSummary([gh('h1', 'a.ts', 'accepted'), gh('h2', 'a.ts', 'rejected')], 0)).toBe('2 hunks · decided');
   expect(fileSummary([gh('h1', 'a.ts'), gh('h2', 'a.ts', 'accepted')], 1)).toBe('2 hunks · 1 pending · 1 open thread');
   expect(fileSummary([gh('h1', 'a.ts', 'accepted')], 3)).toBe('1 hunk · decided · 3 open threads');
+});
+
+// Invariant: only proposed groups open a review on Guided, and only on a live review with no file routed.
+test('opensOnGuided: a live review with groups and no file; never for Guide me alone, uncommitted, past, commit-filtered or a routed file', () => {
+  const base = { review: review(), guide: guideView(), pastView: false, commit: undefined, file: undefined };
+  expect(opensOnGuided(base)).toBe(true);
+  expect(opensOnGuided({ ...base, review: review({ kind: 'commit' }) })).toBe(true);
+  expect(opensOnGuided({ ...base, guide: guideView({ groups: [], guideMe: { offered: true, noGroups: true, droppedGroups: 0, newUngrouped: 0 } }) })).toBe(false);
+  expect(opensOnGuided({ ...base, review: review({ kind: 'uncommitted' }) })).toBe(false);
+  expect(opensOnGuided({ ...base, pastView: true })).toBe(false);
+  expect(opensOnGuided({ ...base, commit: 'abc1234' })).toBe(false);
+  expect(opensOnGuided({ ...base, file: 'a.ts' })).toBe(false);
 });

@@ -80,6 +80,11 @@ export function guideAvailable({ review, guide, pastView, commit }: { review: Re
   return review.kind !== 'uncommitted' && !!guide && !pastView && !commit && (guide.groups.length > 0 || guide.guideMe.offered);
 }
 
+/** A review opens on the Guided tab when it has proposed groups and no file is routed; Guide me alone doesn't count. */
+export function opensOnGuided({ file, ...ctx }: { review: ReviewSummary; guide: GuideView | null; pastView: boolean; commit: string | undefined; file: string | undefined }): boolean {
+  return guideAvailable(ctx) && ctx.guide!.groups.length > 0 && !file;
+}
+
 /** The collapsed file bar's status text: hunk count, pending or decided, and open line threads when there are any. */
 export function fileSummary(hunks: GuideHunk[], openThreads: number): string {
   const pending = hunks.filter((h) => h.verdict === 'pending').length;

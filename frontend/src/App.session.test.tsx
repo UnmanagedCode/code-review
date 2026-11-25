@@ -5,7 +5,7 @@ import { expect, test, vi } from 'vitest';
 import { ReviewHeader } from '@/features/review/ReviewHeader';
 import { installBridge } from '@/test/fakeBridge';
 import { installFakeEventSource } from '@/test/fakeEventSource';
-import { diffFile, fileState, inboxItem, review } from '@/test/fixtures';
+import { diffFile, fileState, guideGroup, guideView, inboxItem, review } from '@/test/fixtures';
 import { renderInReview } from '@/test/renderCtx';
 import { stubFetch } from '@/test/stubFetch';
 import { PROJECTS_RECHECK_MS } from '@/features/layout/useFollowSession';
@@ -177,14 +177,14 @@ test('a session for an unlisted project rechecks a stale project list, not a fre
 });
 
 /** `world()` with an inbox of the given rows. */
-const withInbox = (rows: ReturnType<typeof inboxItem>[], hold?: Promise<void>) => stubFetch([
+const withInbox = (rows: ReturnType<typeof inboxItem>[], hold?: Promise<void>, guide?: ReturnType<typeof guideView>) => stubFetch([
   [/^GET api\/projects$/, { projects: [{ name: 'app' }, { name: 'other' }] }],
   [/^GET api\/checkout\?/, { checkout: { project: 'app', worktree: null, path: '/x', branch: 'main', headSha: 'h', dirty: false, exists: true }, forkPoints: [], worktrees: [] }],
   [/^GET api\/sessions\/[^/?]+\/places$/, { places: [] }],
   [/^GET api\/sessions/, { sessions: [] }],
   [/^GET api\/reviews\?/, { reviews: [] }],
   [/^GET api\/inbox$/, async () => { await hold; return { reviews: rows }; }],
-  [/^GET api\/reviews\/r-1$/, { review: review({ title: 'Open review' }), files: [fileState({ path: 'a.js' })], rounds: [{ n: 1, headSha: 'a'.repeat(40), baseSha: 'b'.repeat(40), createdAt: '', submittedAt: null }], submissions: [], outdatedThreads: [], reviewThreads: [], openThreads: [], activity: [] }],
+  [/^GET api\/reviews\/r-1$/, { review: review({ title: 'Open review' }), files: [fileState({ path: 'a.js' })], rounds: [{ n: 1, headSha: 'a'.repeat(40), baseSha: 'b'.repeat(40), createdAt: '', submittedAt: null }], submissions: [], outdatedThreads: [], reviewThreads: [], openThreads: [], activity: [], ...(guide && { guide }) }],
   [/^GET api\/reviews\/r-1\/diff/, { review: review({ title: 'Open review' }), files: [diffFile({ path: 'a.js' })] }],
   [/^GET api\/reviews\/r-1\/commits/, { commits: [] }],
 ]);
@@ -201,6 +201,19 @@ test('embedded load with a single review for the session opens it with replace',
   await screen.findByRole('heading', { level: 1, name: 'Open review' });
   expect(location.search).toBe('?project=app&worktree=feature&review=r-1');
   expect(replace).toHaveBeenCalledWith(null, '', '?project=app&worktree=feature&review=r-1');
+  expect(history.length).toBe(length);
+});
+
+// Invariant: the landing composes with the Guided default: the grouped review opens on Guided, the landing's one replace stays the only history write, and no view is added to the URL.
+test('embedded landing on a grouped review opens on Guided without writing view', async () => {
+  installFakeEventSource();
+  withInbox([mine()], undefined, guideView({ groups: [guideGroup({ id: 'g1', title: 'Wire it up' })], ungrouped: [] }));
+  installBridge({ sessionId: 's-1', project: 'app', worktree: null });
+  const length = history.length;
+  render(<App />);
+  expect(await screen.findByRole('heading', { level: 2, name: 'Wire it up' })).toBeTruthy();
+  expect(screen.getByRole('tab', { name: 'Guided' }).getAttribute('aria-selected')).toBe('true');
+  expect(location.search).toBe('?project=app&worktree=feature&review=r-1');
   expect(history.length).toBe(length);
 });
 

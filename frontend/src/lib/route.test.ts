@@ -18,6 +18,15 @@ test('view keeps new, threads, history and inbox only', () => {
   expect(parseRoute('?review=r-1&view=bogus')).toEqual({ review: 'r-1' });
 });
 
+// Invariant: a saved Files choice (view=files) survives parsing and leaves with the review.
+test('view=files parses and REVIEW_SCOPED clears it', () => {
+  expect(parseRoute('?review=r-1&view=files')).toEqual({ review: 'r-1', view: 'files' });
+  expect(REVIEW_SCOPED).toHaveProperty('view', undefined);
+  history.replaceState(null, '', '?review=r-1&view=files');
+  navigate({ review: undefined, ...REVIEW_SCOPED });
+  expect(parseRoute(location.search).view).toBeUndefined();
+});
+
 test('navigate pushes a ?… URL and never assigns the hash', () => {
   const push = vi.spyOn(history, 'pushState');
   navigate({ project: 'app', review: 'r-1' });

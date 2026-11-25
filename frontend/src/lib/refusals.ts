@@ -23,6 +23,7 @@ const BACKEND: Record<string, string> = {
   GROUP_UNKNOWN: 'That group is gone; reloaded',
   IMMUTABLE_TARGET: 'This review’s target is a fixed commit, so it can’t be refreshed',
   HUNK_UNKNOWN: 'The diff changed under you; reloaded',
+  STALE_HUNKS: 'The file changed under you; reloaded',
   FILE_NOT_IN_DIFF: 'The diff changed under you; reloaded',
   LINE_OUT_OF_RANGE: 'The diff changed under you; reloaded',
   BINARY_FILE: 'Binary files take no line comments',
@@ -58,7 +59,7 @@ export function errorText(e: unknown): string {
 }
 
 /** Codes whose refusal means the visible diff is stale. */
-export const STALE_DIFF = new Set(['HUNK_UNKNOWN', 'FILE_NOT_IN_DIFF', 'LINE_OUT_OF_RANGE']);
+export const STALE_DIFF = new Set(['HUNK_UNKNOWN', 'FILE_NOT_IN_DIFF', 'LINE_OUT_OF_RANGE', 'STALE_HUNKS']);
 
 export const BRIDGE_CODES = ['INVALID_ARGUMENT', 'SESSION_UNKNOWN', 'SESSION_NOT_LIVE', 'SESSION_NOT_READY', 'SEND_FAILED', 'LOOKUP_FAILED', 'HOST_ERROR'] as const;
 const BRIDGE: Record<(typeof BRIDGE_CODES)[number], string> = {

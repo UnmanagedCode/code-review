@@ -1,4 +1,4 @@
-import { screen, waitFor } from '@testing-library/react';
+import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { toast } from 'sonner';
 import { useState } from 'react';
@@ -8,7 +8,7 @@ import { ReviewProvider } from '@/test/reviewProvider';
 import { hunk, refusal, review } from '@/test/fixtures';
 import { ctxValue, renderInReview } from '@/test/renderCtx';
 import { stubFetch } from '@/test/stubFetch';
-import { HunkBar } from './HunkBar';
+import { HunkBar, VerdictToggle } from './HunkBar';
 
 const ok = (verdict: string) => ({ hunkId: 'h1', verdict, clearedGroups: [], review: review({ rev: 2 }), fileSig: { path: 'src/a.ts', sig: 's-2' } });
 
@@ -20,11 +20,32 @@ test.each([['Accept', 'accepted'], ['Reject', 'rejected']])('%s issues PUT …/v
   await waitFor(() => expect(net.calls[0].body).toEqual({ verdict }));
 });
 
-test('Pending clears an existing verdict', async () => {
+// Invariant: an undecided hunk offers only Accept and Reject, and neither reads as chosen (no Pending segment).
+test('an undecided hunk shows only Accept and Reject, neither pressed', () => {
+  renderInReview(<HunkBar hunk={hunk({ verdict: 'pending' })} path="src/a.ts" commentable />);
+  const group = within(screen.getByRole('group', { name: 'Hunk verdict' }));
+  expect(group.getByText('undecided')).toBeTruthy();
+  expect(group.getAllByRole('button').map((b) => [b.textContent, b.getAttribute('aria-pressed')])).toEqual([['Accept', 'false'], ['Reject', 'false']]);
+  expect(group.queryByRole('button', { name: 'Pending' })).toBeNull();
+});
+
+// Invariant: a decided hunk shows its verdict and a Clear control that sends pending optimistically; no Accept/Reject segments remain.
+test.each([['accepted', '✓ Accepted'], ['rejected', '✗ Rejected']] as const)('a %s hunk shows its verdict and Clear sends pending', async (verdict, text) => {
   const net = stubFetch({ 'PUT api/reviews/r-1/hunks/h1/verdict': ok('pending') });
-  renderInReview(<HunkBar hunk={hunk({ verdict: 'accepted' })} path="src/a.ts" commentable />);
-  await userEvent.setup().click(screen.getByRole('button', { name: 'Pending' }));
+  const { value } = renderInReview(<HunkBar hunk={hunk({ verdict })} path="src/a.ts" commentable />);
+  const group = within(screen.getByRole('group', { name: 'Hunk verdict' }));
+  expect(group.getByText(text)).toBeTruthy();
+  expect(group.queryByRole('button', { name: 'Accept' })).toBeNull();
+  await userEvent.setup().click(group.getByRole('button', { name: 'Clear' }));
+  expect(value.diffs.patchVerdicts).toHaveBeenCalledWith('src/a.ts', { h1: 'pending' });
   await waitFor(() => expect(net.calls[0].body).toEqual({ verdict: 'pending' }));
+});
+
+// Invariant: a closed review disables every verdict control of the hunk bar.
+test.each(['pending', 'accepted'] as const)('a closed review disables the %s hunk’s controls', (verdict) => {
+  renderInReview(<HunkBar hunk={hunk({ verdict })} path="src/a.ts" commentable />, { review: review({ status: 'closed' }) });
+  const buttons = within(screen.getByRole('group', { name: 'Hunk verdict' })).getAllByRole('button');
+  expect(buttons.every((b) => (b as HTMLButtonElement).disabled)).toBe(true);
 });
 
 test('a refused verdict reverts the optimistic flip and toasts the refusal', async () => {
@@ -70,45 +91,46 @@ function Stateful() {
   const value = ctxValue({ diffs: { patchVerdicts: (_path: string, v: Record<string, never>) => setH((x) => ({ ...x, verdict: v.h1 })) } as never });
   return <ReviewProvider value={value}><HunkBar hunk={h} path="src/a.ts" commentable /></ReviewProvider>;
 }
-const pressed = (name: string) => screen.getByRole('button', { name }).getAttribute('aria-pressed');
 
-test('the verdict toggle flips before the server answers', async () => {
+// Invariant: the bar flips at once (before the server answers) from undecided to the chosen verdict's chip.
+test('the hunk bar flips before the server answers', async () => {
   stubFetch({ 'PUT api/reviews/r-1/hunks/h1/verdict': () => new Promise(() => {}) });
   render(<Stateful />);
-  expect(pressed('Pending')).toBe('true');
+  expect(screen.getByText('undecided')).toBeTruthy();
   await userEvent.setup().click(screen.getByRole('button', { name: 'Accept' }));
-  expect(pressed('Accept')).toBe('true');
-  expect(pressed('Pending')).toBe('false');
+  expect(screen.getByText('✓ Accepted')).toBeTruthy();
+  expect(screen.queryByText('undecided')).toBeNull();
 });
 
-test('after a refusal the toggle is back on its previous verdict', async () => {
+// Invariant: after a refusal the bar is back on the verdict it had.
+test('after a refusal the bar is back to undecided', async () => {
   vi.spyOn(toast, 'error').mockImplementation(() => '');
   stubFetch({ 'PUT api/reviews/r-1/hunks/h1/verdict': refusal('REVIEW_CLOSED') });
   render(<Stateful />);
   await userEvent.setup().click(screen.getByRole('button', { name: 'Accept' }));
-  await waitFor(() => expect(pressed('Pending')).toBe('true'));
-  expect(pressed('Accept')).toBe('false');
+  await waitFor(() => expect(screen.getByText('undecided')).toBeTruthy());
+  expect(screen.queryByText('✓ Accepted')).toBeNull();
 });
 
-// Pins: exactly one segment is active, and a null verdict counts as Pending.
-test.each([['accepted', 'Accept'], ['rejected', 'Reject'], ['pending', 'Pending'], [null, 'Pending']] as const)('verdict %s marks only %s as the active segment', (verdict, label) => {
+// Invariant: a null verdict reads as undecided, like pending.
+test('a null verdict shows as undecided', () => {
+  renderInReview(<HunkBar hunk={hunk({ verdict: null })} path="src/a.ts" commentable />);
+  expect(screen.getByText('undecided')).toBeTruthy();
+});
+
+// Invariant: the decided chip carries its hue in the background only, with neutral text (a hued label misses AA contrast); no other verdict's hue.
+test.each([['accepted', '✓ Accepted', 'success', 'destructive'], ['rejected', '✗ Rejected', 'destructive', 'success']] as const)('the %s chip is tinted %s in the background with neutral text', (verdict, text, hue, other) => {
   renderInReview(<HunkBar hunk={hunk({ verdict })} path="src/a.ts" commentable />);
-  for (const name of ['Accept', 'Reject', 'Pending']) expect(pressed(name)).toBe(String(name === label));
+  const { className } = screen.getByText(text);
+  expect(className).toMatch(new RegExp(`\\bbg-${hue}/\\d+\\b`));
+  expect(className).toMatch(/\btext-foreground\b/);
+  expect(className).not.toMatch(new RegExp(`-${other}\\b`));
 });
 
-// Pins: a closed review still shows which verdict is active, but no segment can change it.
-test('a closed review keeps the active segment marked but disables every segment', () => {
-  renderInReview(<HunkBar hunk={hunk({ verdict: 'rejected' })} path="src/a.ts" commentable />, { review: review({ status: 'closed' }) });
-  expect(pressed('Reject')).toBe('true');
-  for (const name of ['Accept', 'Reject', 'Pending']) expect((screen.getByRole('button', { name }) as HTMLButtonElement).disabled).toBe(true);
-});
-
-// Pins: the active-verdict tint is keyed on aria-pressed; each verdict has its own hue in the background only, with neutral
-// text (a hued label misses AA contrast). The dark hover shade is required (ghost's dark hover out-specifies the plain
-// background); the light one is an affordance. No other verdict's hue and no primary tint.
+// Invariant: the group verdict control keeps its tint keyed on aria-pressed: own hue in the background only, neutral text, both hover shades (the dark one is required: ghost's dark hover out-specifies the plain background).
 const HUES = { Accept: 'success', Reject: 'destructive', Pending: 'info' } as const;
-test.each(Object.entries(HUES))('the %s segment carries its own aria-pressed hue (%s) in the background, neutral text, both hover shades, and no other tint', (name, hue) => {
-  renderInReview(<HunkBar hunk={hunk()} path="src/a.ts" commentable />);
+test.each(Object.entries(HUES))('the group %s segment carries its own aria-pressed hue (%s) in the background, neutral text, both hover shades, and no other tint', (name, hue) => {
+  render(<VerdictToggle label="Group verdict" value="pending" labels={['Accept', 'Reject', 'Pending']} onChange={() => {}} />);
   const { className } = screen.getByRole('button', { name });
   expect(className).toMatch(new RegExp(`\\baria-pressed:bg-${hue}/\\d+\\b`));
   expect(className).toMatch(new RegExp(`(^|\\s)aria-pressed:hover:bg-${hue}/\\d+\\b`));

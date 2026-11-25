@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { navigate, type Route } from '@/lib/route';
 import { CheckoutBar } from '@/features/checkout/CheckoutBar';
@@ -15,8 +15,16 @@ import type { useFollowSession } from './useFollowSession';
 export function ListPane({ route, follow, arrival, placeholder }: {
   route: Route; follow: ReturnType<typeof useFollowSession>; arrival: number; placeholder?: ReactNode;
 }) {
-  const tab = route.view === 'inbox' ? 'inbox' : 'checkout';
-  const choose = (v: string) => navigate({ view: v === 'inbox' ? 'inbox' : undefined }, { replace: true });
+  const { landing, cancelLanding, ...checkout } = follow;
+  // Until the landing rule has run and the route names nothing, the inbox shows: never the empty picker first.
+  // The first paint's default only: a tab the user has clicked wins over a landing still pending.
+  const [picked, setPicked] = useState(false);
+  const tab = route.view === 'inbox' || (landing === 'pending' && !route.project && !picked) ? 'inbox' : 'checkout';
+  const choose = (v: string) => {
+    setPicked(true);
+    cancelLanding();
+    navigate({ view: v === 'inbox' ? 'inbox' : undefined }, { replace: true });
+  };
   return (
     <Tabs value={tab} onValueChange={choose} className="min-h-0 flex-1 gap-0">
       <TabsList aria-label="Review lists" className="mx-3 mt-2 mb-1 w-auto">
@@ -25,7 +33,7 @@ export function ListPane({ route, follow, arrival, placeholder }: {
       </TabsList>
       <TabsContent value="inbox" className="flex min-h-0 flex-1 flex-col"><Inbox /></TabsContent>
       <TabsContent value="checkout" forceMount hidden={tab !== 'checkout'} className="flex min-h-0 flex-1 flex-col">
-        <CheckoutBar route={route} {...follow} />
+        <CheckoutBar route={route} {...checkout} />
         {route.project ? <ReviewList key={arrival} project={route.project} worktree={route.worktree} /> : placeholder}
       </TabsContent>
     </Tabs>

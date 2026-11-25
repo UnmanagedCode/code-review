@@ -21,7 +21,7 @@ const world = () => stubFetch([
 ]);
 
 function Pane() {
-  return <ListPane route={useRoute()} follow={{ followingTitle: undefined, unfollowable: false }} arrival={0} />;
+  return <ListPane route={useRoute()} follow={{ landing: 'done', cancelLanding: () => {}, followingTitle: undefined, unfollowable: false }} arrival={0} />;
 }
 
 // Invariant: the Inbox tab is view=inbox written with replace; Checkout clears view, also with replace.
@@ -63,8 +63,10 @@ test('a narrow layout has both tabs and shows the project placeholder on Checkou
   installMedia({ [WIDE_QUERY]: false });
   world();
   render(<App />);
-  expect((await screen.findByText('Choose a project to review')).closest('[hidden]')).toBeNull();
-  await userEvent.setup().click(screen.getByRole('tab', { name: 'Inbox' }));
   expect(await screen.findByText('In the inbox')).toBeTruthy();
+  const user = userEvent.setup();
+  await user.click(screen.getByRole('tab', { name: 'Checkout' }));
+  expect((await screen.findByText('Choose a project to review')).closest('[hidden]')).toBeNull();
+  await user.click(screen.getByRole('tab', { name: 'Inbox' }));
   expect(screen.getByText('Choose a project to review').closest('[hidden]'), 'inside the hidden Checkout panel').not.toBeNull();
 });

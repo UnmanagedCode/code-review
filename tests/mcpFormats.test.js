@@ -339,7 +339,7 @@ test('json excerpts are whole while text cuts at the cap and says how to read th
 });
 
 test('get_review json carries the guide and files whole', async () => {
-  // Invariant: nothing the service's guide holds is trimmed in json except the group thread bodies (list_threads has them); files lose only the UI's sig.
+  // Invariant: nothing the service's guide holds is trimmed in json except the group thread bodies (list_threads has them); files lose only the UI's sig, viewed mark and hunk ids.
   const { review } = await reviewOnFeature();
   const [h1, h2] = await hunkIdsOf(review.id);
   const long = `## Why\n\n${'a long markdown description. '.repeat(40)}`;
@@ -354,8 +354,11 @@ test('get_review json carries the guide and files whole', async () => {
   assert.equal(got.guide.groups[0].proposedBy.role, 'conductor');
   assert.equal(got.guide.retired.length, 1);
   assert.ok(got.guide.groups[0].hunks.every((h) => typeof h.file === 'string'));
-  assert.deepEqual(got.files, JSON.parse(JSON.stringify(svc.files.map(({ sig, ...f }) => f))));
+  assert.deepEqual(got.files, JSON.parse(JSON.stringify(svc.files.map(({ sig, viewed, hunkIds, ...f }) => f))));
   assert.ok(svc.files.every((f) => f.sig));
+  // Invariant: the UI-only viewed mark and hunk ids never reach MCP callers.
+  assert.ok(svc.files.every((f) => 'viewed' in f && 'hunkIds' in f));
+  assert.ok(got.files.every((f) => !('viewed' in f) && !('hunkIds' in f)));
 });
 
 test('the schema walk reaches anyOf branches and object-valued additionalProperties', () => {

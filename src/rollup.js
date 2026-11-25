@@ -3,6 +3,7 @@ import { parseCitations } from './citations.js';
 import { currentRound, recipientRole } from './context.js';
 import { anchorView } from './anchor.js';
 import { threadState, stateCounts, unsentActivity } from './threadState.js';
+import { agentActivity } from './overview.js';
 
 export const verdictOf = (review, hunkId) => review.verdicts[hunkId]?.verdict ?? 'pending';
 
@@ -21,6 +22,20 @@ const verdictTally = (review, hunks) => {
   return c;
 };
 
+/** Every hunk id of `files`, in file order then hunk order. */
+export const hunkIdsOf = (files) => files.flatMap((f) => f.hunks.map((h) => h.id));
+
+/**
+ * The verdict tally over the current round's stored hunk ids, or null when the round stored none (an uncommitted review, or a
+ * round stored before ids were kept). Store-only: the one exec-free source of hunk counts.
+ */
+export function storedHunkTally(review) {
+  const ids = currentRound(review).hunkIds;
+  return ids ? verdictTally(review, ids.map((id) => ({ id }))) : null;
+}
+
+const sameIds = (a, b) => a.length === b.length && b.every((id) => a.includes(id));
+
 export const targetLabel = (review) => {
   if (review.kind === 'range') return `${review.baseLabel}...${review.branch}`;
   if (review.kind === 'commit') return `commit ${review.target.sha.slice(0, 7)}`;
@@ -32,12 +47,14 @@ export function fileStates(review, files) {
   const verdicts = review.kind !== 'uncommitted';
   return files.map((f) => {
     const threads = review.threads.filter((t) => t.anchor.file === f.path);
+    const hunkIds = f.hunks.map((h) => h.id);
     return {
       path: f.path, oldPath: f.oldPath, status: f.status, binary: f.binary, tooLarge: Boolean(f.tooLarge),
       additions: f.additions, deletions: f.deletions, hunks: f.hunks.length,
       verdicts: verdicts ? verdictTally(review, f.hunks) : null,
       threads: tally(threads),
       unread: threads.reduce((n, t) => n + unreadOf(t), 0),
+      hunkIds, viewed: review.viewedFiles[f.path] !== undefined && sameIds(review.viewedFiles[f.path], hunkIds),
     };
   });
 }
@@ -138,9 +155,25 @@ export function turnOf(review) {
 }
 
 /** InboxItem: a stored review as the inbox lists it. `checkoutGone` is true, false or null (cc could not say). */
-export const inboxItem = (review, checkoutGone) => ({
-  id: review.id, project: review.project, worktree: review.worktree, branch: review.branch,
-  kind: review.kind, label: targetLabel(review), title: review.title, round: currentRound(review).n,
-  unread: review.threads.reduce((n, t) => n + unreadOf(t), 0), seenByHuman: review.seenByHuman,
-  lastActivityAt: review.lastActivityAt, turn: turnOf(review), checkoutGone,
-});
+export const inboxItem = (review, checkoutGone) => {
+  const sub = review.submissions[review.submissions.length - 1];
+  return {
+    id: review.id, project: review.project, worktree: review.worktree, branch: review.branch,
+    kind: review.kind, label: targetLabel(review), title: review.title, round: currentRound(review).n,
+    unread: review.threads.reduce((n, t) => n + unreadOf(t), 0), seenByHuman: review.seenByHuman,
+    lastActivityAt: review.lastActivityAt, turn: turnOf(review), checkoutGone,
+    recipient: review.recipient, author: review.author,
+    hunks: storedHunkTally(review), groupsPending: review.groups.filter((g) => (g.verdict?.verdict ?? 'pending') === 'pending').length,
+    threadStates: stateCounts(review), unsent: unsentActivity(review), newActivity: review.agentSeq > review.lastViewedSeq,
+    lastSubmission: sub ? { status: sub.status, at: sub.deliveredAt ?? sub.composedAt } : null,
+    lastAgentAction: lastAgentAction(review),
+  };
+};
+
+/** The agent's newest act as the inbox names it: a thread event, or an unrecorded update (a refresh or group proposal store no seq). */
+function lastAgentAction(review) {
+  if (review.agentSeq === 0) return null;
+  const top = agentActivity(review)[0];
+  if (top?.seq !== review.agentSeq) return { kind: 'update', at: null };
+  return { kind: 'thread', event: top.event, thread: { id: top.thread.id, kind: top.thread.kind, anchor: top.thread.anchor }, at: top.at };
+}

@@ -9,8 +9,8 @@ import { mapLimit, ROW_CONCURRENCY } from './limit.js';
 import { resolveTarget, buildSnapshot, isBinaryFile } from './snapshot.js';
 import { followThreads } from './follow.js';
 import { currentRound, authorFor, assertOpen, inReview, viewReview } from './context.js';
-import { summarize, fileStates, hunkView, threadView, targetLabel, liveView, signStates, diffFiles, liveSig } from './rollup.js';
-import { pickRound, roundDiff } from './rounds.js';
+import { summarize, fileStates, hunkIdsOf, hunkView, threadView, targetLabel, liveView, signStates, diffFiles, liveSig } from './rollup.js';
+import { pickRound, roundDiff, wireRound } from './rounds.js';
 import { openThreadDigests, agentActivity } from './overview.js';
 import { groupsHolding, contradictedGroups, carryGroups, groupCounts, guideView } from './grouping.js';
 
@@ -129,8 +129,8 @@ export const openReview = (args, actor) => attempt(() => withLock('create', asyn
     id: store.newId(), project: args.project, worktree, branch, kind, target,
     baseLabel: kind === 'range' ? target.base : null, title: '', status: 'open', createdAt, lastActivityAt: createdAt, createdBy: null,
     recipient, author: args.author ?? null, seenByHuman: actor.kind === 'human', rev: 0, seq: 0, humanSeq: 0, agentSeq: 0, lastViewedSeq: 0, nextThread: 1, nextSubmission: 1,
-    rounds: [{ n: 1, ...shas, fingerprint: snap.fingerprint, createdAt, submittedAt: null }],
-    verdicts: {}, threads: [], droppedThreads: [], submissions: [],
+    rounds: [{ n: 1, ...shas, fingerprint: snap.fingerprint, hunkIds: kind === 'uncommitted' ? null : hunkIdsOf(snap.files), createdAt, submittedAt: null }],
+    verdicts: {}, viewedFiles: {}, threads: [], droppedThreads: [], submissions: [],
     groups: [], retiredGroups: [], nextGroup: 1, sinceProposal: { dropped: 0, newHunkIds: [] },
   };
   review.createdBy = authorFor(review, actor);
@@ -154,7 +154,7 @@ export const getReview = (id) => attempt(() => viewReview(id, async (review, env
   const snap = summary.snapshotError ? null : await env.snapshot();
   const files = snap ? signStates(snap, fileStates(review, snap.files), snap.files, liveView(review)) : [];
   return {
-    ok: true, review: summary, files, rounds: review.rounds, submissions: review.submissions,
+    ok: true, review: summary, files, rounds: review.rounds.map(wireRound), submissions: review.submissions,
     guide: guideView(review, snap?.files ?? null),
     outdatedThreads: review.threads.filter((t) => t.status === 'outdated' && t.anchor.kind !== 'group').map((t) => threadView(review, t)),
     reviewThreads: review.threads.filter((t) => t.anchor.kind === 'review').map((t) => threadView(review, t)),
@@ -233,6 +233,30 @@ export const acceptFile = (id, file, hunkIds) => attempt(async () => {
   return res.ok ? { ...(await summaryById(id, scope)), file, accepted: res.accepted, clearedGroups: res.clearedGroups, fileSig: res.fileSig } : res;
 });
 
+/**
+ * Marks (`hunkIds`: the ids the UI shows) or clears (`null`) a file's viewed mark. The ids must be the file's current ones, as
+ * for Accept file: the UI marks only what it has shown. Not activity (no seq, no `lastActivityAt`).
+ */
+export const setFileViewed = (id, { file, hunkIds } = {}) => attempt(async () => {
+  const scope = lookupScope();
+  const res = await inReview(id, async (review, env) => {
+    if (typeof file !== 'string' || !file) throw invalid('file must be a non-empty string');
+    if (hunkIds !== null && !(Array.isArray(hunkIds) && hunkIds.every((h) => typeof h === 'string'))) throw invalid('hunkIds must be null or an array of hunk ids');
+    assertOpen(review);
+    const snap = await env.snapshot();
+    const f = snap.files.find((x) => x.path === file);
+    if (!f) throw new Refusal('FILE_NOT_IN_DIFF', `${file} is not in the diff`);
+    if (hunkIds === null) delete review.viewedFiles[file];
+    else {
+      const current = f.hunks.map((h) => h.id);
+      if (new Set(hunkIds).size !== current.length || !current.every((h) => hunkIds.includes(h))) throw new Refusal('STALE_HUNKS', `${file} changed since its hunks were shown`);
+      review.viewedFiles[file] = [...current].sort();
+    }
+    return { ok: true, viewed: hunkIds !== null, fileSig: liveSig(review, snap, file) };
+  }, scope);
+  return res.ok ? { ...(await summaryById(id, scope)), file, viewed: res.viewed, fileSig: res.fileSig } : res;
+});
+
 /** Re-snapshots a range or uncommitted review. A new round is activity; one an agent pushes is also agent activity (`agentSeq`). */
 export const refreshReview = (id, actor) => attempt(async () => inReview(id, async (review, env) => {
   assertOpen(review);
@@ -244,7 +268,10 @@ export const refreshReview = (id, actor) => attempt(async () => inReview(id, asy
   const push = (snap) => {
     const seq = bump(review);
     if (actor.kind === 'agent') review.agentSeq = seq;
-    review.rounds.push({ n: cur.n + 1, headSha: snap.headSha, baseSha: snap.baseSha, fingerprint: snap.fingerprint, createdAt: now(), submittedAt: null });
+    review.rounds.push({
+      n: cur.n + 1, headSha: snap.headSha, baseSha: snap.baseSha, fingerprint: snap.fingerprint,
+      hunkIds: review.kind === 'uncommitted' ? null : hunkIdsOf(snap.files), createdAt: now(), submittedAt: null,
+    });
   };
 
   if (review.kind === 'uncommitted') {
@@ -290,7 +317,7 @@ export const diff = (id, { file, commit, round } = {}) => attempt(() => viewRevi
     const hit = (await git.commitLog(repo, { range: `${cur.baseSha}..${cur.headSha}` })).find((c) => commit.length >= 7 && c.sha.startsWith(commit));
     if (!hit) throw new Refusal('COMMIT_NOT_IN_RANGE', `${commit} is not in round ${cur.n}'s range`);
     const snap = await buildSnapshot({ kind: 'commit', repo, checkout: repo, ...(await resolveTarget(repo, 'commit', { sha: hit.sha })) });
-    const bare = { ...review, kind: 'commit', threads: [], verdicts: {} };
+    const bare = { ...review, kind: 'commit', threads: [], verdicts: {}, viewedFiles: {} };
     const states = await diffFiles(snap, fileStates(bare, snap.files).map((s) => ({ ...s, verdicts: null })), snap.files, { hunk: (h) => ({ ...h, verdict: null }), threads: () => [] });
     return { ok: true, readOnly: true, commit: { sha: hit.sha, subject: hit.subject }, files: states };
   }

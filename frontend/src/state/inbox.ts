@@ -1,11 +1,15 @@
 import { toast } from 'sonner';
 import * as ep from '@/lib/endpoints';
 import { errorText } from '@/lib/refusals';
-import { useResource } from './resource';
+import { useResource, type Spec } from './resource';
+
+/** The inbox's cache entry: shared by the visible list and the landing that decides where a session opens. */
+export const INBOX_KEY = 'inbox';
+export const inboxSpec: Spec<Awaited<ReturnType<typeof ep.inbox>>> = { fetch: () => ep.inbox(), matches: () => true };
 
 /** Every open review, latest activity first. Any review event refetches it. */
 export function useInbox() {
-  return useResource('inbox', { fetch: () => ep.inbox(), matches: () => true });
+  return useResource(INBOX_KEY, inboxSpec);
 }
 
 /** Closes a review from the inbox, then calls `reload`; a refusal toasts. */

@@ -10,7 +10,7 @@ import { useReviewCtx } from './reviewContext';
 /** Write actions on the open review. Each returns undefined after toasting a refusal, and refetches when the diff proved stale. */
 export function useReviewActions() {
   const ctx = useReviewCtx();
-  const { id, diffs, patchGuide, reload, applyReview, version } = ctx;
+  const { id, diffs, patchGuide, patchFiles, reload, applyReview, version } = ctx;
 
   async function guard<T>(fn: () => Promise<T>): Promise<T | undefined> {
     try {
@@ -68,6 +68,26 @@ export function useReviewActions() {
       } catch (e) {
         if (previous) applyHunks(path, [hunkId], previous);
         toast.error(errorText(e));
+      }
+    },
+    /**
+     * Marks or clears a file's viewed mark, optimistic like a verdict. The mark carries the hunk ids the file shows, so the
+     * server refuses it (`STALE_HUNKS`) when the file changed meanwhile; a refusal reverts the flip and reloads.
+     */
+    async setViewed(file: string, viewed: boolean) {
+      const shown = ctx.files.find((f) => f.path === file);
+      if (!shown) return;
+      const flip = (to: boolean) => patchFiles((fs) => fs.map((f) => (f.path === file ? { ...f, viewed: to } : f)));
+      flip(viewed);
+      try {
+        const done = await ep.setFileViewed(id, file, viewed ? shown.hunkIds : null);
+        applyReview(done.review);
+        diffs.patchSig(done.fileSig);
+        reload();
+      } catch (e) {
+        flip(shown.viewed);
+        toast.error(errorText(e));
+        reload();
       }
     },
     /**

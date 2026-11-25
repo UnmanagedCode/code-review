@@ -45,6 +45,10 @@ export interface FileState {
   binary: boolean; tooLarge: boolean; additions: number; deletions: number; hunks: number;
   verdicts: { pending: number; accepted: number; rejected: number } | null;
   threads: ThreadCounts; unread: number;
+  /** The file's current hunk ids, in order. */
+  hunkIds: string[];
+  /** The human marked the file viewed and none of its hunks changed since. Always false off the live round. */
+  viewed: boolean;
   /** Opaque: equal sig, identical diff response for the file. */
   sig: string;
 }
@@ -119,6 +123,19 @@ export type Turn = 'human' | 'agent';
 export interface InboxItem {
   id: string; project: string; worktree: string | null; branch: string | null; kind: Kind; label: string; title: string; round: number;
   unread: number; seenByHuman: boolean; lastActivityAt: string; turn: Turn; checkoutGone: boolean | null;
+  recipient: string | null; author: string | null;
+  /** The verdict tally from the current round's stored hunk ids; null when that round stored none (uncommitted, or stored before ids were kept). */
+  hunks: { pending: number; accepted: number; rejected: number } | null;
+  /** Groups with no verdict. */
+  groupsPending: number;
+  threadStates: ThreadStateCounts;
+  /** The human did something the next Submit round would still send. */
+  unsent: boolean;
+  /** The agent did something since the human last looked. */
+  newActivity: boolean;
+  lastSubmission: { status: SubmissionRef['status']; at: string } | null;
+  /** The agent's newest act: a thread event, an update with no recorded detail, or null when the agent never acted. */
+  lastAgentAction: { kind: 'thread'; event: ActivityItem['event']; thread: { id: string; kind: ThreadKind; anchor: Anchor }; at: string } | { kind: 'update'; at: null } | null;
 }
 
 export interface Session { sessionId: string; project: string; worktree: string | null; label: string | null; status: string; live: boolean; conductor: boolean; conducted: boolean; attached: boolean }

@@ -648,3 +648,42 @@ test('uncommitted: a file thread survives edits to its file and is dropped once 
   assert.equal(codeOf(await threads.reply(review.id, HUMAN, f.id, { body: 'late' })), 'THREAD_DROPPED');
   assert.equal(ok(await threads.reply(review.id, HUMAN, r.id, { body: 'still here' })).thread.status, 'open');
 });
+
+test('rounds store the snapshot\'s hunk ids in file order; uncommitted rounds store null; the API rounds carry none', async () => {
+  // Invariant: openReview and refreshReview write round.hunkIds = hunkIdsOf(snapshot files) for range and commit reviews, null for uncommitted; getReview strips them.
+  const wt = w.addWorktree();
+  wt.commit({ 'a.js': editLines({ 2: 'x', 15: 'y' }), 'b.js': 'b\n' });
+  const { review } = ok(await open());
+  const ids = (await reviews.getReview(review.id)).files.flatMap((f) => f.hunkIds);
+  assert.equal(ids.length, 3);
+  assert.deepEqual(store.read(review.id).rounds[0].hunkIds, ids);
+  wt.commit({ 'c.js': 'c\n' });
+  ok(await reviews.refreshReview(review.id, HUMAN));
+  const next = (await reviews.getReview(review.id)).files.flatMap((f) => f.hunkIds);
+  assert.deepEqual(store.read(review.id).rounds[1].hunkIds, next);
+  assert.equal(next.length, 4);
+  const got = await reviews.getReview(review.id);
+  assert.ok(got.rounds.every((r) => !('hunkIds' in r)));
+  w.repo.write('a.js', editLines({ 4: 'dirty' }));
+  const unc = ok(await reviews.openReview({ project: 'app', kind: 'uncommitted' }, HUMAN)).review;
+  assert.equal(store.read(unc.id).rounds[0].hunkIds, null);
+  w.repo.write('a.js', editLines({ 6: 'dirtier' }));
+  ok(await reviews.refreshReview(unc.id, HUMAN));
+  assert.equal(store.read(unc.id).rounds[1].hunkIds, null);
+});
+
+test('no round view carries hunkIds: round view, round diff and comparison answer the wire Round', async () => {
+  // Invariant: hunkIds is store-only; every response that returns a round strips it (wireRound).
+  const wt = w.addWorktree();
+  wt.commit({ 'a.js': editLines({ 2: 'x' }) });
+  const { review } = ok(await open());
+  wt.commit({ 'b.js': 'b\n' });
+  ok(await reviews.refreshReview(review.id, HUMAN));
+  assert.ok(store.read(review.id).rounds.every((r) => Array.isArray(r.hunkIds)), 'stored');
+  const { roundView } = await import('../src/rounds.js');
+  const { compareRounds } = await import('../src/compare.js');
+  assert.ok(!('hunkIds' in ok(await roundView(review.id, 1)).round));
+  assert.ok(!('hunkIds' in ok(await reviews.diff(review.id, { round: 1 })).round));
+  const cmp = ok(await compareRounds(review.id, { from: 1, to: 2 }));
+  assert.ok(!('hunkIds' in cmp.from) && !('hunkIds' in cmp.to));
+});

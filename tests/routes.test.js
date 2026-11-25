@@ -222,6 +222,18 @@ test('accept-file returns {file, accepted, fileSig, review}; an unknown file is 
   assert.deepEqual([gone.status, gone.body.code], [404, 'FILE_NOT_IN_DIFF']);
 });
 
+test('PUT /files/viewed returns {file, viewed, fileSig, review}; stale ids are 409 STALE_HUNKS', async () => {
+  // Invariant: the route is the setFileViewed service, with its refusals mapped through HTTP_STATUS.
+  const id = (await openReview()).review.id;
+  const ids = (await req('GET', `/reviews/${id}/diff`)).body.files[0].hunks.map((h) => h.id);
+  const res = await req('PUT', `/reviews/${id}/files/viewed`, { file: 'a.js', hunkIds: ids });
+  assert.equal(res.status, 200);
+  assert.deepEqual(Object.keys(res.body).sort(), ['file', 'fileSig', 'ok', 'review', 'viewed']);
+  assert.equal(res.body.viewed, true);
+  const stale = await req('PUT', `/reviews/${id}/files/viewed`, { file: 'a.js', hunkIds: ids.slice(1) });
+  assert.deepEqual([stale.status, stale.body.code], [409, 'STALE_HUNKS']);
+});
+
 test('refusals map to their HTTP status', async () => {
   const id = (await openReview()).review.id;
   const cases = [

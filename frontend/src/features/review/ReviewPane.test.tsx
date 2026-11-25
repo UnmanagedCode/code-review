@@ -1,9 +1,9 @@
-import { screen, within } from '@testing-library/react';
+import { act, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { expect, test, vi } from 'vitest';
 import { parseRoute } from '@/lib/route';
 import type { Kind, Round } from '@/lib/types';
-import { guideView, review } from '@/test/fixtures';
+import { diffFile, fileState, guideView, review, threadDigest } from '@/test/fixtures';
 import { renderInReview } from '@/test/renderCtx';
 import { stubFetch } from '@/test/stubFetch';
 import type { ReviewCtx } from '@/state/reviewContext';
@@ -37,13 +37,42 @@ test('the Threads panel holds the "Thread filter" tablist, apart from the pane\'
   expect(paneTabs().some((t) => /This file|All|Outdated|Review/.test(t.textContent!))).toBe(false);
 });
 
-// Invariant: the Threads tab carries the unread count, except in a past view.
-test('the Threads tab shows the unread badge on the live review only', () => {
-  const { unmount } = show('range', { review: review({ round: 2, unread: 3 }) });
+// Invariant: the Threads tab carries the open-thread count of what is shown (the viewed round's in a past view), and none at zero.
+test('the Threads tab shows the open-thread count of what is shown', () => {
+  const counts = (open: number) => ({ open, resolved: 0, outdated: 0 });
+  const { unmount } = show('range', { threadCounts: counts(3) });
   expect(text(screen.getByRole('tab', { name: /^Threads/ }))).toBe('Threads 3');
   unmount();
-  show('range', { review: review({ round: 2, unread: 3 }), round: 1, readOnly: true });
+  const past = show('range', { threadCounts: counts(1), round: 1, readOnly: true });
+  expect(text(screen.getByRole('tab', { name: /^Threads/ }))).toBe('Threads 1');
+  past.unmount();
+  show('range', { threadCounts: counts(0) });
   expect(text(screen.getByRole('tab', { name: /^Threads/ }))).toBe('Threads');
+});
+
+// Invariant: the Threads tab's badge, the All list under the default filters and the review's open-thread count are one number.
+test('the Threads badge equals the All count and the review\'s open threads', async () => {
+  const open = [threadDigest({ id: 't-1' }), threadDigest({ id: 't-2', state: 'unsent' }), threadDigest({ id: 't-r', anchor: { kind: 'review', round: 1 } })];
+  const summary = review({ round: 2, counts: { ...review().counts, threads: { open: 3, resolved: 4, outdated: 0 } } });
+  show('range', { review: summary, threadCounts: summary.counts.threads, openThreads: open });
+  expect(text(screen.getByRole('tab', { name: /^Threads/ }))).toBe('Threads 3');
+  await userEvent.setup().click(screen.getByRole('tab', { name: /^Threads/ }));
+  expect(text(screen.getByRole('tab', { name: /^All/ }))).toBe('All 3');
+});
+
+// Invariant: while the pane shows Files (the Threads panel stays mounted, hidden) or the status filter is Open, no per-file diff is fetched for the thread list.
+test('no per-file diff is fetched while the pane shows Files, nor while the status is Open', async () => {
+  const net = stubFetch({ 'GET api/reviews/r-1/commits': { commits: [] }, 'GET api/reviews/r-1/diff': { review: review(), files: [diffFile({ threads: [] })] } });
+  const files = [fileState({ threads: { open: 1, resolved: 1, outdated: 0 } })];
+  renderInReview(<ReviewPane />, { review: review({ kind: 'range', round: 2 }), rounds: rounds(2), files, openThreads: [threadDigest()] });
+  await act(async () => {});
+  expect(net.count('GET api/reviews/r-1/diff')).toBe(0);
+  const user = userEvent.setup();
+  await user.click(screen.getByRole('tab', { name: /^Threads/ }));
+  await act(async () => {});
+  expect(net.count('GET api/reviews/r-1/diff')).toBe(0);
+  await user.selectOptions(screen.getByLabelText('Status'), 'resolved');
+  await waitFor(() => expect(net.count('GET api/reviews/r-1/diff')).toBe(1));
 });
 
 // Invariant: the tab is the route's view; History falls back to Files where there is none.

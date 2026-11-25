@@ -1,32 +1,63 @@
 import { RouteLink } from '@/components/RouteLink';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { ageLabel } from '@/lib/age';
+import { needsYouOf } from '@/lib/inbox';
 import { REVIEW_SCOPED } from '@/lib/route';
+import { shortPlace } from '@/lib/threadState';
+import { cn } from '@/lib/utils';
 import type { InboxItem } from '@/lib/types';
 
+/** What the agent last did, in a sentence; null when it never acted. */
+export function agentActionText(a: InboxItem['lastAgentAction']): string | null {
+  if (!a) return null;
+  if (a.kind === 'update') return 'Agent updated the review';
+  const place = shortPlace(a.thread.anchor);
+  switch (a.event) {
+    case 'opened': return `Agent opened a thread on ${place}`;
+    case 'proposed-resolution': return `Agent says ${place} is fixed`;
+    case 'resolved': return `Agent resolved ${place}`;
+    default: return `Agent replied on ${place}`;
+  }
+}
+
+/** "sent 3 h ago", or "sent just now". */
+const sentLabel = (at: string, now: number): string => {
+  const age = ageLabel(at, now);
+  return age === 'just now' ? 'sent just now' : `sent ${age} ago`;
+};
+
 /** One open review: a link into it, and a Close button beside it once cc no longer lists its checkout. */
-export function InboxRow({ item: r, onClose }: { item: InboxItem; onClose: (id: string) => void }) {
+export function InboxRow({ item: r, accent, onClose }: { item: InboxItem; accent?: boolean; onClose: (id: string) => void }) {
   const name = r.title || r.label;
+  const now = Date.now();
+  const need = needsYouOf(r);
+  const gone = r.checkoutGone === true;
+  const activity = agentActionText(r.lastAgentAction) ?? (r.turn === 'agent' ? 'No reply yet' : null);
   return (
-    <li className="flex items-stretch border-b">
+    <li className={cn('flex items-stretch border-b', accent && 'border-l-2 border-l-primary')}>
       <RouteLink
         to={{ project: r.project, worktree: r.worktree ?? undefined, review: r.id, ...REVIEW_SCOPED }}
-        className="flex min-w-0 flex-1 flex-col gap-1 px-3 py-2.5 hover:bg-accent focus-visible:bg-accent focus-visible:outline-none"
+        className="flex min-w-0 flex-1 flex-col gap-1 px-3 py-2 hover:bg-accent focus-visible:bg-accent focus-visible:outline-none"
       >
-        <span className="flex items-center gap-2">
-          <span className="min-w-0 flex-1 truncate text-sm font-medium">{name}</span>
-          {!r.seenByHuman && <Badge variant="info">new</Badge>}
-          {r.unread > 0 && <Badge variant="default" aria-label={`${r.unread} unread`}>{r.unread}</Badge>}
+        <span className="flex items-baseline gap-2">
+          <span className="min-w-0 flex-1 truncate text-sm font-medium" title={name}>{name}</span>
+          <span className="shrink-0 text-xs text-muted-foreground">{ageLabel(r.lastActivityAt, now)}</span>
         </span>
-        <span className="truncate text-xs text-muted-foreground">{r.project} · {r.worktree ?? 'main checkout'}</span>
-        <span className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
-          {r.turn === 'human' ? <Badge variant="info">Your turn</Badge> : <Badge variant="secondary">Waiting on agent</Badge>}
-          <Badge variant="outline">{r.kind}</Badge>
-          <span>round {r.round}</span>
-          {r.checkoutGone === true && <Badge variant="warning">checkout gone</Badge>}
+        <span className="truncate text-xs text-muted-foreground">{r.project} · {r.worktree ?? 'main checkout'} · {r.kind} · round {r.round}</span>
+        <span className="flex flex-wrap items-center gap-1">
+          {need > 0 && <Badge variant="default">{need} need you</Badge>}
+          {r.threadStates.unsent > 0 && <Badge variant="info">{r.threadStates.unsent} will be sent</Badge>}
+          {r.hunks && r.hunks.pending > 0 && <Badge variant="outline">{r.hunks.pending} {r.hunks.pending === 1 ? 'hunk' : 'hunks'} undecided</Badge>}
+          {r.groupsPending > 0 && <Badge variant="outline">{r.groupsPending} {r.groupsPending === 1 ? 'group' : 'groups'} to decide</Badge>}
+          {r.newActivity && <Badge variant="info">new activity</Badge>}
+          {r.turn === 'agent' && r.lastSubmission && <Badge variant="secondary">{sentLabel(r.lastSubmission.at, now)}</Badge>}
+          {gone && <Badge variant="warning">checkout gone</Badge>}
+          {!r.seenByHuman && !gone && <Badge variant="info">not opened</Badge>}
         </span>
+        {activity && <span className="truncate text-xs text-muted-foreground">{activity}</span>}
       </RouteLink>
-      {r.checkoutGone === true && (
+      {gone && (
         <div className="flex shrink-0 items-center pr-3">
           <Button size="sm" variant="outline" aria-label={`Close review ${name}`} onClick={() => onClose(r.id)}>Close</Button>
         </div>

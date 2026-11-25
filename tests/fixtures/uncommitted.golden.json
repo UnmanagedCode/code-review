@@ -1825,7 +1825,11 @@
      "resolved": 0,
      "outdated": 0
     },
-    "unread": 0
+    "unread": 0,
+    "hunkIds": [
+     "e238c6e1ab79"
+    ],
+    "viewed": false
    },
    {
     "path": "r2.txt",
@@ -1842,7 +1846,11 @@
      "resolved": 0,
      "outdated": 0
     },
-    "unread": 0
+    "unread": 0,
+    "hunkIds": [
+     "96d9c08fd262"
+    ],
+    "viewed": false
    },
    {
     "path": "u\nnl.txt",
@@ -1859,7 +1867,11 @@
      "resolved": 0,
      "outdated": 0
     },
-    "unread": 0
+    "unread": 0,
+    "hunkIds": [
+     "f3e20ca1d8e1"
+    ],
+    "viewed": false
    }
   ],
   "threads": [

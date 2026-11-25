@@ -12,6 +12,8 @@ const at = (q: string) => history.replaceState(null, '', `?review=r-1&view=guide
 const mount = (guide = sampleGuide(), spies = {}) => render(<GuideHarness guide={guide} spies={spies}><GuideStepView /></GuideHarness>);
 const groupBar = () => screen.getByRole('group', { name: 'Group verdict' });
 const pressed = (bar: HTMLElement) => within(bar).getAllByRole('button').filter((b) => b.getAttribute('aria-pressed') === 'true').map((b) => b.textContent);
+/** What a hunk bar shows: `pending` for undecided, else the decided verdict's chip text. */
+const hunkState = (bar: HTMLElement) => (within(bar).queryByText('undecided') ? 'pending' : within(bar).getByText(/Accepted|Rejected/).textContent);
 const hunkBars = () => screen.getAllByRole('group', { name: 'Hunk verdict' });
 const loaded = async (...paths: string[]) => { for (const p of paths) { await screen.findByRole('region', { name: p }); await expandFile(p); } await screen.findAllByRole('group', { name: 'Hunk verdict' }); };
 
@@ -79,11 +81,11 @@ test('a group verdict is optimistic on the group only: hunks change when the res
   await loaded('a.ts', 'b.ts');
   await userEvent.setup().click(screen.getByRole('button', { name: 'Reject group' }));
   expect(pressed(groupBar())).toEqual(['Reject group']);
-  expect(hunkBars().map(pressed)).toEqual([['Pending'], ['Pending']]);
+  expect(hunkBars().map(hunkState)).toEqual(['pending', 'pending']);
   await waitFor(() => expect(net.calls.at(-1)?.body).toEqual({ verdict: 'rejected' }));
   const guide = sampleGuide({}, { verdict: 'rejected', hunks: [{ id: 'h1', file: 'a.ts', verdict: 'rejected' }, { id: 'h3', file: 'b.ts', verdict: 'rejected' }] });
   answer({ groupId: 'g1', verdict: 'rejected', hunks: [{ id: 'h1', verdict: 'rejected' }, { id: 'h3', verdict: 'rejected' }], fileSigs: [], guide, review: review({ rev: 2 }) });
-  await waitFor(() => expect(hunkBars().map(pressed)).toEqual([['Reject'], ['Reject']]));
+  await waitFor(() => expect(hunkBars().map(hunkState)).toEqual(['✗ Rejected', '✗ Rejected']));
   expect(pressed(groupBar())).toEqual(['Reject group']);
   expect(spies.applyReview).toHaveBeenCalledWith(review({ rev: 2 }));
   expect(spies.reload).toHaveBeenCalled();
@@ -106,13 +108,13 @@ test('a per-hunk verdict that the server says cleared the group flips it to Pend
   forgetCleared('r-1', 'g1');
   const rejected = [{ id: 'h1', file: 'a.ts', verdict: 'rejected' as const }, { id: 'h3', file: 'b.ts', verdict: 'rejected' as const }];
   guideNet({ h1: 'rejected', h3: 'rejected' }, {
-    'PUT api/reviews/r-1/hunks/h1/verdict': { hunkId: 'h1', verdict: 'accepted', clearedGroups: ['g1'], review: review({ rev: 2 }), fileSig: { path: 'a.ts', sig: 'sa2' } },
+    'PUT api/reviews/r-1/hunks/h1/verdict': { hunkId: 'h1', verdict: 'pending', clearedGroups: ['g1'], review: review({ rev: 2 }), fileSig: { path: 'a.ts', sig: 'sa2' } },
   });
   mount(sampleGuide({}, { verdict: 'rejected', hunks: rejected }));
   await loaded('a.ts', 'b.ts');
   expect(pressed(groupBar())).toEqual(['Reject group']);
   expect(screen.queryByText(/Set back to pending/)).toBeNull();
-  await userEvent.setup().click(within(hunkBars()[0]).getByRole('button', { name: 'Accept' }));
+  await userEvent.setup().click(within(hunkBars()[0]).getByRole('button', { name: 'Clear' }));
   await waitFor(() => expect(pressed(groupBar())).toEqual(['Pending']));
   expect(screen.getByText('Set back to pending: you changed the verdict of one of its hunks.')).toBeTruthy();
 });

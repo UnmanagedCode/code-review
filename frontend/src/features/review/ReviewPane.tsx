@@ -19,10 +19,10 @@ import { ScopeIndicator } from './ScopeIndicator';
 
 type PaneTab = 'files' | 'guided' | 'threads' | 'history';
 
-/** The review's unread count, shown only on the live review (a past view's threads are as they were). */
-export function UnreadBadge() {
-  const { review, pastView } = useReviewCtx();
-  return review.unread > 0 && !pastView ? <Badge>{review.unread}</Badge> : null;
+/** The open threads of what is shown (a past round's or a comparison's own counts), hidden at none. It is what the All list counts under the default filters. */
+export function ThreadsBadge() {
+  const { threadCounts } = useReviewCtx();
+  return threadCounts.open > 0 ? <Badge>{threadCounts.open}</Badge> : null;
 }
 
 function Banners() {
@@ -101,12 +101,12 @@ export function ReviewPane() {
         <TabsList aria-label="Review pane" className="mx-3 mt-2 mb-1 w-auto">
           <TabsTrigger value="files">Files</TabsTrigger>
           {hasGuide && <TabsTrigger value="guided">Guided</TabsTrigger>}
-          <TabsTrigger value="threads">Threads <UnreadBadge /></TabsTrigger>
+          <TabsTrigger value="threads">Threads <ThreadsBadge /></TabsTrigger>
           {hasHistory && <TabsTrigger ref={historyTab} value="history">History</TabsTrigger>}
         </TabsList>
         {panel('files', 'min-h-0 overflow-y-auto', <Files />)}
         {hasGuide && panel('guided', 'min-h-0 overflow-y-auto', <GuidePanel />)}
-        {panel('threads', 'flex min-h-0 flex-col', <ThreadPanel />)}
+        {panel('threads', 'flex min-h-0 flex-col', <ThreadPanel active={tab === 'threads'} />)}
         {hasHistory && panel('history', 'min-h-0 overflow-y-auto', <HistoryList />)}
       </Tabs>
     </div>

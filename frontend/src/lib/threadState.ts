@@ -1,6 +1,6 @@
 import { treeOrder } from './fileTree';
 import { anchorLabel } from './ranges';
-import type { Anchor, FileState, GuideView, ThreadState } from './types';
+import type { Anchor, FileState, GuideView, ThreadDigest, ThreadState } from './types';
 
 /** States in which the human is the one to act. Mirrors `NEEDS_YOU` in `src/threadState.js`. */
 export const NEEDS_YOU: readonly ThreadState[] = ['awaiting-human', 'verify-resolution'];
@@ -53,4 +53,24 @@ export function placeLabel(a: Anchor, guide: GuideView | null): string {
   if (a.kind === 'group') return `Group: ${guide?.groups.find((g) => g.id === a.groupId)?.title ?? guide?.retired.find((g) => g.id === a.groupId)?.title ?? a.groupId}`;
   if (a.kind === 'file') return `${a.file} (whole file)`;
   return `${a.file}#${anchorLabel(a).replace(/ \((old|new)\)$/, '')}`;
+}
+
+const base = (path: string) => path.slice(path.lastIndexOf('/') + 1);
+
+/** A thread's place in few characters: `a.ts#L3–L5`, `a.ts` (whole file), `review`, or its group's title. */
+export function shortPlace(a: Anchor, guide: GuideView | null = null): string {
+  if (a.kind === 'review') return 'review';
+  if (a.kind === 'group') return guide?.groups.find((g) => g.id === a.groupId)?.title ?? guide?.retired.find((g) => g.id === a.groupId)?.title ?? 'a group';
+  if (a.kind === 'file') return base(a.file);
+  return `${base(a.file)}#${anchorLabel(a).replace(/ \((old|new)\)$/, '')}`;
+}
+
+/** Open threads waiting on the human, per file: the digests in a `needs-you` state, counted by their anchor's file. */
+export function needsYouByFile(openThreads: ThreadDigest[]): Map<string, number> {
+  const out = new Map<string, number>();
+  for (const t of openThreads) {
+    if (!t.state || !NEEDS_YOU.includes(t.state) || (t.anchor.kind !== 'lines' && t.anchor.kind !== 'file')) continue;
+    out.set(t.anchor.file, (out.get(t.anchor.file) ?? 0) + 1);
+  }
+  return out;
 }

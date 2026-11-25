@@ -23,13 +23,13 @@ import { Tip } from '@/features/nav/Tip';
 import { JumpNavProvider } from '@/features/nav/JumpNavProvider';
 import { OverviewPage } from '@/features/overview/OverviewPage';
 import { useLastViewed } from '@/state/lastViewed';
-import { paneTab, ReviewPane, UnreadBadge } from './ReviewPane';
+import { paneTab, ReviewPane, ThreadsBadge } from './ReviewPane';
 import { useReviewCtx } from '@/state/reviewContext';
 
 const CLEAR = { review: undefined, ...REVIEW_SCOPED };
 const NO_THREADS = { open: 0, resolved: 0, outdated: 0 };
 
-const asFileState = (f: { path: string; oldPath: string | null; status: FileState['status']; binary: boolean; tooLarge: boolean; additions: number; deletions: number; hunks: unknown[]; sig: string }): FileState => ({
+const asFileState = (f: { path: string; oldPath: string | null; status: FileState['status']; binary: boolean; tooLarge: boolean; additions: number; deletions: number; hunks: unknown[]; hunkIds: string[]; viewed: boolean; sig: string }): FileState => ({
   ...f, hunks: f.hunks.length, verdicts: null, threads: { open: 0, resolved: 0, outdated: 0 }, unread: 0,
 });
 
@@ -38,7 +38,7 @@ function PhoneThreadsButton() {
   return (
     <Tip label="Open the Threads tab">
       <Button variant="outline" size="sm" onClick={() => navigate({ ...LEAVE_FILE, view: 'threads' })}>
-        <MessagesSquareIcon />Threads <UnreadBadge />
+        <MessagesSquareIcon />Threads <ThreadsBadge />
       </Button>
     </Tip>
   );
@@ -132,7 +132,7 @@ export function ReviewView({ id, chrome }: { id: string; chrome?: ReactNode }) {
   return (
     <ReviewProvider value={{
       ...detail, id, commit: route.commit, readOnly, fileDiff, version: rv.version, sessions: sessions.data?.sessions ?? [],
-      files: treeFiles, reload: rv.reload, applyReview: rv.applyReview, patchGuide: rv.patchGuide, diffs,
+      files: treeFiles, reload: rv.reload, applyReview: rv.applyReview, patchGuide: rv.patchGuide, patchFiles: rv.patchFiles, diffs,
       round, compare: compare && { ...compare, view: compareView.data }, pastView,
       viewLoad: past && { loading: past.loading && !past.data, error: past.error, loaded: !!past.data, reload: past.reload },
       outdatedThreads: past ? (round !== undefined && roundView.data?.outdatedThreads) || [] : detail.outdatedThreads,

@@ -23,6 +23,7 @@ import { Empty, ErrorState, Loading } from '@/features/common/States';
 import { JumpBar, type HunkStepper } from '@/features/nav/JumpBar';
 import { useJumpNav } from '@/features/nav/jumpNavContext';
 import { Tip } from '@/features/nav/Tip';
+import { ViewedToggle } from '@/features/files/ViewedToggle';
 import { Composer } from '@/features/threads/Composer';
 import { CitedExcerpt } from './CitedExcerpt';
 import { CompareNote } from './CompareNote';
@@ -75,6 +76,7 @@ function FileHeader({ ref, file, onBack, extra, view, options, onComment, hunk }
           {!wide && <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">{meta}</div>}
         </div>
         {wide && meta}
+        {wide && <ViewedToggle path={file.path} />}
         <div className="flex shrink-0 items-center gap-0.5">
           <Tip label="Previous file" id="prev-file"><Button variant="ghost" size="icon-sm" aria-label="Previous file" disabled={!files.canStep(-1) || files.index < 0} onClick={() => files.step(-1)}><ChevronLeftIcon /></Button></Tip>
           {files.index >= 0 && <span className="px-0.5 text-xs whitespace-nowrap text-muted-foreground">File {files.index + 1} of {files.total}</span>}
@@ -86,6 +88,7 @@ function FileHeader({ ref, file, onBack, extra, view, options, onComment, hunk }
         <JumpBar hunk={hunk} />
         <span className="flex-1" />
         <FileVerdict file={file} />
+        {!wide && <ViewedToggle path={file.path} />}
         {onComment && <Tip label="Comment on file"><Button variant="ghost" size="sm" aria-label="Comment on file" onClick={onComment}><MessageSquarePlusIcon />Comment</Button></Tip>}
         <CodeGitFileLink file={file} />
         {view && <ViewToggle view={view.chosen} onChange={view.choose} />}
@@ -112,6 +115,7 @@ export function FileDiff({ onBack, extra }: { onBack?: () => void; extra?: React
     return t ? { side: targetSide, start: t.start, end: t.end, anchorLine: t.start } : null;
   }, [route.lines, targetSide]);
   const diffView = useDiffView();
+  const wide = useMediaQuery(WIDE_QUERY);
 
   // Accepted hunks, whitespace-only hunks while Ignore whitespace is on, and resolved threads collapse; the hunks holding
   // the routed thread's range or the cited range never do. The routed thread is shown on arrival but collapses if it gets resolved while routed.
@@ -213,6 +217,8 @@ export function FileDiff({ onBack, extra }: { onBack?: () => void; extra?: React
   if (!file) return ctx.compare && route.lines ? <CitedExcerpt path={route.file} /> : <Empty title="That file isn’t in this diff" />;
 
   const split = diffView.view === 'split';
+  // A narrow screen wraps long lines (as split does) rather than scrolling each hunk sideways, which clips the code off-screen.
+  const wrap = !wide;
   const shown = visible.slice(0, limit);
   const items: (Row | SplitRowT)[] = split ? splitRows(shown) : shown;
   const blocks: (Row | SplitRowT)[][] = [];
@@ -292,7 +298,7 @@ export function FileDiff({ onBack, extra }: { onBack?: () => void; extra?: React
     }
     return (
       <Fragment key={r.key}>
-        <InlineRow line={r.line} sel={sel} enabled={enabled} target={targetSel} marks={marks} segs={decos.get(r.line)} />
+        <InlineRow line={r.line} sel={sel} enabled={enabled} target={targetSel} marks={marks} segs={decos.get(r.line)} wrap={wrap} />
         {belowRow(keysOf([r.line]), !!s && lineOn(r, s.side) === s.end)}
       </Fragment>
     );
@@ -326,7 +332,7 @@ export function FileDiff({ onBack, extra }: { onBack?: () => void; extra?: React
             const at = hunk ? stepper.hunkIds.indexOf(hunk.id) : -1;
             return (
               <div
-                key={first.key} role="rowgroup" className={cn(!split && 'overflow-x-auto', '[contain-intrinsic-size:auto_400px] [content-visibility:auto]', hunk && 'focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring')}
+                key={first.key} role="rowgroup" className={cn(!split && !wrap && 'overflow-x-auto', '[contain-intrinsic-size:auto_400px] [content-visibility:auto]', hunk && 'focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring')}
                 {...(hunk && { 'data-hunk-id': hunk.id, tabIndex: -1, 'aria-label': `Hunk ${at + 1} of ${stepper.hunkIds.length}: ${hunk.header}` })}
               >
                 {block.map((r) => render(r, bi))}

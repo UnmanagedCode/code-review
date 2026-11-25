@@ -5,6 +5,9 @@ import { threadsAt, roundThreadView, reviewThreadsAt } from './history.js';
 
 const invalid = (reason) => new Refusal('INVALID_ARGUMENT', reason);
 
+/** A stored round as the API shows it: without `hunkIds`, which only the inbox's store-side tally reads. */
+export const wireRound = ({ hunkIds, ...round }) => round;
+
 /** The stored round `raw` names; past-round views exist for range reviews only. The current round is a valid pick. */
 export function pickRound(review, raw) {
   if (review.kind !== 'range') throw invalid('past-round views apply to range reviews only');
@@ -18,7 +21,7 @@ export function pickRound(review, raw) {
 async function asOf(review, env, raw) {
   const round = pickRound(review, raw);
   const snap = await env.snapshot(round.n);
-  return { round, snap, then: { ...review, threads: threadsAt(review, round.n) } };
+  return { round, snap, then: { ...review, threads: threadsAt(review, round.n), viewedFiles: {} } };
 }
 
 const noVerdicts = (states) => states.map((s) => ({ ...s, verdicts: null }));
@@ -33,7 +36,7 @@ const pastView = (then) => ({ hunk: (h) => ({ ...h, verdict: null }), threads: (
 export const roundView = (id, raw) => attempt(() => viewReview(id, async (review, env) => {
   const { round, snap, then } = await asOf(review, env, raw);
   return {
-    ok: true, readOnly: true, round,
+    ok: true, readOnly: true, round: wireRound(round),
     files: signStates(snap, noVerdicts(fileStates(then, snap.files)), snap.files, pastView(then)),
     counts: tally(then.threads),
     outdatedThreads: then.threads.filter((t) => t.status === 'outdated').map(roundThreadView),
@@ -47,7 +50,7 @@ export async function roundDiff(review, env, { file, round: raw }) {
   const picked = file ? snap.files.filter((f) => f.path === file) : snap.files;
   if (file && !picked.length) throw new Refusal('FILE_NOT_IN_DIFF', `${file} is not in round ${round.n}'s diff`);
   return {
-    ok: true, readOnly: true, round,
+    ok: true, readOnly: true, round: wireRound(round),
     files: await diffFiles(snap, noVerdicts(fileStates(then, picked)), picked, pastView(then)),
   };
 }

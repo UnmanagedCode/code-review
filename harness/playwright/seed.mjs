@@ -90,7 +90,9 @@ export async function seed() {
 
     // A third commit rewrites the questioned lines; refreshing turns that thread outdated. Line 6 is long enough to wrap in split view.
     const long6 = `r6 ${'a long line that has to wrap in the split view '.repeat(5)}`;
-    wt.commit({ 'a.js': editLines({ 1: 'r1', 2: 'r2', 3: 'rewritten3', 4: 'rewritten4', 5: 'r5', 6: long6, 7: 'r7', 8: 'changed8', 19: 'changed19' }) }, 'third');
+    // wide.js: one 240-character line with no break opportunity, for the phone's wrap check.
+    const wide = `export const wide = '${'0123456789'.repeat(24)}';`;
+    wt.commit({ 'a.js': editLines({ 1: 'r1', 2: 'r2', 3: 'rewritten3', 4: 'rewritten4', 5: 'r5', 6: long6, 7: 'r7', 8: 'changed8', 19: 'changed19' }), 'wide.js': `// a wide line follows\n${wide}\n// and a short one\n` }, 'third');
     await call('POST', `reviews/${id}/refresh`);
     // Two current-round ranges that touch at line 7 (separate rail lanes); the first spans the wrapping line 6.
     await call('POST', `reviews/${id}/threads`, { anchor: { kind: 'lines', file: 'a.js', side: 'new', startLine: 5, endLine: 7 }, kind: 'suggestion', body: 'Split the long line into a list.' });
@@ -175,6 +177,8 @@ export async function seed() {
         return p;
       },
       /** Makes the fake cc refuse every exec as SYSTEM_UNREACHABLE (true) or run them again (false). */
+      /** Commits files to a seeded worktree (`feature`, `syntax` or `guided`); a review of it changes only when refreshed. */
+      commit: (name, files, message = 'change') => ({ feature: wt, syntax: sx, guided: gw })[name].commit(files, message),
       /** Adds a session to the fake cc (it shows up on the next page load). */
       session: (id, opts) => w.session(id, opts),
       systemDown(down) { w.cc.state.execHook = down ? () => ({ status: 502, body: { error: 'provider down', code: 'SYSTEM_UNREACHABLE' } }) : null; },

@@ -83,6 +83,18 @@ try {
     console.log(`header height at 1280px: ${desktopH}px`);
     assert.ok(desktopH <= 100, `the header stays two rows at 1280px (${desktopH}px)`);
     await shot('stepper-desktop');
+    // The widest real header: the seeded range review's a.js (decided hunks, "k/n accepted · r rejected", Accept file, open threads) with the Viewed control.
+    await page.goto(`${world.url}/?${new URLSearchParams({ project: 'app', worktree: 'feature', review: world.ids.range, file: 'a.js' })}`);
+    await page.getByRole('button', { name: 'Viewed', exact: true }).waitFor();
+    await page.getByText(/open threads?$/).first().waitFor();
+    await page.getByText(/accepted/).first().waitFor();
+    await page.getByRole('group', { name: 'Diff view' }).waitFor();
+    const rangeH = await headerHeight(page);
+    console.log(`range review header height at 1280px (Viewed, steppers, Inline|Split): ${rangeH}px`);
+    assert.ok(rangeH <= 100, `the range review's header stays two rows at 1280px (${rangeH}px)`);
+    await shot('stepper-desktop-range');
+    await page.goto(q({ file: 'g2.js' }));
+    await page.getByText('File 2 of 3').waitFor();
 
     // 2. n visits the needs-you threads first, in place order, then the rest; history grows only on file changes.
     const files = [];
@@ -209,7 +221,7 @@ try {
     assert.equal((await page.getByRole('tooltip').textContent()).trim(), 'Previous file [');
     await page.mouse.move(600, 600);
 
-    // 9–10. ? lists the registered shortcuts (no v or /), Esc closes it and focus returns to the opener.
+    // 9–10. ? lists the registered shortcuts (v and / too: the open file's header and the pane's tree are both mounted on a desktop), Esc closes it and focus returns to the opener.
     await page.setViewportSize({ width: 1280, height: 800 });
     const opener = page.getByRole('button', { name: 'Keyboard shortcuts' });
     await opener.focus();
@@ -218,7 +230,7 @@ try {
     await dialog.waitFor();
     const listed = await dialog.locator('dt').allTextContents();
     for (const l of ['Next open thread', 'Next thread that needs you', 'Next hunk', 'Submit round', 'Overview']) assert.ok(listed.includes(l), `lists ${l}`);
-    for (const l of ['Mark the file viewed', 'Filter files']) assert.ok(!listed.includes(l), `does not list ${l}`);
+    for (const l of ['Mark the file viewed', 'Filter files']) assert.ok(listed.includes(l), `lists ${l}`);
     await shot('overlay-desktop');
     await page.keyboard.press('Escape');
     await dialog.waitFor({ state: 'hidden' });

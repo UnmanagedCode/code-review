@@ -48,7 +48,8 @@ try {
         };
         const open = async (url, ready) => { await page.goto(url); await ready.first().waitFor(); };
 
-        await open(world.url, page.getByText('Choose a project to review'));
+        // Standalone, the page lands on the inbox (not the empty project picker).
+        await open(world.url, page.getByRole('region', { name: 'Inbox' }).getByText('Feature work'));
         const dark = await page.evaluate(() => document.documentElement.classList.contains('dark'));
         if (dark !== (scheme === 'dark')) throw new Error(`${scheme}: html.dark is ${dark}`);
 
@@ -56,7 +57,11 @@ try {
         await shot('review-list');
 
         await open(q({ view: 'inbox' }), page.getByRole('region', { name: 'Inbox' }).getByText('Feature work'));
-        await shot('inbox'); // every open review: both turn states, the main checkout's row among the worktree's
+        await shot('inbox'); // every open review, in triage sections: both turn states, the main checkout's row among the worktree's
+        if (vp === 'desktop') {
+          await page.getByText(/reviews? needs? you$/).waitFor();
+          await shot('inbox-overview'); // the centre with no review open: what needs you, and a way in
+        }
 
         await open(q({ view: 'new' }), page.getByRole('dialog'));
         await page.getByRole('radio', { name: /main/ }).first().waitFor();
@@ -77,12 +82,37 @@ try {
           await shot('overview-uncommitted');
         }
         await open(q({ review: range, view: 'threads', need: 'needs-you' }), page.getByText(/^Showing: Needs you/));
-        await page.getByRole('tabpanel').getByRole('article').first().waitFor();
+        await page.getByRole('tabpanel').getByRole('button', { name: /: .+ — / }).first().waitFor();
         await shot('threads-need-you');
 
         await open(q({ review: range, file: 'a.js' }), page.getByRole('grid'));
         await page.getByRole('article').first().waitFor();
         await shot('diff');
+
+        // Hunk verdicts: the seeded rejected hunk shows its chip with Clear; expand the accepted one for its chip.
+        const accepted = page.getByRole('button', { name: /^@@.*accepted$/ });
+        if (await accepted.count()) await accepted.click();
+        await page.getByRole('group', { name: 'Hunk verdict' }).first().waitFor();
+        await shot('hunkbar-states');
+
+        // The file tree: Needs me on and one file marked viewed (a phone shows the pane when no file is open).
+        await open(q({ review: range }), page.getByRole('searchbox', { name: 'Filter files' }));
+        const viewedBox = page.getByRole('checkbox', { name: 'Viewed c.js' });
+        await viewedBox.check();
+        await page.getByText(/^1 of \d+ viewed$/).waitFor();
+        await page.getByRole('button', { name: /^Needs me/ }).click();
+        await page.getByText(/^Showing \d+ of \d+ files/).waitFor();
+        await shot('tree-filtered');
+        await page.getByRole('button', { name: 'Clear filter' }).click();
+        await viewedBox.uncheck(); // later shots keep the seeded world
+        await page.getByText(/^0 of \d+ viewed$/).waitFor();
+
+        // The Threads pane: compact rows in state sections, the routed thread opened as a card.
+        const { openThreads } = await world.call('GET', `reviews/${range}`);
+        // A phone shows the pane or the diff, never both: its routed card is the review's own thread, which needs no file.
+        const routed = openThreads.find((t) => (vp === 'desktop' ? t.anchor.kind === 'lines' && t.anchor.file === 'a.js' : t.anchor.kind === 'review'));
+        await open(q({ review: range, ...(vp === 'desktop' ? { file: 'a.js' } : {}), thread: routed.id, view: 'threads' }), page.getByRole('tabpanel', { name: /^Threads/ }).getByRole('article'));
+        await shot('threads-compact');
 
         if (vp === 'desktop') {
           // Split needs a 36rem diff pane; at 1280px the default 384px side pane leaves room, but shoot it at 1100px,
@@ -108,16 +138,16 @@ try {
           await open(q({ review: range, view: 'threads' }), page.getByRole('tab', { name: /Outdated/ }));
         }
         await page.getByRole('tab', { name: /^All/ }).click();
-        await page.getByRole('tabpanel').getByRole('article').first().waitFor();
+        await page.getByRole('tabpanel').getByRole('button', { name: /: .+ — / }).first().waitFor();
         await shot('threads-all');
         await page.getByRole('tabpanel').getByLabel('Owner').selectOption('agents');
         await shot('threads-owner-agents');
         await page.getByRole('tabpanel').getByLabel('Owner').selectOption('all');
         await page.getByRole('tab', { name: /Outdated/ }).click();
-        await page.getByText(/outdated · was/).first().waitFor();
+        await page.getByRole('tabpanel').getByRole('button', { name: /^outdated: / }).first().waitFor();
         await shot('threads-outdated');
         await page.getByRole('tab', { name: /^Review/ }).click();
-        await page.getByRole('tabpanel').getByRole('article').first().waitFor();
+        await page.getByRole('tabpanel').getByRole('button', { name: /: .+ — / }).first().waitFor();
         await shot('threads-review');
 
         await open(q({ review: range, file: 'c.js' }), page.getByRole('region', { name: 'File threads' }).getByRole('article'));
@@ -168,6 +198,12 @@ try {
         if (vp === 'phone') {
           await open(q({ worktree: 'guided', review: guided, view: 'guided' }), page.getByRole('navigation', { name: 'Steps' }));
           await shot('guided-steps');
+        }
+
+        if (vp === 'phone') {
+          // Long lines wrap on a phone, with narrow gutters, instead of clipping.
+          await open(q({ review: range, file: 'wide.js' }), page.getByRole('grid'));
+          await shot('diff-phone-wrap');
         }
 
         await open(q({ review: range, file: 'logo.bin' }), page.getByText('Binary file changed'));

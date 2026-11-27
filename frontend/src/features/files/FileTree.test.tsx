@@ -11,13 +11,15 @@ import { ctxValue, renderInReview } from '@/test/renderCtx';
 import { ReviewProvider } from '@/test/reviewProvider';
 import { stubFetch } from '@/test/stubFetch';
 import type { FileState } from '@/lib/types';
+import { navigate } from '@/lib/route';
+import { ReviewPane } from '@/features/review/ReviewPane';
 import { FileTree } from './FileTree';
 
 afterEach(resetFileFilters);
 const tree = (files: FileState[], over = {}, selected?: string) => renderInReview(<FileTree files={files} selected={selected} />, { files, ...over });
 const link = (re: RegExp) => screen.getByRole('link', { name: re });
 
-// Invariant: a row's hunk pips, thread bubble and unread dot are readable by role and name (the tally, "N open threads, M need you", unread), and +/− sit in the link's title.
+// Invariant: a row's hunk pips, thread bubble and unread dot are readable by role and name (the tally, "N open threads, M need you", unread).
 test('rows expose the verdict tally, open threads, hunk counts and unread as accessible names', () => {
   tree([
     fileState({ path: 'src/a.ts', hunks: 6, verdicts: { pending: 2, accepted: 1, rejected: 3 }, threads: { open: 4, resolved: 5, outdated: 6 }, unread: 2 }),
@@ -27,7 +29,6 @@ test('rows expose the verdict tally, open threads, hunk counts and unread as acc
   expect(a.getByRole('img', { name: '1 accepted, 3 rejected, 2 undecided' })).toBeTruthy();
   expect(a.getByRole('img', { name: '4 open threads, 1 needs you' })).toBeTruthy();
   expect(link(/a\.ts/).getAttribute('aria-current')).toBe('true');
-  expect(link(/a\.ts/).getAttribute('title')).toContain('+2 −1');
   expect(within(link(/b\.ts/)).getByText('3 hunks')).toBeTruthy();
 });
 
@@ -164,4 +165,98 @@ test('the legend glyphs for accepted and rejected are toned like the pips', () =
   const glyphs = screen.getAllByText('■');
   expect(glyphs.map((g) => /\btext-success\b/.test(g.className))).toEqual([true, false]);
   expect(/\btext-destructive\b/.test(glyphs[1].className)).toBe(true);
+});
+
+const folder = (re: RegExp) => screen.getByRole('button', { name: re });
+
+// Invariant: every file row carries its own +/− as a readable, accessible item on the row itself, not only in a tooltip, and a file with no line changes shows none.
+test('each file row shows its own +/− lines; a file with none shows nothing', () => {
+  tree([
+    fileState({ path: 'src/a.ts', additions: 12, deletions: 3 }),
+    fileState({ path: 'src/lib/b.ts', additions: 1, deletions: 0 }),
+    fileState({ path: 'img.png', binary: true, additions: 0, deletions: 0 }),
+  ]);
+  expect(within(link(/a\.ts/)).getByRole('img', { name: '12 lines added, 3 removed' })).toBeTruthy();
+  expect(within(link(/b\.ts/)).getByRole('img', { name: '1 line added, 0 removed' })).toBeTruthy();
+  expect(within(link(/img\.png/)).queryByRole('img', { name: /added/ })).toBeNull();
+});
+
+// Invariant: the hover names the full path (and a rename's source) and no longer duplicates the counts.
+test('the link title is the full path, a rename shows old → new, and carries no counts', () => {
+  tree([fileState({ path: 'src/a.ts' }), fileState({ path: 'src/n.ts', oldPath: 'src/o.ts', status: 'renamed' })]);
+  expect(link(/a\.ts/).getAttribute('title')).toBe('src/a.ts');
+  expect(link(/n\.ts/).getAttribute('title')).toBe('src/o.ts → src/n.ts');
+});
+
+const three = () => [fileState({ path: 'src/a.ts', additions: 4, deletions: 1 }), fileState({ path: 'src/lib/b.ts', additions: 6, deletions: 2 }), fileState({ path: 'top.ts' })];
+
+// Invariant: a folder is a keyboard-operable disclosure that hides its descendants and, while collapsed, stands in for them with their file count and summed +/−.
+test('a folder button collapses and expands its files by mouse and keyboard, summarising what it hides', async () => {
+  tree(three());
+  const user = userEvent.setup();
+  expect(folder(/^src\//).getAttribute('aria-expanded')).toBe('true');
+  await user.click(folder(/^src\//));
+  expect(folder(/^src\//).getAttribute('aria-expanded')).toBe('false');
+  expect(screen.queryByRole('link', { name: /a\.ts/ })).toBeNull();
+  expect(screen.queryByRole('link', { name: /b\.ts/ })).toBeNull();
+  expect(link(/top\.ts/)).toBeTruthy();
+  const name = folder(/^src\//).textContent;
+  expect(name).toContain('2 files');
+  expect(within(folder(/^src\//)).getByRole('img', { name: '10 lines added, 3 removed' })).toBeTruthy();
+  await user.click(folder(/^src\//));
+  expect(folder(/^src\//).getAttribute('aria-expanded')).toBe('true');
+  expect(link(/a\.ts/)).toBeTruthy();
+  expect(link(/b\.ts/)).toBeTruthy();
+  // Keyboard: tab to the first button (the toolbar controls precede it), Enter toggles.
+  folder(/^src\//).focus();
+  await user.keyboard('{Enter}');
+  expect(folder(/^src\//).getAttribute('aria-expanded')).toBe('false');
+  await user.keyboard(' ');
+  expect(folder(/^src\//).getAttribute('aria-expanded')).toBe('true');
+});
+
+// Invariant: default state is expanded.
+test('a fresh tree has every folder expanded and every file shown', () => {
+  tree(three());
+  for (const b of [folder(/^src\//), folder(/^lib\//)]) expect(b.getAttribute('aria-expanded')).toBe('true');
+  expect(screen.getAllByRole('link')).toHaveLength(3);
+});
+
+// Invariant: collapse state is per review and outlives the tree unmounting (the phone round trip).
+test('collapse state survives a remount of the same review and does not leak to another', async () => {
+  const first = tree(three());
+  await userEvent.setup().click(folder(/^src\//));
+  first.unmount();
+  const again = tree(three());
+  expect(folder(/^src\//).getAttribute('aria-expanded')).toBe('false');
+  again.unmount();
+  tree(three(), { id: 'r-2' });
+  expect(folder(/^src\//).getAttribute('aria-expanded')).toBe('true');
+});
+
+// Invariant: reaching a file by any route expands its ancestors, and the reveal is one-shot, so the user can collapse the active file's folder again.
+test('navigating to a file in a collapsed folder expands its folders once', async () => {
+  history.replaceState(null, '', '?');
+  const files = [fileState({ path: 'src/lib/b.ts' }), fileState({ path: 'z.ts' })];
+  renderInReview(<ReviewPane />, { files });
+  const user = userEvent.setup();
+  await user.click(folder(/^lib\//));
+  await user.click(folder(/^src\//));
+  expect(folder(/^src\//).getAttribute('aria-expanded')).toBe('false');
+  act(() => navigate({ file: 'src/lib/b.ts' }));
+  expect(folder(/^src\//).getAttribute('aria-expanded')).toBe('true');
+  expect(folder(/^lib\//).getAttribute('aria-expanded')).toBe('true');
+  expect(link(/b\.ts/).getAttribute('aria-current')).toBe('true');
+  await user.click(folder(/^src\//));
+  expect(folder(/^src\//).getAttribute('aria-expanded')).toBe('false');
+});
+
+// Invariant: under a filter a collapsed folder counts only the matches it hides.
+test('a collapsed folder under a filter reports only the matching files', async () => {
+  tree(three());
+  const user = userEvent.setup();
+  await user.click(folder(/^src\//));
+  await user.type(screen.getByRole('searchbox'), 'a.ts');
+  expect(folder(/^src\//).textContent).toContain('1 file');
+  expect(folder(/^src\//).textContent).not.toContain('2 files');
 });

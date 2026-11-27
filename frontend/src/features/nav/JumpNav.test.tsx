@@ -2,7 +2,7 @@ import { act, screen, waitFor, within } from '@testing-library/react';
 import type { ReactElement } from 'react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, expect, test } from 'vitest';
-import { navigate, parseRoute } from '@/lib/route';
+import { navigate, parseRoute, useRoute } from '@/lib/route';
 import { WIDE_QUERY } from '@/lib/useMediaQuery';
 import { installBridge } from '@/test/fakeBridge';
 import { installMedia } from '@/test/fakeMedia';
@@ -14,6 +14,7 @@ import { FileDiff } from '@/features/diff/FileDiff';
 import { ThreadRow as OverviewRow } from '@/features/overview/ThreadRow';
 import { ThreadRow as PaneRow } from '@/features/threads/ThreadRow';
 import { SubmitControls } from '@/features/submit/SubmitControls';
+import { FileTree } from '@/features/files/FileTree';
 import { ThreadCard } from '@/features/threads/ThreadCard';
 
 const route = () => parseRoute(location.search);
@@ -102,6 +103,20 @@ test('] and [ and the header chevrons follow tree order and stop at the ends', a
   expect(route().file).toBe('src/routes/x.js');
   await userEvent.setup().click(screen.getByRole('button', { name: 'Next file' }));
   expect(route().file).toBe('src/config.js');
+});
+
+// Invariant: ] and [ follow treeOrder over all files regardless of collapse, and reveal the file they reach.
+test('] reaches a file inside a collapsed folder and expands that folder', async () => {
+  const tree = [fileState({ path: 'src/a.js' }), fileState({ path: 'top.js' })];
+  history.replaceState(null, '', '?file=top.js');
+  const Tree = () => <FileTree files={tree} selected={useRoute().file} />;
+  renderDiff(<><FileDiff /><Tree /></>, diffFile({ path: 'top.js' }), { files: tree });
+  const src = () => screen.getByRole('button', { name: /^src\// });
+  await userEvent.setup().click(src());
+  expect(src().getAttribute('aria-expanded')).toBe('false');
+  await keys('[[');
+  expect(route().file).toBe('src/a.js');
+  expect(src().getAttribute('aria-expanded')).toBe('true');
 });
 
 // Invariant: keys typed into a field are text, never navigation or verdicts.

@@ -8,6 +8,7 @@ import { resetDiffPrefs } from '@/state/diffPrefs';
 import { resetDrafts } from '@/state/drafts';
 import { resetDropped } from '@/state/dropped';
 import { resetGuideOpenFiles } from '@/state/guideOpenFiles';
+import { resetTreeCollapse } from '@/state/treeCollapse';
 import { resetVisits } from '@/state/lastViewed';
 import { resetMarks } from '@/state/readMarks';
 import { resetTop } from './fakeTop';
@@ -19,6 +20,7 @@ afterEach(() => {
   resetDropped();
   resetClearedGroups();
   resetGuideOpenFiles();
+  resetTreeCollapse();
   resetMarks();
   resetVisits();
   resetResources();

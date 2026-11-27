@@ -13,10 +13,13 @@ test('revealPath expands the ancestors of a file only, and notifies nobody when 
   const before = result.current;
   act(() => revealPath('r', 'a/b/c.ts'));
   expect(result.current).toBe(before);
+  // Already expanded: another folder is collapsed for this review, but the revealed path's ancestors never were.
   const spy = vi.fn();
   const { result: other } = renderHook(() => { spy(); return useCollapsedFolders('other'); });
+  act(() => setFolderCollapsed('other', 'unrelated', true));
+  const held = other.current;
   const renders = spy.mock.calls.length;
   act(() => revealPath('other', 'a/b.ts'));
-  expect(other.current.size).toBe(0);
+  expect(other.current).toBe(held);
   expect(spy.mock.calls.length).toBe(renders);
 });

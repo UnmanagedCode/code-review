@@ -15,6 +15,10 @@ import { HunkPips } from './HunkPips';
 import { LineCounts } from './LineCounts';
 import { StatusLetter } from './StatusLetter';
 
+/** Rows indent by depth only down to this level, so deep nesting cannot take the width the name and counts need. */
+const MAX_INDENT_DEPTH = 5;
+const indent = (depth: number) => ({ paddingLeft: `${0.75 + Math.min(depth, MAX_INDENT_DEPTH) * 0.875}rem` });
+
 interface RowEnv { selected: string | undefined; needsYou: ReadonlyMap<string, number>; checkable: boolean; onViewed: (path: string, viewed: boolean) => void;
   collapsed: ReadonlySet<string>; onToggle: (dir: string) => void }
 
@@ -25,7 +29,7 @@ function Folder({ node, depth, env }: { node: TreeNode; depth: number; env: RowE
   return (
     <li>
       <button
-        type="button" aria-expanded={!closed} aria-controls={listId} onClick={() => env.onToggle(node.path)} style={{ paddingLeft: `${0.75 + depth * 0.875}rem` }}
+        type="button" aria-expanded={!closed} aria-controls={listId} onClick={() => env.onToggle(node.path)} style={indent(depth)}
         className="flex min-h-8 w-full items-center gap-1.5 py-1 pr-3 text-left text-xs font-medium text-muted-foreground outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
       >
         {closed ? <ChevronRight className="size-3.5 shrink-0" aria-hidden /> : <ChevronDown className="size-3.5 shrink-0" aria-hidden />}
@@ -43,7 +47,7 @@ function Folder({ node, depth, env }: { node: TreeNode; depth: number; env: RowE
 }
 
 function Node({ node, depth, env }: { node: TreeNode; depth: number; env: RowEnv }) {
-  const pad = { paddingLeft: `${0.75 + depth * 0.875}rem` };
+  const pad = indent(depth);
   if (!node.file) return <Folder node={node} depth={depth} env={env} />;
   const f = node.file;
   const need = env.needsYou.get(f.path) ?? 0;

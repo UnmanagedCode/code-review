@@ -59,6 +59,9 @@ const CONFIGS = [
   { name: '1280-pane288', width: 1280, height: 800, pane: '288', truncates: true },
 ];
 
+const DEEP = 'l1/l2/l3/l4/l5/l6/l7/l8/l9/deep-file-with-a-name.tsx';
+const HUGE = { additions: 123456, deletions: 1234567 };
+
 await withPage(async (_page, { browser }) => {
   for (const cfg of CONFIGS) {
     for (const scheme of ['light', 'dark']) {
@@ -100,14 +103,57 @@ await withPage(async (_page, { browser }) => {
       await page.screenshot({ path: path.join(outDir, `filetree-${cfg.name}-${scheme}-collapsed.png`), animations: 'disabled' });
 
       if (cfg.open) {
-        // Opening a file inside the collapsed folder (by route) expands its folders and marks it current.
-        await page.goto(url(OVERLONG));
+        // Opening a file inside the collapsed folder by a client-side navigation (history + popstate, no reload, so the collapse store
+        // lives on) expands its folders and marks it current.
+        await page.evaluate(() => { window.__alive = true; });
+        await page.evaluate((u) => { history.pushState(null, '', u); dispatchEvent(new PopStateEvent('popstate')); }, url(OVERLONG));
         await page.locator('nav[aria-label="Files"] a[aria-current]').waitFor();
+        assert.ok(await page.evaluate(() => window.__alive === true), `${label}: the page was not reloaded`);
         assert.equal(await page.getByRole('button', { name: /^packages\// }).getAttribute('aria-expanded'), 'true', `${label}: opening the file expands packages/`);
+        assert.equal(await page.locator('nav[aria-label="Files"] a[aria-current]').getAttribute('title'), OVERLONG, `${label}: the opened file is current`);
       }
       assert.deepEqual(errors, [], label);
       await ctx.close();
     }
+  }
+  // A file 9 levels deep with 6- and 7-digit counts at the minimum pane (287px of content): the row stays inside, counts whole, no sideways scroll.
+  for (const scheme of ['light', 'dark']) {
+    const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 }, colorScheme: scheme });
+    const page = await ctx.newPage();
+    const errors = watchErrors(page);
+    await page.addInitScript((w) => localStorage.setItem('code-review:sidePaneWidth', w), '288');
+    await page.route(new RegExp(`/api/reviews/${range}(\\?.*)?$`), async (route) => {
+      const res = await route.fetch();
+      const body = await res.json();
+      body.files.push({ ...body.files[0], path: DEEP, oldPath: null, ...HUGE, threads: { open: 12, resolved: 0, outdated: 0 } });
+      await route.fulfill({ response: res, json: body });
+    });
+    const label = `deep/288/${scheme}`;
+    await page.goto(url());
+    await page.locator(`nav[aria-label="Files"] a[title="${DEEP}"]`).waitFor();
+    const m = await page.evaluate((deep) => {
+      const nav = document.querySelector('nav[aria-label="Files"]');
+      const li = nav.querySelector(`a[title="${deep}"]`).closest('li');
+      const row = li.getBoundingClientRect();
+      const counts = li.querySelector('[role=img][aria-label$=removed]');
+      const cr = counts.getBoundingClientRect();
+      const kids = [...li.querySelectorAll('a > *, input')].map((e) => e.getBoundingClientRect().right);
+      return {
+        nav: [nav.scrollWidth, nav.clientWidth], row: [li.scrollWidth, li.clientWidth], rowRight: row.right, countsRight: cr.right, countsLeft: cr.left,
+        lastRight: Math.max(...kids), shown: counts.textContent, label: counts.getAttribute('aria-label'), height: row.height,
+      };
+    }, DEEP);
+    console.log(`${label}: nav ${m.nav.join('/')}, row ${m.row.join('/')}, row right ${m.rowRight}, counts ${m.countsLeft}–${m.countsRight} "${m.shown}", last item right ${m.lastRight}, height ${m.height}`);
+    assert.ok(m.nav[0] <= m.nav[1], `${label}: the file list does not scroll sideways`);
+    assert.ok(m.row[0] <= m.row[1], `${label}: the row does not overflow`);
+    assert.ok(m.countsRight <= m.rowRight + 0.5, `${label}: the counts end inside the row`);
+    assert.ok(m.lastRight <= m.rowRight + 0.5, `${label}: every item ends inside the row`);
+    assert.equal(m.shown, '+123k−1.2M', `${label}: the counts are compacted`);
+    assert.equal(m.label, '123456 lines added, 1234567 removed', `${label}: the exact numbers stay in the accessible name`);
+    assert.ok(m.height <= ONE_LINE_PX, `${label}: the row is one line`);
+    await page.screenshot({ path: path.join(outDir, `filetree-deep-288-${scheme}.png`), animations: 'disabled' });
+    assert.deepEqual(errors, [], label);
+    await ctx.close();
   }
 }, { headless: true });
 await world.close();

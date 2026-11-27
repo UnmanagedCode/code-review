@@ -207,8 +207,9 @@ test('a folder button collapses and expands its files by mouse and keyboard, sum
   expect(folder(/^src\//).getAttribute('aria-expanded')).toBe('true');
   expect(link(/a\.ts/)).toBeTruthy();
   expect(link(/b\.ts/)).toBeTruthy();
-  // Keyboard: tab to the first button (the toolbar controls precede it), Enter toggles.
-  folder(/^src\//).focus();
+  // Keyboard: Tab reaches the folder button (the toolbar controls precede it), Enter and Space toggle it.
+  for (let i = 0; i < 20 && document.activeElement !== folder(/^src\//); i++) await user.tab();
+  expect(document.activeElement).toBe(folder(/^src\//));
   await user.keyboard('{Enter}');
   expect(folder(/^src\//).getAttribute('aria-expanded')).toBe('false');
   await user.keyboard(' ');
@@ -220,6 +221,20 @@ test('a fresh tree has every folder expanded and every file shown', () => {
   tree(three());
   for (const b of [folder(/^src\//), folder(/^lib\//)]) expect(b.getAttribute('aria-expanded')).toBe('true');
   expect(screen.getAllByRole('link')).toHaveLength(3);
+  // An expanded folder shows no aggregate: its children carry their own counts.
+  expect(folder(/^src\//).textContent).toBe('src/');
+  expect(within(folder(/^src\//)).queryByRole('img')).toBeNull();
+});
+
+// Invariant: a row's indent stops growing past a fixed depth, so deep nesting cannot eat the name's and counts' width.
+test('indent is capped for deep paths', () => {
+  tree([fileState({ path: 'a/b/c/d/e/f/g/h/i/j/k.ts' })]);
+  const pad = (el: Element) => parseFloat((el as HTMLElement).style.paddingLeft);
+  const deep = pad(link(/k\.ts/).closest('li')!);
+  const shallow = pad(folder(/^b\//));
+  expect(pad(folder(/^j\//))).toBe(deep);
+  expect(deep).toBeGreaterThan(shallow);
+  expect(pad(folder(/^i\//))).toBe(deep);
 });
 
 // Invariant: collapse state is per review and outlives the tree unmounting (the phone round trip).

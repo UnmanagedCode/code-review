@@ -6,6 +6,7 @@ import { LineCounts } from './LineCounts';
 test.each([
   [9999, 9999, '+9999−9999'],
   [10000, 12345, '+10k−12k'],
+  [999999, 1000000, '+999k−1M'],
   [123456, 1234567, '+123k−1.2M'],
 ])('counts %i/%i show as %s with the exact numbers in the accessible name', (a, d, shown) => {
   render(<LineCounts additions={a} deletions={d} />);

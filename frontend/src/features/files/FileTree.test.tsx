@@ -208,7 +208,12 @@ test('a folder button collapses and expands its files by mouse and keyboard, sum
   expect(link(/a\.ts/)).toBeTruthy();
   expect(link(/b\.ts/)).toBeTruthy();
   // Keyboard: Tab reaches the folder button (the toolbar controls precede it), Enter and Space toggle it.
-  for (let i = 0; i < 20 && document.activeElement !== folder(/^src\//); i++) await user.tab();
+  // The click above focused the button; blur so Tab has to reach it.
+  (document.activeElement as HTMLElement).blur();
+  expect(document.activeElement).not.toBe(folder(/^src\//));
+  let tabs = 0;
+  while (document.activeElement !== folder(/^src\//) && tabs < 20) { await user.tab(); tabs++; }
+  expect(tabs).toBeGreaterThan(0);
   expect(document.activeElement).toBe(folder(/^src\//));
   await user.keyboard('{Enter}');
   expect(folder(/^src\//).getAttribute('aria-expanded')).toBe('false');

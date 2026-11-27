@@ -151,6 +151,10 @@ await withPage(async (_page, { browser }) => {
     assert.equal(m.shown, '+123k−1.2M', `${label}: the counts are compacted`);
     assert.equal(m.label, '123456 lines added, 1234567 removed', `${label}: the exact numbers stay in the accessible name`);
     assert.ok(m.height <= ONE_LINE_PX, `${label}: the row is one line`);
+    // The row sits below the fold of the pane: scroll it into view and capture the pane around it.
+    const deepRow = page.locator(`nav[aria-label="Files"] a[title="${DEEP}"]`).locator('xpath=ancestor::li[1]');
+    await deepRow.scrollIntoViewIfNeeded();
+    assert.ok(await deepRow.evaluate((el) => { const r = el.getBoundingClientRect(); return r.top >= 0 && r.bottom <= innerHeight; }), `${label}: the deep row is in view for the screenshot`);
     await page.screenshot({ path: path.join(outDir, `filetree-deep-288-${scheme}.png`), animations: 'disabled' });
     assert.deepEqual(errors, [], label);
     await ctx.close();
